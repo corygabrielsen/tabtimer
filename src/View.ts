@@ -1,4 +1,4 @@
-import Model from './Model'
+import type Model from './Model'
 import { TimerType } from './Timer'
 
 // Pad a number with leading zeros to make it two digits long
@@ -105,12 +105,10 @@ export default class View {
   // Update the timer text every second
   updateDisplayText() {
     this.model.readElapsed().then((elapsed) => {
-      if (this.displayClock in elapsed) {
-        const millis = elapsed[this.displayClock].elapsed as number
-        this.div.innerText = `${formatTime(millis)}`
-        this.div.style.background = this.getBackground(this.displayClock)
-        this.div.style.fontSize = this.getFontSize(millis)
-      }
+      const millis = elapsed[this.displayClock].elapsed
+      this.div.innerText = `${formatTime(millis)}`
+      this.div.style.background = this.getBackground(this.displayClock)
+      this.div.style.fontSize = this.getFontSize(millis)
     })
   }
 

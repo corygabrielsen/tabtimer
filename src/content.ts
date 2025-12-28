@@ -4,5 +4,5 @@ import View from './View'
 
 const model = new Model()
 const view = new View(model)
-const controller = new Controller(model, view)
+new Controller(model, view)
 model.start()

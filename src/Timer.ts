@@ -20,7 +20,11 @@ export default class Timer {
   public elapsed: number = 0
   public state: TimerState = TimerState.NOT_STARTED
 
-  constructor(public type: TimerType, private interval: number, private callback: TickCallback) {}
+  constructor(
+    public type: TimerType,
+    private interval: number,
+    private callback: TickCallback
+  ) {}
 
   // Update the elapsed time and call the tick callback function
   private updateElapsed(val: number) {
@@ -72,10 +76,8 @@ export default class Timer {
     this.state = TimerState.NOT_STARTED
   }
 
-  // Pause the timer
   pause() {
     if (this.state === TimerState.PAUSED) {
-      console.warn(`${this.type} timer is already paused`)
       return
     }
     if (this.state !== TimerState.RUNNING) {
@@ -90,17 +92,18 @@ export default class Timer {
     clearInterval(this.timerId)
   }
 
-  // Unpause the timer
   unpause() {
     if (this.state === TimerState.RUNNING) {
-      console.warn(`${this.type} timer is already running`)
       return
     }
     if (this.state !== TimerState.PAUSED) {
       throw new Error(`Cannot unpause a timer that is not in the PAUSED state. (state = ${this.state})`)
     }
+    if (this.pauseTime === null) {
+      throw new Error(`pauseTime is null but state is ${this.state}`)
+    }
     this.state = TimerState.RUNNING
-    this.elapsedPause += Date.now() - this.pauseTime!
+    this.elapsedPause += Date.now() - this.pauseTime
     this.timerId = setInterval(this.tick.bind(this), this.interval)
   }
 

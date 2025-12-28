@@ -1,13 +1,23 @@
 {
   "compilerOptions": {
-    "target": "es5",
-    "module": "es6",
-    "lib": ["es2017", "dom"],
-    "allowJs": false,
+    "target": "ES2022",
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "esModuleInterop": true,
-    "outDir": "dist",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
     "types": ["chrome"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "vite.config.ts"]
 }

@@ -1,21 +1,42 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Tab Timer",
   "description": "Watch how much time you've spent on a website today.",
   "version": "1.0",
   "icons": {
-    "32": "public/favicon32.png",
-    "64": "public/favicon32.png",
-    "128": "public/favicon128.png"
+    "32": "favicon32.png",
+    "64": "favicon64.png",
+    "128": "favicon128.png"
   },
-  "browser_action": {
-    "default_popup": "public/popup.html"
+  "action": {
+    "default_popup": "popup.html"
   },
   "background": {
-    "scripts": ["background.js"],
-    "persistent": false
+    "service_worker": "src/background.ts",
+    "type": "module"
   },
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage"],
+  "host_permissions": [
+    "*://blank.org/*",
+    "*://*.discord.com/*",
+    "*://*.discordapp.com/*",
+    "*://*.facebook.com/*",
+    "*://*.instagram.com/*",
+    "*://*.linkedin.com/*",
+    "*://*.pinterest.com/*",
+    "*://*.messenger.com/*",
+    "*://*.quora.com/*",
+    "*://*.reddit.com/*",
+    "*://*.slack.com/*",
+    "*://*.snapchat.com/*",
+    "*://*.telegram.org/*",
+    "*://*.tiktok.com/*",
+    "*://*.twitch.tv/*",
+    "*://*.twitter.com/*",
+    "*://*.tumblr.com/*",
+    "*://*.whatsapp.com/*",
+    "*://*.youtube.com/*"
+  ],
   "content_scripts": [
     {
       "matches": [
@@ -39,8 +60,7 @@
         "*://*.whatsapp.com/*",
         "*://*.youtube.com/*"
       ],
-      "js": ["content.js"]
+      "js": ["src/content.ts"]
     }
-  ],
-  "web_accessible_resources": []
+  ]
 }

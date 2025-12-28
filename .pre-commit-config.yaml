@@ -1,0 +1,19 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+  - repo: local
+    hooks:
+      - id: eslint
+        name: eslint
+        entry: pnpm eslint --max-warnings 0
+        language: system
+        files: \.ts$
+      - id: prettier
+        name: prettier
+        entry: pnpm prettier --check
+        language: system
+        files: \.(ts|js|json|md|html|css|yml|yaml)$
