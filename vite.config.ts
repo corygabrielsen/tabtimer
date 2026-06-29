@@ -1,11 +1,20 @@
 import { defineConfig } from 'vite'
 import { crx } from '@crxjs/vite-plugin'
-import manifest from './manifest.json'
+import baseManifest from './manifest.json'
 import pkg from './package.json'
 
-// package.json is the single source of truth for the version; stamp it onto
-// the manifest at build time so they can never diverge.
-manifest.version = pkg.version
+// Single sources of truth assembled at build time so nothing drifts:
+//   - the version lives in package.json
+//   - the tracked sites live in host_permissions; the content script's
+//     `matches` is derived from them rather than duplicated.
+const manifest = {
+  ...baseManifest,
+  version: pkg.version,
+  content_scripts: baseManifest.content_scripts.map((cs) => ({
+    ...cs,
+    matches: baseManifest.host_permissions,
+  })),
+}
 
 export default defineConfig({
   plugins: [crx({ manifest })],
