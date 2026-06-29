@@ -3,9 +3,11 @@
 [![CI](https://github.com/corygabrielsen/tabtimer/actions/workflows/ci.yml/badge.svg)](https://github.com/corygabrielsen/tabtimer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Chrome extension that shows how much time you've actively spent on social-media
-sites today — as an unobtrusive on-page overlay and a toolbar popup.
+A Chrome extension that shows how much time you've actively spent on the sites
+you choose — as an unobtrusive on-page overlay and a toolbar popup.
 
+- **You choose what's tracked** — installs with **no host-permission prompt**;
+  enable suggested social sites (or add your own) from the popup or options page.
 - **On-page overlay** — a small pill at the top of tracked sites showing the
   running time; expand it for Today / Focus / Session, or hide it.
 - **Popup** — the active site's time today, with a reset and a show/hide toggle.
@@ -21,6 +23,8 @@ From source (development):
 1. `pnpm install && pnpm build`
 2. Chrome → Extensions → enable **Developer mode**
 3. **Load unpacked** → select `dist/`
+4. The options page opens on first run — enable the sites to track (or use the
+   popup's **Enable on this site**).
 
 ## Develop
 
