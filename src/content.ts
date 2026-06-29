@@ -1,3 +1,4 @@
+import Blocker from './Blocker'
 import Controller from './Controller'
 import Model from './Model'
 import View from './View'
@@ -5,7 +6,8 @@ import View from './View'
 try {
   const model = new Model()
   const view = new View(model)
-  const controller = new Controller(model, view)
+  const blocker = new Blocker(model)
+  const controller = new Controller(model, view, blocker)
   model.start()
 
   // Best-effort: persist pending focus time and tear down listeners/intervals

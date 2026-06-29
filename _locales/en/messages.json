@@ -20,6 +20,18 @@
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
   "overlayLarger": { "message": "Make Tab Timer larger" },
 
+  "blockTitle": { "message": "Time's up" },
+  "blockAllSites": { "message": "all tracked sites" },
+  "blockDetail": {
+    "message": "$elapsed$ today · $limit$ limit",
+    "placeholders": {
+      "elapsed": { "content": "$1" },
+      "limit": { "content": "$2" }
+    }
+  },
+  "blockSnooze": { "message": "5 more minutes" },
+  "blockManage": { "message": "Limits…" },
+
   "popupResetToday": { "message": "Reset today" },
   "popupResetAria": {
     "message": "Reset today's time for $host$",
@@ -45,5 +57,23 @@
   "optionsAddAria": { "message": "Site to track" },
   "optionsYourSites": { "message": "Your sites" },
   "optionsEnable": { "message": "Enable" },
-  "optionsEnabled": { "message": "Enabled" }
+  "optionsEnabled": { "message": "Enabled" },
+
+  "optionsLimitsHeading": { "message": "Daily limits" },
+  "optionsLimitsHelp": {
+    "message": "Block a site after this many minutes of active use today. Blank = no limit."
+  },
+  "optionsGlobalLimit": { "message": "All tracked sites" },
+  "optionsMinutes": { "message": "min" },
+  "optionsLimitOff": { "message": "off" },
+  "optionsSiteLimitAria": {
+    "message": "Daily limit in minutes for $host$",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+
+  "popupLimit": { "message": "Daily limit" },
+  "popupLimitAria": {
+    "message": "Daily limit in minutes for $host$",
+    "placeholders": { "host": { "content": "$1" } }
+  }
 }
