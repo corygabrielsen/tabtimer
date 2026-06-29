@@ -1,3 +1,5 @@
+import { baseHost } from './storage'
+
 export type Site = { label: string; host: string }
 
 // Suggested social sites the user can enable with one click. They can also add
@@ -19,22 +21,25 @@ export const SUGGESTED_SITES: Site[] = [
   { label: 'YouTube', host: 'youtube.com' },
 ]
 
-// Normalize free-form input (a bare host or a full URL) to a registrable host.
+// Normalize free-form input (a bare host or a full URL) to the same registrable
+// host the content script keys storage by, so grants and counters line up.
 export function normalizeHost(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) {
     return null
   }
-  let host = trimmed
+  let hostname: string
   try {
     // Accept full URLs and protocol-relative input.
-    host = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).hostname
+    hostname = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).hostname
   } catch {
     return null
   }
-  host = host.replace(/^www\./, '').toLowerCase()
   // Require at least one dot (a real domain).
-  return host.includes('.') ? host : null
+  if (!hostname.includes('.')) {
+    return null
+  }
+  return baseHost(hostname.toLowerCase())
 }
 
 // The match patterns granted/registered for a host: its apex and subdomains.
