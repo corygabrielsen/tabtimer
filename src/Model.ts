@@ -1,9 +1,6 @@
 import Timer, { TimerState, TimerType } from './Timer'
-
-interface Storage {
-  get: <T>(key: string, defaultValue: T, storageArea: 'sync' | 'local' | 'managed') => Promise<T>
-  set: <T>(key: string, value: T, storageArea: 'sync' | 'local' | 'managed') => Promise<void>
-}
+import { storage, todayKeyForHost } from './storage'
+import { sendMessage } from './messages'
 
 export type ElapsedEntry = {
   elapsed: number
@@ -16,56 +13,24 @@ export type ElapsedState = {
   today: ElapsedEntry
 }
 
-export const storage: Storage = {
-  get: <T>(key: string, defaultValue: T, storageArea: 'sync' | 'local' | 'managed') => {
-    return new Promise<T>((resolve, reject) => {
-      chrome.storage[storageArea].get({ [key]: defaultValue }, (items: Record<string, unknown>) => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          const value = items[key]
-          resolve((value === undefined ? defaultValue : value) as T)
-        }
-      })
-    })
-  },
-  set: <T>(key: string, value: T, storageArea: 'sync' | 'local' | 'managed') => {
-    return new Promise((resolve, reject) => {
-      chrome.storage[storageArea].set({ [key]: value }, () => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          resolve()
-        }
-      })
-    })
-  },
-}
-
-const KEY = 'focusTimer_elapsed_today'
-
 export default class Model {
   private countupTimer: Timer
   private focusTimer: Timer
   private started: boolean = false
   private resetTimersAtTime: Date
+  // Focus elapsed last successfully reported to the background writer.
   private previousStorageUpdateElapsedValue: number = 0
-  private previousStorageUpdateTime: Date = new Date(0, 0, 0, 0, 0, 0)
-  private baseKey: string
+  // When we last attempted a report (throttle baseline); epoch so the very
+  // first report fires immediately.
+  private previousStorageUpdateTime: Date = new Date(0)
+  // True while a report is in flight, to prevent overlapping reports.
+  private reporting: boolean = false
+  private host: string
   private resetTimeoutId: number | null = null
   constructor() {
     this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}))
-    this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.updateStorageValues.bind(this))
-    const hostname = window.location.hostname
-    // remove subdomains
-    const parts = hostname.split('.')
-    while (parts.length > 2) {
-      parts.shift()
-    }
-    this.baseKey = `${KEY}_${parts.join('.')}`
-
+    this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.reportElapsed)
+    this.host = window.location.hostname
     this.resetTimersAtTime = this.getResetTime()
   }
 
@@ -118,12 +83,7 @@ export default class Model {
   }
 
   getTodayKey(): string {
-    const today = new Date()
-    // ISO date format and handle 0 padding
-    const key = `${this.baseKey}_${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(
-      today.getDate()
-    ).padStart(2, '0')}`
-    return key
+    return todayKeyForHost(this.host)
   }
 
   // Fallback rollover: the daily reset is normally driven by a setTimeout,
@@ -138,28 +98,59 @@ export default class Model {
     return false
   }
 
-  updateStorageValues = (elapsed: number) => {
+  // Focus-timer tick callback: throttled to ~10s, reports accrued focus time
+  // to the background single-writer.
+  reportElapsed = (elapsed: number) => {
     // If we crossed the reset boundary, reset() has already zeroed today's
     // key and the timers; the `elapsed` argument is now stale, so bail.
     if (this.maybeRollover()) {
       return
     }
-    const key = this.getTodayKey()
-    const diff = elapsed - this.previousStorageUpdateElapsedValue
-    if (diff < 0) {
+    if (elapsed - this.previousStorageUpdateElapsedValue <= 0) {
       return
     }
-    if (new Date().getTime() - this.previousStorageUpdateTime.getTime() < 10000) {
+    if (Date.now() - this.previousStorageUpdateTime.getTime() < 10000) {
       return
     }
+    void this.flushElapsed(elapsed)
+  }
 
-    this.readStorageElapsedToday().then((storedVal) => {
-      const val = storedVal + diff
-      storage.set(key, val, 'local').then(() => {
-        this.previousStorageUpdateElapsedValue = elapsed
-        this.previousStorageUpdateTime = new Date()
+  // Report the focus time accrued since the last successful report to the
+  // background writer, which atomically adds it to today's key. The single
+  // writer makes the cross-tab accumulation race-free.
+  private flushElapsed(elapsed: number): Promise<void> {
+    if (this.reporting) {
+      return Promise.resolve()
+    }
+    const diff = elapsed - this.previousStorageUpdateElapsedValue
+    if (diff <= 0) {
+      return Promise.resolve()
+    }
+    this.reporting = true
+    // Advance the throttle baseline at attempt time so a failing report
+    // (e.g. extension context invalidated) is retried at most every 10s
+    // rather than every tick.
+    this.previousStorageUpdateTime = new Date()
+    const key = this.getTodayKey()
+    return sendMessage({ type: 'addElapsed', key, delta: diff })
+      .then((response) => {
+        // Only advance the reported baseline on success; on failure the same
+        // delta is recomputed and retried next time, so no time is lost.
+        if (response.ok) {
+          this.previousStorageUpdateElapsedValue = elapsed
+        }
       })
-    })
+      .catch(() => {
+        // Service worker asleep or extension reloaded; drop this report.
+      })
+      .finally(() => {
+        this.reporting = false
+      })
+  }
+
+  // Best-effort persist of pending focus time on page unload.
+  flush(): void {
+    void this.flushElapsed(this.elapsedFocusTime())
   }
 
   public readStorageElapsedToday(): Promise<number> {
@@ -167,7 +158,10 @@ export default class Model {
   }
 
   private resetStorageValues(): Promise<void> {
-    return storage.set(this.getTodayKey(), 0, 'local')
+    const key = this.getTodayKey()
+    return sendMessage({ type: 'resetKey', key })
+      .then(() => undefined)
+      .catch(() => undefined)
   }
 
   readElapsed(): Promise<ElapsedState> {
@@ -214,7 +208,7 @@ export default class Model {
 
   reset(): void {
     this.resetTimers()
-    this.resetStorageValues()
+    void this.resetStorageValues()
     this.resetTimersAtTime = this.getResetTime()
 
     if (this.resetTimeoutId !== null) {
