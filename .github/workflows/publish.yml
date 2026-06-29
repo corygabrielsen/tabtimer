@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Manifest version to publish (e.g. 1.1.0). Blank = 1.0.<run_number>.'
+        description: 'Version to publish (e.g. 1.1.0). Blank = version in package.json.'
         required: false
         default: ''
 
@@ -38,16 +38,18 @@ jobs:
         run: |
           version="${{ inputs.version }}"
           if [ -z "$version" ]; then
-            version="1.0.${{ github.run_number }}"
+            version="$(jq -r .version package.json)"
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
           echo "Publishing version $version"
 
-      - name: Set manifest version
+      - name: Set package version
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));m.version=process.env.VERSION;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\n')"
+          # package.json is the source of truth; the build stamps it onto the
+          # manifest (see vite.config.ts).
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
 
       - name: Typecheck, lint, build
         run: |

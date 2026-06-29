@@ -118,9 +118,10 @@ gh variable set CWS_EXTENSION_ID --body "your-item-id"
 
 ## Publishing
 
-- **Actions** tab → **Publish to Chrome Web Store** → **Run workflow**.
-- Leave the version blank to publish `1.0.<run number>`, or type an explicit
-  version like `1.1.0`.
+- Bump the version in `package.json` (the single source of truth — the build
+  stamps it onto the manifest), commit, and tag the release.
+- **Actions** tab → **Publish to Chrome Web Store** → **Run workflow**. Leave
+  the version blank to publish `package.json`'s version, or type an override.
 - The version **must be higher than the currently published version** every
   time, or the Web Store rejects the upload.
 
