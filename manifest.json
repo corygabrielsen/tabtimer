@@ -54,28 +54,6 @@
   ],
   "content_scripts": [
     {
-      "matches": [
-        "*://*.discord.com/*",
-        "*://*.discordapp.com/*",
-        "*://*.facebook.com/*",
-        "*://*.instagram.com/*",
-        "*://*.linkedin.com/*",
-        "*://*.pinterest.com/*",
-        "*://*.messenger.com/*",
-        "*://*.quora.com/*",
-        "*://*.reddit.com/*",
-        "*://*.slack.com/*",
-        "*://*.snapchat.com/*",
-        "*://*.telegram.org/*",
-        "*://*.tiktok.com/*",
-        "*://*.twitch.tv/*",
-        "*://*.twitter.com/*",
-        "*://x.com/*",
-        "*://*.x.com/*",
-        "*://*.tumblr.com/*",
-        "*://*.whatsapp.com/*",
-        "*://*.youtube.com/*"
-      ],
       "js": ["src/content.ts"]
     }
   ]
