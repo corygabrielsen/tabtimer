@@ -72,6 +72,9 @@ export default class Model {
     // Listen for the focus event and handle it
     window.addEventListener('focus', this.handleFocus)
 
+    // React when today's counter is reset elsewhere (popup or another tab).
+    chrome.storage.onChanged.addListener(this.handleStorageChange)
+
     const millisecondsUntilResetTime = this.resetTimersAtTime.getTime() - new Date().getTime()
 
     if (this.resetTimeoutId !== null) {
@@ -233,6 +236,23 @@ export default class Model {
       this.focusTimer.pause()
     } else {
       this.focusTimer.unpause()
+    }
+  }
+
+  handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: chrome.storage.AreaName) => {
+    if (areaName !== 'local') {
+      return
+    }
+    const change = changes[this.getTodayKey()]
+    if (!change) {
+      return
+    }
+    const newValue = (change.newValue as number | undefined) ?? 0
+    if (newValue === 0) {
+      // Today's counter was reset elsewhere. Drop our in-memory accumulation
+      // so the on-screen total reflects the reset and we don't immediately
+      // re-report the stale delta back onto the freshly-zeroed key.
+      this.resetTimers()
     }
   }
 }
