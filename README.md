@@ -37,3 +37,9 @@ pnpm format
 ```sh
 pre-commit install
 ```
+
+## Publishing
+
+Published to the Chrome Web Store (Unlisted) via a manual GitHub Actions
+workflow. See [PUBLISHING.md](PUBLISHING.md) for the one-time credential setup
+and how to run it.

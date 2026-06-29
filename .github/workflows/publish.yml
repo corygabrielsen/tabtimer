@@ -1,0 +1,72 @@
+name: Publish to Chrome Web Store
+
+# Manual-only for now: trigger from the Actions tab. Builds the extension,
+# packages dist/, and uploads + publishes it via the Chrome Web Store API.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Manifest version to publish (e.g. 1.1.0). Blank = 1.0.<run_number>.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-web-store-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            version="1.0.${{ github.run_number }}"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $version"
+
+      - name: Set manifest version
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('manifest.json','utf8'));m.version=process.env.VERSION;fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\n')"
+
+      - name: Typecheck, lint, build
+        run: |
+          pnpm run typecheck
+          pnpm run lint
+          pnpm run build
+
+      - name: Package dist/
+        run: |
+          cd dist
+          zip -r ../tabtimer.zip .
+          cd ..
+          unzip -l tabtimer.zip
+
+      - name: Upload and publish
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+          ZIP_PATH: tabtimer.zip
+        run: ./scripts/publish-chrome-web-store.sh
