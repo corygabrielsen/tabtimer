@@ -1,8 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Tab Timer",
-  "description": "Watch how much time you've spent on a website today.",
+  "short_name": "Tab Timer",
+  "description": "See how much time you've spent on social media sites today.",
   "version": "1.0",
+  "author": {
+    "email": "corygabrielsen@gmail.com"
+  },
+  "homepage_url": "https://github.com/corygabrielsen/tabtimer",
+  "minimum_chrome_version": "110",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",
@@ -11,9 +17,12 @@
   },
   "action": {
     "default_popup": "popup.html",
+    "default_title": "Tab Timer",
     "default_icon": {
       "16": "icon16.png",
-      "32": "icon32.png"
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
     }
   },
   "background": {
@@ -22,8 +31,6 @@
   },
   "permissions": ["storage"],
   "host_permissions": [
-    "*://blank.org/*",
-    "*://*.blank.org/*",
     "*://*.discord.com/*",
     "*://*.discordapp.com/*",
     "*://*.facebook.com/*",
@@ -48,8 +55,6 @@
   "content_scripts": [
     {
       "matches": [
-        "*://blank.org/*",
-        "*://*.blank.org/*",
         "*://*.discord.com/*",
         "*://*.discordapp.com/*",
         "*://*.facebook.com/*",
