@@ -1,13 +1,131 @@
 <!doctype html>
-<html>
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <title>Tab Timer</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+      }
+      body {
+        width: 264px;
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #0e1016;
+        color: #e5e7eb;
+      }
+      .card {
+        padding: 14px 16px 16px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #a5b4fc;
+        margin-bottom: 12px;
+      }
+      .brand::before {
+        content: '';
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        background: linear-gradient(135deg, #6366f1, #4338ca);
+      }
+      .site {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        color: #9aa0ad;
+        margin-bottom: 6px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .metric {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .metric-label {
+        font-size: 12px;
+        color: #c7c9d1;
+      }
+      .metric-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 24px;
+        font-weight: 700;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+      .btn {
+        flex: 1;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        background: #6366f1;
+        color: #fff;
+      }
+      .btn:hover {
+        background: #4f46e5;
+      }
+      .btn.ghost {
+        background: rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+      }
+      .btn.ghost:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+      .btn:focus-visible {
+        outline: 2px solid #a5b4fc;
+        outline-offset: 2px;
+      }
+      .empty {
+        font-size: 13px;
+        color: #9aa0ad;
+        margin: 6px 0 0;
+      }
+    </style>
   </head>
   <body>
-    <button id="reset-btn">Reset</button>
-    <button id="reload-btn">Reload</button>
+    <main class="card">
+      <div class="brand">Tab Timer</div>
 
+      <section id="tracked" hidden>
+        <div class="site" id="site"></div>
+        <div class="metric">
+          <span class="metric-label">Today</span>
+          <span class="metric-value" id="today">00:00:00</span>
+        </div>
+        <div class="actions">
+          <button id="reset-btn" type="button" class="btn">Reset today</button>
+          <button id="toggle-btn" type="button" class="btn ghost">Hide overlay</button>
+        </div>
+      </section>
+
+      <section id="untracked" hidden>
+        <p class="empty">Tab Timer isn't tracking this site.</p>
+      </section>
+
+      <p id="loading" class="empty">Loading…</p>
+    </main>
     <script type="module" src="/src/popup.ts"></script>
   </body>
 </html>

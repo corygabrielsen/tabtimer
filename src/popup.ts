@@ -1,17 +1,14 @@
-import { todayKeyForHost } from './storage'
+import { storage, todayKeyForHost, HIDDEN_KEY } from './storage'
 import { sendMessage } from './messages'
+import { formatTime } from './format'
 
-// The popup runs on chrome-extension://<id>/popup.html, so it cannot build a
-// site key from its own location. Resolve the active tab's hostname instead
-// and reset that site's counter through the background single-writer; open
-// content scripts pick up the change via chrome.storage.onChanged.
+// The popup runs on chrome-extension://<id>/popup.html, so it resolves the
+// active tab's hostname (via host permission) rather than its own location.
 function activeTabHostname(): Promise<string | null> {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const url = tabs[0]?.url
       if (!url) {
-        // No url means we lack host permission for this tab (untracked site);
-        // there is nothing for us to reset.
         resolve(null)
         return
       }
@@ -24,25 +21,78 @@ function activeTabHostname(): Promise<string | null> {
   })
 }
 
-async function resetActiveTab(): Promise<void> {
-  const hostname = await activeTabHostname()
-  if (!hostname) {
+function setHidden(id: string, hidden: boolean) {
+  const el = document.getElementById(id)
+  if (el) {
+    el.toggleAttribute('hidden', hidden)
+  }
+}
+
+async function init() {
+  const host = await activeTabHostname()
+  setHidden('loading', true)
+
+  if (!host) {
+    // Untracked site, or a page we have no host permission for.
+    setHidden('untracked', false)
     return
   }
-  await sendMessage({ type: 'resetKey', key: todayKeyForHost(hostname) }).catch(() => undefined)
+
+  const key = todayKeyForHost(host)
+  const siteEl = document.getElementById('site')
+  const todayEl = document.getElementById('today')
+  const resetBtn = document.getElementById('reset-btn')
+  const toggleBtn = document.getElementById('toggle-btn')
+
+  if (siteEl) {
+    siteEl.textContent = host
+  }
+
+  const renderToday = async () => {
+    const ms = await storage.get(key, 0, 'local').catch(() => 0)
+    if (todayEl) {
+      todayEl.textContent = formatTime(ms)
+    }
+  }
+
+  const renderToggle = async () => {
+    const hidden = await storage.get(HIDDEN_KEY, false, 'local').catch(() => false)
+    if (toggleBtn) {
+      toggleBtn.textContent = hidden ? 'Show overlay' : 'Hide overlay'
+    }
+  }
+
+  await Promise.all([renderToday(), renderToggle()])
+  setHidden('tracked', false)
+
+  resetBtn?.setAttribute('aria-label', `Reset today's time for ${host}`)
+  resetBtn?.addEventListener('click', () => {
+    if (todayEl) {
+      todayEl.textContent = formatTime(0) // optimistic
+    }
+    void sendMessage({ type: 'resetKey', key }).catch(() => undefined)
+  })
+
+  toggleBtn?.addEventListener('click', async () => {
+    const hidden = await storage.get(HIDDEN_KEY, false, 'local').catch(() => false)
+    await storage.set(HIDDEN_KEY, !hidden, 'local').catch(() => undefined)
+    await renderToggle()
+  })
+
+  // Keep the popup live while it's open.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') {
+      return
+    }
+    if (changes[key]) {
+      void renderToday()
+    }
+    if (changes[HIDDEN_KEY]) {
+      void renderToggle()
+    }
+  })
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const reloadBtn = document.getElementById('reload-btn')
-  const resetBtn = document.getElementById('reset-btn')
-
-  resetBtn?.addEventListener('click', () => {
-    void resetActiveTab()
-  })
-
-  reloadBtn?.addEventListener('click', () => {
-    // Reload the active page (not the whole extension, which would invalidate
-    // every open content script) so it re-reads the zeroed counter.
-    void resetActiveTab().then(() => chrome.tabs.reload())
-  })
+  void init()
 })
