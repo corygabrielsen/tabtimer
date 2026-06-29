@@ -11,10 +11,15 @@
     "dev": "vite",
     "build": "vite build",
     "watch": "vite build --watch",
+    "package": "vite build && cd dist && zip -r ../tabtimer.zip . -x '.vite/*'",
+    "clean": "rm -rf dist tabtimer.zip",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"vite.config.ts\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=20"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0",

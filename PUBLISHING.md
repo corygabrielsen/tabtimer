@@ -23,8 +23,7 @@ in required store metadata — do that once by hand.
 
 1. Build a package locally:
    ```sh
-   pnpm install && pnpm build
-   ( cd dist && zip -r ../tabtimer.zip . )
+   pnpm install && pnpm package
    ```
 2. Go to the [Developer Dashboard](https://chrome.google.com/webstore/devconsole)
    → **Add new item** → upload `tabtimer.zip`.
@@ -128,8 +127,7 @@ gh variable set CWS_EXTENSION_ID --body "your-item-id"
 ## Testing the script locally
 
 ```sh
-pnpm build
-( cd dist && zip -r ../tabtimer.zip . )
+pnpm package
 export CWS_CLIENT_ID=... CWS_CLIENT_SECRET=... CWS_REFRESH_TOKEN=... CWS_EXTENSION_ID=...
 ZIP_PATH=tabtimer.zip ./scripts/publish-chrome-web-store.sh
 ```

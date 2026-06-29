@@ -51,17 +51,14 @@ jobs:
           # manifest (see vite.config.ts).
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version=process.env.VERSION;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
 
-      - name: Typecheck, lint, build
+      - name: Typecheck and lint
         run: |
           pnpm run typecheck
           pnpm run lint
-          pnpm run build
 
-      - name: Package dist/
+      - name: Package
         run: |
-          cd dist
-          zip -r ../tabtimer.zip .
-          cd ..
+          pnpm package
           unzip -l tabtimer.zip
 
       - name: Upload and publish
