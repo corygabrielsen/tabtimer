@@ -107,11 +107,19 @@ export default class Timer {
     this.timerId = setInterval(this.tick.bind(this), this.interval)
   }
 
-  // Reset the timer and elapsed time
+  // Reset the elapsed time while preserving the running/paused state.
+  // A paused timer (e.g. the focus timer on a blurred tab at midnight)
+  // must stay paused, otherwise it would silently resume and count
+  // non-focus time after the daily reset.
   reset() {
-    if (this.state !== TimerState.NOT_STARTED) {
-      this.stop()
-      this.start()
+    if (this.state === TimerState.NOT_STARTED) {
+      return
+    }
+    const wasPaused = this.state === TimerState.PAUSED
+    this.stop()
+    this.start()
+    if (wasPaused) {
+      this.pause()
     }
   }
 }
