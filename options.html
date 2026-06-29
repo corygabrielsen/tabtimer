@@ -22,21 +22,9 @@
         padding: 28px 24px 40px;
       }
       .brand {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 13px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        color: #a5b4fc;
-      }
-      .brand::before {
-        content: '';
-        width: 12px;
-        height: 12px;
-        border-radius: 3px;
-        background: linear-gradient(135deg, #6366f1, #4338ca);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        color: #8a8a8a;
       }
       h1 {
         font-size: 20px;
@@ -56,21 +44,21 @@
         margin: 22px 0 8px;
       }
       .btn {
-        border: 0;
-        border-radius: 8px;
-        padding: 9px 14px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 2px;
+        padding: 8px 14px;
         font: inherit;
         font-size: 13px;
-        font-weight: 600;
+        font-weight: 500;
         cursor: pointer;
-        background: #6366f1;
-        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+        color: #f5f5f5;
       }
       .btn:hover {
-        background: #4f46e5;
+        background: rgba(255, 255, 255, 0.14);
       }
       .btn:focus-visible {
-        outline: 2px solid #a5b4fc;
+        outline: 1px solid #9a9a9a;
         outline-offset: 2px;
       }
       .list {
@@ -78,7 +66,7 @@
         margin: 0;
         padding: 0;
         border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
+        border-radius: 2px;
         overflow: hidden;
       }
       .item {
@@ -109,26 +97,27 @@
       }
       .toggle {
         border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 999px;
+        border-radius: 2px;
         padding: 5px 12px;
         font: inherit;
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 500;
         cursor: pointer;
         background: transparent;
-        color: #e5e7eb;
+        color: #8a8a8a;
         white-space: nowrap;
       }
       .toggle:hover {
         border-color: rgba(255, 255, 255, 0.3);
+        color: #e5e7eb;
       }
       .toggle.on {
-        background: rgba(99, 102, 241, 0.25);
-        border-color: #6366f1;
-        color: #c7d2fe;
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.4);
+        color: #f5f5f5;
       }
       .toggle:focus-visible {
-        outline: 2px solid #a5b4fc;
+        outline: 1px solid #9a9a9a;
         outline-offset: 2px;
       }
       .addrow {
@@ -138,15 +127,15 @@
       .addrow input {
         flex: 1;
         border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 8px;
-        padding: 9px 12px;
+        border-radius: 2px;
+        padding: 8px 12px;
         font: inherit;
         font-size: 13px;
         background: #161922;
         color: #e5e7eb;
       }
       .addrow input:focus-visible {
-        outline: 2px solid #a5b4fc;
+        outline: 1px solid #9a9a9a;
         outline-offset: 0;
       }
     </style>
