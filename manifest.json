@@ -33,6 +33,6 @@
     "service_worker": "src/background.ts",
     "type": "module"
   },
-  "permissions": ["storage", "scripting"],
+  "permissions": ["storage", "scripting", "activeTab"],
   "optional_host_permissions": ["*://*/*"]
 }
