@@ -71,9 +71,10 @@ export default class Model {
 
   getResetTime(): Date {
     const now = new Date()
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
-    const nextMidnight = new Date(midnight.getTime() + 24 * 60 * 60 * 1000)
-    return nextMidnight
+    // Next local calendar midnight. Day overflow normalizes across months,
+    // and rebuilding from y/m/d (rather than adding 24h) stays correct on
+    // DST-transition days where a local day is 23h or 25h long.
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0)
   }
 
   isResetTime(): boolean {
