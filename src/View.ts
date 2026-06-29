@@ -6,7 +6,7 @@ function pad(num: number): string {
 }
 
 function formatTime(millis: number): string {
-  const seconds = Math.floor(millis / 1000)
+  const seconds = Math.floor(Math.max(0, millis) / 1000)
   const minutes = Math.floor(seconds / 60)
   const hours = Math.floor(minutes / 60)
   return `${pad(hours)}:${pad(minutes % 60)}:${pad(seconds % 60)}`
@@ -34,7 +34,7 @@ export default class View {
   private container: HTMLDivElement
   private expanded = false
   private selectedTimer: TimerKey = 'today'
-  private timeElements: Map<TimerKey | 'collapsed', HTMLSpanElement> = new Map()
+  private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
 
   constructor(private model: Model) {
@@ -116,7 +116,7 @@ export default class View {
     })
 
     div.textContent = formatTime(millis)
-    this.timeElements.set('collapsed', div as unknown as HTMLSpanElement)
+    this.timeElements.set('collapsed', div)
 
     div.addEventListener('click', (e) => {
       e.stopPropagation()
