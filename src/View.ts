@@ -38,6 +38,10 @@ export default class View {
   private needsRebuild = true
 
   constructor(private model: Model) {
+    // Drop a stale widget left by a previous instance (extension
+    // re-injection / SPA remount) so we never stack duplicate roots.
+    document.getElementById('tabtimer-root')?.remove()
+
     this.container = document.createElement('div')
     this.container.id = 'tabtimer-root'
     this.applyContainerStyles()
@@ -202,6 +206,14 @@ export default class View {
 
   updateDisplayText() {
     this.render()
+  }
+
+  destroy() {
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    window.removeEventListener('blur', this.handleBlur)
+    window.removeEventListener('focus', this.handleFocus)
+    document.removeEventListener('click', this.handleOutsideClick)
+    this.container.remove()
   }
 
   private handleOutsideClick = (e: MouseEvent) => {
