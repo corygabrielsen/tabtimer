@@ -1,14 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#6366f1"/>
-      <stop offset="100%" style="stop-color:#8b5cf6"/>
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4338ca"/>
     </linearGradient>
   </defs>
-  <rect width="128" height="128" rx="24" fill="url(#bg)"/>
-  <circle cx="64" cy="68" r="36" fill="none" stroke="#fff" stroke-width="6"/>
-  <line x1="64" y1="68" x2="64" y2="44" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
-  <line x1="64" y1="68" x2="80" y2="68" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
-  <rect x="58" y="24" width="12" height="8" rx="2" fill="#fff"/>
-  <circle cx="64" cy="68" r="4" fill="#fff"/>
+
+  <!-- app-icon background -->
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+
+  <!-- stopwatch crown + stem -->
+  <rect x="57" y="13" width="14" height="11" rx="3.5" fill="#fff"/>
+  <rect x="61" y="21" width="6" height="10" fill="#fff"/>
+
+  <!-- clock face -->
+  <circle cx="64" cy="68" r="38" fill="#fff"/>
+
+  <!-- elapsed-time wedge: 12 o'clock sweeping clockwise to ~4:30 -->
+  <path d="M64 68 L64 30 A38 38 0 0 1 90.87 94.87 Z" fill="#4f46e5"/>
+
+  <!-- hand at the leading edge of the elapsed wedge -->
+  <line x1="64" y1="68" x2="85.2" y2="89.2" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
+
+  <!-- center hub -->
+  <circle cx="64" cy="68" r="5" fill="#fff"/>
 </svg>
