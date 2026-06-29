@@ -1,5 +1,5 @@
 import Timer, { TimerState, TimerType } from './Timer'
-import { storage, todayKeyForHost } from './storage'
+import { storage, baseKeyForHost, todayKeyForHost } from './storage'
 import { sendMessage } from './messages'
 
 export type ElapsedEntry = {
@@ -74,6 +74,10 @@ export default class Model {
 
     // React when today's counter is reset elsewhere (popup or another tab).
     chrome.storage.onChanged.addListener(this.handleStorageChange)
+
+    // Past days' keys are never read again; drop them so chrome.storage.local
+    // doesn't grow without bound (one new key per tracked site per day).
+    this.pruneOldKeys()
 
     const millisecondsUntilResetTime = this.resetTimersAtTime.getTime() - new Date().getTime()
 
@@ -154,6 +158,23 @@ export default class Model {
   // Best-effort persist of pending focus time on page unload.
   flush(): void {
     void this.flushElapsed(this.elapsedFocusTime())
+  }
+
+  // Remove this host's daily keys for every day except today. Safe to run
+  // from the content script: it never touches today's key, so it can't race
+  // the background writer's accumulation.
+  private pruneOldKeys(): void {
+    const prefix = `${baseKeyForHost(this.host)}_`
+    const todayKey = this.getTodayKey()
+    storage
+      .keys('local')
+      .then((keys) => {
+        const stale = keys.filter((key) => key.startsWith(prefix) && key !== todayKey)
+        return stale.length > 0 ? storage.remove(stale, 'local') : undefined
+      })
+      .catch(() => {
+        // Pruning is best-effort; ignore storage errors.
+      })
   }
 
   public readStorageElapsedToday(): Promise<number> {
