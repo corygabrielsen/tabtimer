@@ -1,6 +1,11 @@
 import type Model from './Model'
 import type { ElapsedState } from './Model'
 
+// Top of the stacking context so the widget stays visible above page chrome.
+const MAX_Z_INDEX = 2147483647
+
+const HOST_ID = 'tabtimer-root'
+
 function pad(num: number): string {
   return num.toString().padStart(2, '0')
 }
@@ -22,7 +27,7 @@ const LABELS: Record<TimerKey, string> = {
   session: 'Session',
 }
 
-// Map our keys to the model's keys
+// Map our display keys to the model's keys.
 function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
   if (key === 'session') {
     return elapsed.countup.elapsed
@@ -30,48 +35,135 @@ function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
   return elapsed[key].elapsed
 }
 
+// All widget styling lives inside the shadow root, so the host page's CSS
+// can't reach in and the widget's styles can't leak out.
+const STYLES = `
+  :host { all: initial; }
+  * { box-sizing: border-box; }
+  .widget {
+    font-family: system-ui, -apple-system, sans-serif;
+    color: #fff;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .pill {
+    display: block;
+    margin: 0;
+    border: 0;
+    background: rgba(0, 0, 0, 0.85);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 0 0 8px 8px;
+    cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .panel {
+    background: rgba(0, 0, 0, 0.92);
+    border-radius: 0 0 10px 10px;
+    overflow: hidden;
+    min-width: 168px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  }
+  .row {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin: 0;
+    padding: 10px 14px;
+    border: 0;
+    border-left: 3px solid transparent;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    transition: background 0.15s;
+  }
+  .row:hover { background: rgba(255, 255, 255, 0.1); }
+  .row[aria-pressed='true'] {
+    background: rgba(99, 102, 241, 0.3);
+    border-left-color: #6366f1;
+  }
+  .label {
+    color: #c7c9d1;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .row[aria-pressed='true'] .label { color: #c7d2fe; }
+  .time {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #e5e7eb;
+  }
+  .row[aria-pressed='true'] .time { color: #fff; }
+  .pill:focus-visible,
+  .row:focus-visible {
+    outline: 2px solid #a5b4fc;
+    outline-offset: -2px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .row { transition: none; }
+  }
+`
+
 export default class View {
-  private container: HTMLDivElement
+  private host: HTMLDivElement
+  private shadow: ShadowRoot
+  private mount: HTMLDivElement
   private expanded = false
   private selectedTimer: TimerKey = 'today'
   private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
+  private outsideClickAttached = false
 
   constructor(private model: Model) {
-    // Drop a stale widget left by a previous instance (extension
-    // re-injection / SPA remount) so we never stack duplicate roots.
-    document.getElementById('tabtimer-root')?.remove()
+    // Drop a stale widget left by a previous instance (re-injection / SPA
+    // remount) so we never stack duplicate hosts.
+    document.getElementById(HOST_ID)?.remove()
 
-    this.container = document.createElement('div')
-    this.container.id = 'tabtimer-root'
-    this.applyContainerStyles()
-    document.body.appendChild(this.container)
+    this.host = document.createElement('div')
+    this.host.id = HOST_ID
+    this.applyHostStyles()
+
+    // Closed shadow root: the page can't query into it, and its CSS is isolated.
+    this.shadow = this.host.attachShadow({ mode: 'closed' })
+    const style = document.createElement('style')
+    style.textContent = STYLES
+    this.mount = document.createElement('div')
+    this.mount.className = 'widget'
+    this.shadow.append(style, this.mount)
+
+    document.body.appendChild(this.host)
 
     this.render()
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
-    window.addEventListener('blur', this.handleBlur)
     window.addEventListener('focus', this.handleFocus)
-    document.addEventListener('click', this.handleOutsideClick)
   }
 
-  private applyContainerStyles() {
-    const s = this.container.style
-    s.position = 'fixed'
-    s.top = '0'
-    s.left = '50%'
-    s.transform = 'translateX(-50%)'
-    s.zIndex = '2147483647'
-    s.fontFamily = 'system-ui, -apple-system, sans-serif'
-    s.fontSize = '13px'
-    s.userSelect = 'none'
+  private applyHostStyles() {
+    // Structural styles only, marked important so page rules can't dislodge the
+    // widget; everything visual is handled inside the shadow root.
+    const s = this.host.style
+    s.setProperty('position', 'fixed', 'important')
+    s.setProperty('top', '0', 'important')
+    s.setProperty('left', '50%', 'important')
+    s.setProperty('transform', 'translateX(-50%)', 'important')
+    s.setProperty('z-index', String(MAX_Z_INDEX), 'important')
   }
 
   private render() {
     this.model
       .readElapsed()
       .then((elapsed) => {
-        // If we just need to update times, do that without rebuilding DOM
+        // If we just need fresh times, update text in place without rebuilding.
         if (!this.needsRebuild && this.timeElements.size > 0) {
           this.updateTimes(elapsed)
           return
@@ -79,12 +171,11 @@ export default class View {
 
         this.needsRebuild = false
         this.timeElements.clear()
-        this.container.innerHTML = ''
 
         if (this.expanded) {
-          this.renderExpanded(elapsed)
+          this.mount.replaceChildren(this.buildExpanded(elapsed))
         } else {
-          this.renderCollapsed(elapsed)
+          this.mount.replaceChildren(this.buildCollapsed(elapsed))
         }
       })
       .catch(() => {
@@ -109,105 +200,88 @@ export default class View {
     }
   }
 
-  private renderCollapsed(elapsed: ElapsedState) {
-    const div = document.createElement('div')
-    const millis = getElapsedForKey(elapsed, this.selectedTimer)
+  private buildCollapsed(elapsed: ElapsedState): HTMLButtonElement {
+    const pill = document.createElement('button')
+    pill.type = 'button'
+    pill.className = 'pill'
+    pill.setAttribute('aria-expanded', 'false')
+    pill.setAttribute('aria-label', `Tab Timer — ${LABELS[this.selectedTimer]}. Activate to expand.`)
+    pill.textContent = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+    this.timeElements.set('collapsed', pill)
 
-    Object.assign(div.style, {
-      background: 'rgba(0, 0, 0, 0.85)',
-      color: '#fff',
-      padding: '6px 14px',
-      borderRadius: '0 0 8px 8px',
-      cursor: 'pointer',
-      fontFamily: 'monospace',
-      fontSize: '13px',
-      fontWeight: '500',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-    })
-
-    div.textContent = formatTime(millis)
-    this.timeElements.set('collapsed', div)
-
-    div.addEventListener('click', (e) => {
+    pill.addEventListener('click', (e) => {
       e.stopPropagation()
-      this.expanded = true
-      this.needsRebuild = true
-      this.render()
+      this.setExpanded(true)
     })
 
-    this.container.appendChild(div)
+    return pill
   }
 
-  private renderExpanded(elapsed: ElapsedState) {
+  private buildExpanded(elapsed: ElapsedState): HTMLDivElement {
     const panel = document.createElement('div')
-
-    Object.assign(panel.style, {
-      background: 'rgba(0, 0, 0, 0.9)',
-      color: '#fff',
-      borderRadius: '0 0 10px 10px',
-      overflow: 'hidden',
-      boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-      minWidth: '160px',
-    })
+    panel.className = 'panel'
+    panel.setAttribute('role', 'group')
+    panel.setAttribute('aria-label', 'Tab Timer')
 
     for (const key of TIMER_KEYS) {
-      const row = document.createElement('div')
       const isSelected = key === this.selectedTimer
-      const millis = getElapsedForKey(elapsed, key)
 
-      Object.assign(row.style, {
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '10px 14px',
-        cursor: 'pointer',
-        background: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'transparent',
-        borderLeft: isSelected ? '3px solid #6366f1' : '3px solid transparent',
-        transition: 'background 0.15s',
-      })
-
-      row.addEventListener('mouseenter', () => {
-        if (!isSelected) {
-          row.style.background = 'rgba(255,255,255,0.1)'
-        }
-      })
-      row.addEventListener('mouseleave', () => {
-        row.style.background = isSelected ? 'rgba(99, 102, 241, 0.3)' : 'transparent'
-      })
+      const row = document.createElement('button')
+      row.type = 'button'
+      row.className = 'row'
+      row.setAttribute('aria-pressed', String(isSelected))
 
       const label = document.createElement('span')
+      label.className = 'label'
       label.textContent = LABELS[key]
-      Object.assign(label.style, {
-        color: isSelected ? '#a5b4fc' : '#999',
-        fontSize: '12px',
-        fontWeight: '500',
-      })
 
       const time = document.createElement('span')
-      time.textContent = formatTime(millis)
-      Object.assign(time.style, {
-        fontFamily: 'monospace',
-        fontSize: '13px',
-        fontWeight: '600',
-        color: isSelected ? '#fff' : '#ccc',
-      })
+      time.className = 'time'
+      time.textContent = formatTime(getElapsedForKey(elapsed, key))
       this.timeElements.set(key, time)
 
-      row.appendChild(label)
-      row.appendChild(time)
-
+      row.append(label, time)
       row.addEventListener('click', (e) => {
         e.stopPropagation()
         this.selectedTimer = key
-        this.expanded = false
-        this.needsRebuild = true
-        this.render()
+        this.setExpanded(false)
       })
 
       panel.appendChild(row)
     }
 
-    this.container.appendChild(panel)
+    return panel
+  }
+
+  private setExpanded(expanded: boolean) {
+    this.expanded = expanded
+    this.needsRebuild = true
+    if (expanded) {
+      this.attachOutsideClick()
+    } else {
+      this.detachOutsideClick()
+    }
+    this.render()
+  }
+
+  // Only listen for outside clicks / Escape while the panel is open, rather
+  // than holding a permanent document-wide hook on every page.
+  private attachOutsideClick() {
+    if (this.outsideClickAttached) {
+      return
+    }
+    document.addEventListener('click', this.handleOutsideClick)
+    document.addEventListener('keydown', this.handleKeydown)
+    this.outsideClickAttached = true
+  }
+
+  private detachOutsideClick() {
+    if (!this.outsideClickAttached) {
+      return
+    }
+    document.removeEventListener('click', this.handleOutsideClick)
+    document.removeEventListener('keydown', this.handleKeydown)
+    this.outsideClickAttached = false
   }
 
   updateDisplayText() {
@@ -216,22 +290,22 @@ export default class View {
 
   destroy() {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
-    window.removeEventListener('blur', this.handleBlur)
     window.removeEventListener('focus', this.handleFocus)
-    document.removeEventListener('click', this.handleOutsideClick)
-    this.container.remove()
+    this.detachOutsideClick()
+    this.host.remove()
   }
 
   private handleOutsideClick = (e: MouseEvent) => {
-    if (this.expanded && !this.container.contains(e.target as Node)) {
-      this.expanded = false
-      this.needsRebuild = true
-      this.render()
+    // Clicks inside the (closed) shadow root retarget to the host element.
+    if (this.expanded && !this.host.contains(e.target as Node)) {
+      this.setExpanded(false)
     }
   }
 
-  handleBlur = () => {
-    // Keep showing current state
+  private handleKeydown = (e: KeyboardEvent) => {
+    if (this.expanded && e.key === 'Escape') {
+      this.setExpanded(false)
+    }
   }
 
   handleFocus = () => {
