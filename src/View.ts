@@ -1,21 +1,12 @@
 import type Model from './Model'
 import type { ElapsedState } from './Model'
+import { formatTime } from './format'
+import { storage, HIDDEN_KEY } from './storage'
 
 // Top of the stacking context so the widget stays visible above page chrome.
 const MAX_Z_INDEX = 2147483647
 
 const HOST_ID = 'tabtimer-root'
-
-function pad(num: number): string {
-  return num.toString().padStart(2, '0')
-}
-
-function formatTime(millis: number): string {
-  const seconds = Math.floor(Math.max(0, millis) / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  return `${pad(hours)}:${pad(minutes % 60)}:${pad(seconds % 60)}`
-}
 
 type TimerKey = 'today' | 'focus' | 'session'
 
@@ -68,6 +59,35 @@ const STYLES = `
     min-width: 168px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 8px 8px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #a5b4fc;
+  }
+  .close {
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: #9aa0ad;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 4px 7px;
+    border-radius: 6px;
+  }
+  .close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
   .row {
     display: flex;
     width: 100%;
@@ -104,7 +124,8 @@ const STYLES = `
   }
   .row[aria-pressed='true'] .time { color: #fff; }
   .pill:focus-visible,
-  .row:focus-visible {
+  .row:focus-visible,
+  .close:focus-visible {
     outline: 2px solid #a5b4fc;
     outline-offset: -2px;
   }
@@ -118,6 +139,7 @@ export default class View {
   private shadow: ShadowRoot
   private mount: HTMLDivElement
   private expanded = false
+  private hidden = false
   private selectedTimer: TimerKey = 'today'
   private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
@@ -142,10 +164,18 @@ export default class View {
 
     document.body.appendChild(this.host)
 
-    this.render()
+    // Respect the saved hide preference before the first paint.
+    storage
+      .get(HIDDEN_KEY, false, 'local')
+      .then((hidden) => {
+        this.hidden = hidden
+        this.render()
+      })
+      .catch(() => this.render())
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
+    chrome.storage.onChanged.addListener(this.handleHiddenChange)
   }
 
   private applyHostStyles() {
@@ -160,6 +190,12 @@ export default class View {
   }
 
   private render() {
+    if (this.hidden) {
+      this.timeElements.clear()
+      this.mount.replaceChildren()
+      return
+    }
+
     this.model
       .readElapsed()
       .then((elapsed) => {
@@ -223,6 +259,23 @@ export default class View {
     panel.setAttribute('role', 'group')
     panel.setAttribute('aria-label', 'Tab Timer')
 
+    const head = document.createElement('div')
+    head.className = 'head'
+    const title = document.createElement('span')
+    title.className = 'title'
+    title.textContent = 'Tab Timer'
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.className = 'close'
+    close.textContent = '×'
+    close.setAttribute('aria-label', 'Hide Tab Timer on this page')
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.setHidden(true)
+    })
+    head.append(title, close)
+    panel.appendChild(head)
+
     for (const key of TIMER_KEYS) {
       const isSelected = key === this.selectedTimer
 
@@ -264,6 +317,15 @@ export default class View {
     this.render()
   }
 
+  private setHidden(hidden: boolean) {
+    this.hidden = hidden
+    this.expanded = false
+    this.detachOutsideClick()
+    this.needsRebuild = true
+    void storage.set(HIDDEN_KEY, hidden, 'local').catch(() => {})
+    this.render()
+  }
+
   // Only listen for outside clicks / Escape while the panel is open, rather
   // than holding a permanent document-wide hook on every page.
   private attachOutsideClick() {
@@ -291,6 +353,7 @@ export default class View {
   destroy() {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('focus', this.handleFocus)
+    chrome.storage.onChanged.removeListener(this.handleHiddenChange)
     this.detachOutsideClick()
     this.host.remove()
   }
@@ -306,6 +369,26 @@ export default class View {
     if (this.expanded && e.key === 'Escape') {
       this.setExpanded(false)
     }
+  }
+
+  // React when the hide preference is toggled elsewhere (e.g. the popup).
+  private handleHiddenChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+    if (areaName !== 'local') {
+      return
+    }
+    const change = changes[HIDDEN_KEY]
+    if (!change) {
+      return
+    }
+    const hidden = Boolean(change.newValue)
+    if (hidden === this.hidden) {
+      return
+    }
+    this.hidden = hidden
+    this.expanded = false
+    this.detachOutsideClick()
+    this.needsRebuild = true
+    this.render()
   }
 
   handleFocus = () => {

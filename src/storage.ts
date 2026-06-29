@@ -61,6 +61,10 @@ export const storage: Storage = {
 
 export const ELAPSED_KEY_PREFIX = 'focusTimer_elapsed_today'
 
+// Global preference: when true, the on-page overlay is hidden everywhere.
+// Toggled from the popup and by the overlay's own close control.
+export const HIDDEN_KEY = 'tabtimer_hidden'
+
 // Collapse a hostname to an approximate registrable domain by keeping the
 // last two labels (so old.reddit.com and www.reddit.com share one counter).
 // NOTE: this is wrong for multi-label public suffixes such as `foo.co.uk`
