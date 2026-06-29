@@ -1,6 +1,7 @@
 {
   "name": "tabtimer",
-  "version": "0.0.1",
+  "private": true,
+  "version": "1.0.0",
   "description": "A chrome extension to help you watch how much time you've spent on a website as an overlay.",
   "type": "module",
   "author": "Cory Gabrielsen <corygabrielsen@gmail.com>",
