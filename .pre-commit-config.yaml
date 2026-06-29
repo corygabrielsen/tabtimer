@@ -7,6 +7,12 @@ repos:
       - id: check-yaml
   - repo: local
     hooks:
+      - id: typecheck
+        name: typecheck
+        entry: pnpm typecheck
+        language: system
+        files: \.ts$
+        pass_filenames: false
       - id: eslint
         name: eslint
         entry: pnpm eslint --max-warnings 0

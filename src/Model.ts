@@ -18,14 +18,14 @@ export type ElapsedState = {
 
 export const storage: Storage = {
   get: <T>(key: string, defaultValue: T, storageArea: 'sync' | 'local' | 'managed') => {
-    const keyObj = defaultValue === undefined ? key : { [key]: defaultValue }
-    return new Promise((resolve, reject) => {
-      chrome.storage[storageArea].get(keyObj, (items: Record<string, unknown>) => {
+    return new Promise<T>((resolve, reject) => {
+      chrome.storage[storageArea].get({ [key]: defaultValue }, (items: Record<string, unknown>) => {
         const error = chrome.runtime.lastError
         if (error) {
           reject(error)
         } else {
-          resolve(items[key] as T)
+          const value = items[key]
+          resolve((value === undefined ? defaultValue : value) as T)
         }
       })
     })

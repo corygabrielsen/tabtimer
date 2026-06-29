@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "watch": "vite build --watch",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\" \"vite.config.ts\"",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
