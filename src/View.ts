@@ -1,13 +1,26 @@
 import type Model from './Model'
 import type { ElapsedState } from './Model'
 import { formatTime } from './format'
-import { storage, HIDDEN_KEY } from './storage'
+import { storage, HIDDEN_KEY, SCALE_KEY } from './storage'
 import { t } from './i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
 const MAX_Z_INDEX = 2147483647
 
 const HOST_ID = 'tabtimer-root'
+
+const MIN_SCALE = 0.5
+const MAX_SCALE = 1
+const SCALE_STEP = 0.25
+
+// Snap to a step and clamp to the allowed range; fall back to 1 on garbage.
+function clampScale(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
+  const snapped = Math.round(value / SCALE_STEP) * SCALE_STEP
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, snapped))
+}
 
 type TimerKey = 'today' | 'focus' | 'session'
 
@@ -40,8 +53,9 @@ const STYLES = `
   :host { all: initial; }
   * { box-sizing: border-box; }
   .widget {
-    font-family: system-ui, -apple-system, sans-serif;
-    color: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #f5f5f5;
+    font-variant-numeric: tabular-nums;
     -webkit-user-select: none;
     user-select: none;
   }
@@ -49,93 +63,83 @@ const STYLES = `
     display: block;
     margin: 0;
     border: 0;
-    background: rgba(0, 0, 0, 0.85);
-    color: #fff;
-    padding: 6px 14px;
-    border-radius: 0 0 8px 8px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #f5f5f5;
+    padding: 3px 9px;
+    border-radius: 0 0 2px 2px;
     cursor: pointer;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 13px;
-    font-weight: 600;
+    font: inherit;
+    font-size: 12px;
     letter-spacing: 0.02em;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   .panel {
-    background: rgba(0, 0, 0, 0.92);
-    border-radius: 0 0 10px 10px;
+    background: rgba(0, 0, 0, 0.82);
+    border-radius: 0 0 2px 2px;
     overflow: hidden;
-    min-width: 168px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 8px 8px 14px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  }
-  .title {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #a5b4fc;
-  }
-  .close {
-    margin: 0;
-    border: 0;
-    background: transparent;
-    color: #9aa0ad;
-    cursor: pointer;
-    font-size: 14px;
-    line-height: 1;
-    padding: 4px 7px;
-    border-radius: 6px;
-  }
-  .close:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    min-width: 130px;
   }
   .row {
     display: flex;
     width: 100%;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 18px;
     margin: 0;
-    padding: 10px 14px;
+    padding: 3px 9px;
     border: 0;
-    border-left: 3px solid transparent;
+    border-left: 2px solid transparent;
     background: transparent;
-    color: inherit;
+    color: #8a8a8a;
     cursor: pointer;
     text-align: left;
     font: inherit;
-    transition: background 0.15s;
-  }
-  .row:hover { background: rgba(255, 255, 255, 0.1); }
-  .row[aria-pressed='true'] {
-    background: rgba(99, 102, 241, 0.3);
-    border-left-color: #6366f1;
-  }
-  .label {
-    color: #c7c9d1;
     font-size: 12px;
-    font-weight: 500;
+    transition: background 0.1s;
   }
-  .row[aria-pressed='true'] .label { color: #c7d2fe; }
-  .time {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 13px;
-    font-weight: 600;
-    color: #e5e7eb;
+  .row:hover { background: rgba(255, 255, 255, 0.05); }
+  .row[aria-pressed='true'] {
+    color: #f5f5f5;
+    border-left-color: #f5f5f5;
   }
-  .row[aria-pressed='true'] .time { color: #fff; }
+  .label { font-size: 11px; }
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 5px 3px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+  }
+  .sizes {
+    display: flex;
+    gap: 2px;
+  }
+  .size,
+  .close {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #5f5f5f;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    padding: 1px 6px;
+  }
+  .size:hover:not(:disabled),
+  .close:hover {
+    color: #f5f5f5;
+  }
+  .size:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
   .pill:focus-visible,
   .row:focus-visible,
+  .size:focus-visible,
   .close:focus-visible {
-    outline: 2px solid #a5b4fc;
-    outline-offset: -2px;
+    outline: 1px solid #9a9a9a;
+    outline-offset: -1px;
   }
   @media (prefers-reduced-motion: reduce) {
     .row { transition: none; }
@@ -148,6 +152,7 @@ export default class View {
   private mount: HTMLDivElement
   private expanded = false
   private hidden = false
+  private scale = 1
   private selectedTimer: TimerKey = 'today'
   private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
@@ -172,18 +177,35 @@ export default class View {
 
     document.body.appendChild(this.host)
 
-    // Respect the saved hide preference before the first paint.
-    storage
-      .get(HIDDEN_KEY, false, 'local')
-      .then((hidden) => {
+    // Respect the saved hide/size preferences before the first paint.
+    Promise.all([storage.get(HIDDEN_KEY, false, 'local'), storage.get(SCALE_KEY, 1, 'local')])
+      .then(([hidden, scale]) => {
         this.hidden = hidden
+        this.scale = clampScale(scale)
+        this.applyScale()
         this.render()
       })
       .catch(() => this.render())
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
-    chrome.storage.onChanged.addListener(this.handleHiddenChange)
+    chrome.storage.onChanged.addListener(this.handlePrefsChange)
+  }
+
+  private applyScale() {
+    // Scale the whole widget — text, padding, everything — as one unit, kept
+    // pinned to the top-center.
+    this.host.style.setProperty('transform', `translateX(-50%) scale(${this.scale})`, 'important')
+  }
+
+  private setScale(scale: number) {
+    const next = clampScale(scale)
+    if (next === this.scale) {
+      return
+    }
+    this.scale = next
+    this.applyScale()
+    void storage.set(SCALE_KEY, next, 'local').catch(() => {})
   }
 
   private applyHostStyles() {
@@ -193,8 +215,9 @@ export default class View {
     s.setProperty('position', 'fixed', 'important')
     s.setProperty('top', '0', 'important')
     s.setProperty('left', '50%', 'important')
-    s.setProperty('transform', 'translateX(-50%)', 'important')
+    s.setProperty('transform-origin', 'top center', 'important')
     s.setProperty('z-index', String(MAX_Z_INDEX), 'important')
+    this.applyScale()
   }
 
   private render() {
@@ -267,23 +290,6 @@ export default class View {
     panel.setAttribute('role', 'group')
     panel.setAttribute('aria-label', t('overlayLabel'))
 
-    const head = document.createElement('div')
-    head.className = 'head'
-    const title = document.createElement('span')
-    title.className = 'title'
-    title.textContent = 'Tab Timer'
-    const close = document.createElement('button')
-    close.type = 'button'
-    close.className = 'close'
-    close.textContent = '×'
-    close.setAttribute('aria-label', t('overlayHide'))
-    close.addEventListener('click', (e) => {
-      e.stopPropagation()
-      this.setHidden(true)
-    })
-    head.append(title, close)
-    panel.appendChild(head)
-
     for (const key of TIMER_KEYS) {
       const isSelected = key === this.selectedTimer
 
@@ -312,7 +318,60 @@ export default class View {
       panel.appendChild(row)
     }
 
+    panel.appendChild(this.buildControls())
     return panel
+  }
+
+  // Thin footer strip: size steppers on the left, dismiss on the right.
+  private buildControls(): HTMLDivElement {
+    const controls = document.createElement('div')
+    controls.className = 'controls'
+
+    const sizes = document.createElement('div')
+    sizes.className = 'sizes'
+
+    const smaller = document.createElement('button')
+    smaller.type = 'button'
+    smaller.className = 'size'
+    smaller.textContent = '−'
+    smaller.setAttribute('aria-label', t('overlaySmaller'))
+    smaller.disabled = this.scale <= MIN_SCALE
+
+    const larger = document.createElement('button')
+    larger.type = 'button'
+    larger.className = 'size'
+    larger.textContent = '+'
+    larger.setAttribute('aria-label', t('overlayLarger'))
+    larger.disabled = this.scale >= MAX_SCALE
+
+    const syncSizeButtons = () => {
+      smaller.disabled = this.scale <= MIN_SCALE
+      larger.disabled = this.scale >= MAX_SCALE
+    }
+    smaller.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.setScale(this.scale - SCALE_STEP)
+      syncSizeButtons()
+    })
+    larger.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.setScale(this.scale + SCALE_STEP)
+      syncSizeButtons()
+    })
+    sizes.append(smaller, larger)
+
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.className = 'close'
+    close.textContent = '×'
+    close.setAttribute('aria-label', t('overlayHide'))
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.setHidden(true)
+    })
+
+    controls.append(sizes, close)
+    return controls
   }
 
   private setExpanded(expanded: boolean) {
@@ -362,7 +421,7 @@ export default class View {
   destroy() {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('focus', this.handleFocus)
-    chrome.storage.onChanged.removeListener(this.handleHiddenChange)
+    chrome.storage.onChanged.removeListener(this.handlePrefsChange)
     this.detachOutsideClick()
     this.host.remove()
   }
@@ -380,24 +439,33 @@ export default class View {
     }
   }
 
-  // React when the hide preference is toggled elsewhere (e.g. the popup).
-  private handleHiddenChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+  // React when the hide/size preferences are changed elsewhere (popup, options,
+  // or another tab's overlay).
+  private handlePrefsChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
     if (areaName !== 'local') {
       return
     }
-    const change = changes[HIDDEN_KEY]
-    if (!change) {
-      return
+
+    const hiddenChange = changes[HIDDEN_KEY]
+    if (hiddenChange) {
+      const hidden = Boolean(hiddenChange.newValue)
+      if (hidden !== this.hidden) {
+        this.hidden = hidden
+        this.expanded = false
+        this.detachOutsideClick()
+        this.needsRebuild = true
+        this.render()
+      }
     }
-    const hidden = Boolean(change.newValue)
-    if (hidden === this.hidden) {
-      return
+
+    const scaleChange = changes[SCALE_KEY]
+    if (scaleChange) {
+      const scale = clampScale(Number(scaleChange.newValue))
+      if (scale !== this.scale) {
+        this.scale = scale
+        this.applyScale()
+      }
     }
-    this.hidden = hidden
-    this.expanded = false
-    this.detachOutsideClick()
-    this.needsRebuild = true
-    this.render()
   }
 
   handleFocus = () => {

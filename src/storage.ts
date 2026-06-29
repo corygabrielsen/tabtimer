@@ -65,6 +65,10 @@ export const ELAPSED_KEY_PREFIX = 'focusTimer_elapsed_today'
 // Toggled from the popup and by the overlay's own close control.
 export const HIDDEN_KEY = 'tabtimer_hidden'
 
+// Global preference: overlay zoom factor (1 = default), adjustable from the
+// overlay's own size controls.
+export const SCALE_KEY = 'tabtimer_scale'
+
 // Collapse a hostname to an approximate registrable domain by keeping the
 // last two labels (so old.reddit.com and www.reddit.com share one counter).
 // NOTE: this is wrong for multi-label public suffixes such as `foo.co.uk`

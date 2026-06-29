@@ -17,6 +17,8 @@
     "placeholders": { "label": { "content": "$1" } }
   },
   "overlayHide": { "message": "Hide Tab Timer on this page" },
+  "overlaySmaller": { "message": "Make Tab Timer smaller" },
+  "overlayLarger": { "message": "Make Tab Timer larger" },
 
   "popupResetToday": { "message": "Reset today" },
   "popupResetAria": {
