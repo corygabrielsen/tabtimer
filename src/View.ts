@@ -68,23 +68,29 @@ export default class View {
   }
 
   private render() {
-    this.model.readElapsed().then((elapsed) => {
-      // If we just need to update times, do that without rebuilding DOM
-      if (!this.needsRebuild && this.timeElements.size > 0) {
-        this.updateTimes(elapsed)
-        return
-      }
+    this.model
+      .readElapsed()
+      .then((elapsed) => {
+        // If we just need to update times, do that without rebuilding DOM
+        if (!this.needsRebuild && this.timeElements.size > 0) {
+          this.updateTimes(elapsed)
+          return
+        }
 
-      this.needsRebuild = false
-      this.timeElements.clear()
-      this.container.innerHTML = ''
+        this.needsRebuild = false
+        this.timeElements.clear()
+        this.container.innerHTML = ''
 
-      if (this.expanded) {
-        this.renderExpanded(elapsed)
-      } else {
-        this.renderCollapsed(elapsed)
-      }
-    })
+        if (this.expanded) {
+          this.renderExpanded(elapsed)
+        } else {
+          this.renderCollapsed(elapsed)
+        }
+      })
+      .catch(() => {
+        // Storage/SW error (e.g. extension context invalidated); skip this
+        // frame rather than throwing an unhandled rejection every second.
+      })
   }
 
   private updateTimes(elapsed: ElapsedState) {
