@@ -26,10 +26,12 @@ See how much time you've spent on social media sites today.
 - **storage** — Persist each tracked site's daily elapsed time and the
   show/hide preference locally in `chrome.storage.local`. No data leaves the
   device.
-- **host access (the social-media domains in `host_permissions`)** — Inject the
-  content script on exactly those sites to render the overlay and measure active
-  time. The extension only reads the page's hostname; it does not read page
-  content. Only the named domains are requested — no `<all_urls>`.
+- **scripting** — Register the content script at runtime for the sites the user
+  has enabled, so the overlay can render and measure active time.
+- **optional host access** — No host access is requested at install. When the
+  user enables a site (from the popup or the options page), the extension
+  requests access to just that origin; grants are per-site and revocable. The
+  content script only reads the page's hostname, never page content.
 
 ## Data usage disclosures
 

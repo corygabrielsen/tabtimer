@@ -29,32 +29,6 @@
     "service_worker": "src/background.ts",
     "type": "module"
   },
-  "permissions": ["storage"],
-  "host_permissions": [
-    "*://*.discord.com/*",
-    "*://*.discordapp.com/*",
-    "*://*.facebook.com/*",
-    "*://*.instagram.com/*",
-    "*://*.linkedin.com/*",
-    "*://*.pinterest.com/*",
-    "*://*.messenger.com/*",
-    "*://*.quora.com/*",
-    "*://*.reddit.com/*",
-    "*://*.slack.com/*",
-    "*://*.snapchat.com/*",
-    "*://*.telegram.org/*",
-    "*://*.tiktok.com/*",
-    "*://*.twitch.tv/*",
-    "*://*.twitter.com/*",
-    "*://x.com/*",
-    "*://*.x.com/*",
-    "*://*.tumblr.com/*",
-    "*://*.whatsapp.com/*",
-    "*://*.youtube.com/*"
-  ],
-  "content_scripts": [
-    {
-      "js": ["src/content.ts"]
-    }
-  ]
+  "permissions": ["storage", "scripting"],
+  "optional_host_permissions": ["*://*/*"]
 }
