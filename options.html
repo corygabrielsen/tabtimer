@@ -82,6 +82,7 @@
       }
       .left {
         display: flex;
+        flex: 1;
         flex-direction: column;
         gap: 2px;
         min-width: 0;
@@ -94,6 +95,37 @@
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         font-size: 11px;
         color: #9aa0ad;
+      }
+      .limitrow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+      .limitfield {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .limitfield input {
+        width: 60px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 2px;
+        padding: 6px 8px;
+        font: inherit;
+        font-size: 13px;
+        background: #161922;
+        color: #e5e7eb;
+        text-align: right;
+      }
+      .limitfield input:focus-visible {
+        outline: 1px solid #9a9a9a;
+        outline-offset: 0;
+      }
+      .unit {
+        font-size: 11px;
+        color: #5f5f5f;
       }
       .toggle {
         border: 1px solid rgba(255, 255, 255, 0.16);
@@ -148,6 +180,26 @@
         Tab Timer only tracks time on sites you enable here, and everything stays on your device — nothing is ever sent
         off your browser.
       </p>
+
+      <h2 data-i18n="optionsLimitsHeading">Daily limits</h2>
+      <p class="intro" data-i18n="optionsLimitsHelp">
+        Block a site after this many minutes of active use today. Blank = no limit.
+      </p>
+      <div class="limitrow">
+        <span data-i18n="optionsGlobalLimit">All tracked sites</span>
+        <span class="limitfield">
+          <input
+            id="global-limit"
+            type="number"
+            min="1"
+            inputmode="numeric"
+            placeholder="off"
+            aria-label="Daily limit in minutes across all sites"
+            data-i18n-attr="placeholder=optionsLimitOff;aria-label=optionsGlobalLimit"
+          />
+          <span class="unit" data-i18n="optionsMinutes">min</span>
+        </span>
+      </div>
 
       <button id="enable-suggested" type="button" class="btn" data-i18n="optionsEnableAll">
         Enable all suggested sites
