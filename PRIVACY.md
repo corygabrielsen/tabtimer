@@ -6,9 +6,9 @@ Tab Timer is built to keep your data on your own device.
 
 ## What it does
 
-Tab Timer measures how long you actively spend on a fixed list of social-media
-sites (see `host_permissions` in `manifest.json`) and shows a running total for
-the current day.
+Tab Timer measures how long you actively spend on the sites you choose to enable
+and shows a running total for the current day. No site is tracked until you
+enable it.
 
 ## What it stores
 
