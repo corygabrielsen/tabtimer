@@ -39,7 +39,13 @@ async function syncContentScripts(): Promise<void> {
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => void syncContentScripts())
+chrome.runtime.onInstalled.addListener((details) => {
+  void syncContentScripts()
+  // First run: open the options page so the user can choose sites to track.
+  if (details.reason === 'install') {
+    void chrome.runtime.openOptionsPage()
+  }
+})
 chrome.runtime.onStartup.addListener(() => void syncContentScripts())
 chrome.permissions.onAdded.addListener(() => void syncContentScripts())
 chrome.permissions.onRemoved.addListener(() => void syncContentScripts())
