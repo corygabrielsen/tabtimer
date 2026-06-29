@@ -1,0 +1,47 @@
+{
+  "appName": { "message": "Tab Timer" },
+  "appShortName": { "message": "Tab Timer" },
+  "appDesc": { "message": "See how much time you've spent on social media sites today." },
+  "actionTitle": { "message": "Tab Timer" },
+
+  "labelToday": { "message": "Today" },
+  "labelFocus": { "message": "Focus" },
+  "labelSession": { "message": "Session" },
+  "tooltipToday": { "message": "Time you were actively viewing this site today, across tabs." },
+  "tooltipFocus": { "message": "Time you were actively viewing this page since it loaded." },
+  "tooltipSession": { "message": "Total time this page has been open, active or not." },
+
+  "overlayLabel": { "message": "Tab Timer" },
+  "overlayPillAria": {
+    "message": "Tab Timer — $label$. Activate to expand.",
+    "placeholders": { "label": { "content": "$1" } }
+  },
+  "overlayHide": { "message": "Hide Tab Timer on this page" },
+
+  "popupResetToday": { "message": "Reset today" },
+  "popupResetAria": {
+    "message": "Reset today's time for $host$",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "popupHideOverlay": { "message": "Hide overlay" },
+  "popupShowOverlay": { "message": "Show overlay" },
+  "popupEnableSite": { "message": "Enable on this site" },
+  "popupNotTracking": { "message": "Tab Timer isn't tracking this site yet." },
+  "popupCantTrack": { "message": "Tab Timer can't track this page." },
+  "popupLoading": { "message": "Loading…" },
+  "popupManage": { "message": "Manage sites…" },
+
+  "optionsTitle": { "message": "Settings" },
+  "optionsIntro": {
+    "message": "Tab Timer only tracks time on sites you enable here, and everything stays on your device — nothing is ever sent off your browser."
+  },
+  "optionsEnableAll": { "message": "Enable all suggested sites" },
+  "optionsSuggested": { "message": "Suggested" },
+  "optionsAddHeading": { "message": "Add a site" },
+  "optionsAddPlaceholder": { "message": "example.com" },
+  "optionsAddButton": { "message": "Add" },
+  "optionsAddAria": { "message": "Site to track" },
+  "optionsYourSites": { "message": "Your sites" },
+  "optionsEnable": { "message": "Enable" },
+  "optionsEnabled": { "message": "Enabled" }
+}

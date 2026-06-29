@@ -1,4 +1,5 @@
 import { SUGGESTED_SITES, originsForHost, hostFromOrigin, normalizeHost } from './sites'
+import { localizeDom, t } from './i18n'
 
 function byId<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null
@@ -35,7 +36,7 @@ function siteRow(label: string, host: string, enabled: boolean, onToggle: () => 
   const btn = document.createElement('button')
   btn.type = 'button'
   btn.className = enabled ? 'toggle on' : 'toggle'
-  btn.textContent = enabled ? 'Enabled' : 'Enable'
+  btn.textContent = enabled ? t('optionsEnabled') : t('optionsEnable')
   btn.setAttribute('aria-pressed', String(enabled))
   btn.addEventListener('click', onToggle)
 
@@ -92,4 +93,5 @@ byId<HTMLFormElement>('add-form')?.addEventListener('submit', (e) => {
 chrome.permissions.onAdded.addListener(() => void render())
 chrome.permissions.onRemoved.addListener(() => void render())
 
+localizeDom()
 void render()
