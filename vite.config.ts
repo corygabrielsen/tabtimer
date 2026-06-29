@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [crx({ manifest })],
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // No source maps in the shipped package: they publish readable original
+    // source to the Web Store, bloat the zip, and (via the content-script's
+    // web_accessible_resources) are probeable by every tracked site.
+    sourcemap: false,
   },
 })
