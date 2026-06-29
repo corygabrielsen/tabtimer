@@ -89,6 +89,15 @@ export default class Model {
     this.countupTimer.start()
     this.focusTimer.start()
 
+    // A tab can load already hidden (opened in the background, or restored
+    // on browser start) or visible-but-unfocused. No visibilitychange/blur
+    // event fires for that initial state, so pause the focus timer up front
+    // and let handleFocus/handleVisibilityChange resume it. Without this, a
+    // never-focused tab accrues focus time.
+    if (document.hidden || !document.hasFocus()) {
+      this.focusTimer.pause()
+    }
+
     // Listen for the visibilitychange event and handle it
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
 
@@ -180,6 +189,9 @@ export default class Model {
     this.countupTimer.reset()
     this.focusTimer.reset()
     this.previousStorageUpdateElapsedValue = 0
+    // Drop the throttle baseline so the first post-reset write isn't
+    // suppressed for up to 10s.
+    this.previousStorageUpdateTime = new Date(0)
   }
 
   reset(): void {
