@@ -18,6 +18,13 @@ const LABELS: Record<TimerKey, string> = {
   session: 'Session',
 }
 
+// Hover definitions — these three are otherwise easy to confuse.
+const TOOLTIPS: Record<TimerKey, string> = {
+  today: 'Time you were actively viewing this site today, across tabs.',
+  focus: 'Time you were actively viewing this page since it loaded.',
+  session: 'Total time this page has been open, active or not.',
+}
+
 // Map our display keys to the model's keys.
 function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
   if (key === 'session') {
@@ -282,6 +289,7 @@ export default class View {
       const row = document.createElement('button')
       row.type = 'button'
       row.className = 'row'
+      row.title = TOOLTIPS[key]
       row.setAttribute('aria-pressed', String(isSelected))
 
       const label = document.createElement('span')
