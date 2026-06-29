@@ -1,139 +1,228 @@
 import type Model from './Model'
-import { TimerType } from './Timer'
+import type { ElapsedState } from './Model'
 
-// Pad a number with leading zeros to make it two digits long
 function pad(num: number): string {
   return num.toString().padStart(2, '0')
 }
 
-// Format a time in seconds as hh:mm:ss
-function formatTime(millis: number): `${string}:${string}:${string}` {
+function formatTime(millis: number): string {
   const seconds = Math.floor(millis / 1000)
   const minutes = Math.floor(seconds / 60)
   const hours = Math.floor(minutes / 60)
   return `${pad(hours)}:${pad(minutes % 60)}:${pad(seconds % 60)}`
 }
 
-type DisplayClockType = TimerType | 'today'
-const DISPLAY_ORDER: DisplayClockType[] = ['today', TimerType.FOCUS, TimerType.COUNTUP]
-const BACKGROUNDS: Record<DisplayClockType, string> = {
-  [TimerType.COUNTUP]: '#000',
-  [TimerType.FOCUS]: '#888',
-  today: 'rgba(32, 32, 32, 0.1)',
+type TimerKey = 'today' | 'focus' | 'session'
+
+const TIMER_KEYS: TimerKey[] = ['today', 'focus', 'session']
+
+const LABELS: Record<TimerKey, string> = {
+  today: 'Today',
+  focus: 'Focus',
+  session: 'Session',
 }
 
-const MILLIS_15_MIN = 15 * 60 * 1000
-const MILLIS_30_MIN = 30 * 60 * 1000
-const MILLIS_1_HOUR = 1 * 60 * 60 * 1000
-const MILLIS_2_HOURS = 2 * 60 * 60 * 1000
-const MILLIS_3_HOURS = 3 * 60 * 60 * 1000
+// Map our keys to the model's keys
+function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
+  if (key === 'session') {
+    return elapsed.countup.elapsed
+  }
+  return elapsed[key].elapsed
+}
+
 export default class View {
-  private div: HTMLDivElement
-  private displayClock: DisplayClockType = DISPLAY_ORDER[0]
+  private container: HTMLDivElement
+  private expanded = false
+  private selectedTimer: TimerKey = 'today'
+  private timeElements: Map<TimerKey | 'collapsed', HTMLSpanElement> = new Map()
+  private needsRebuild = true
+
   constructor(private model: Model) {
-    this.div = document.createElement('div')
-    this.div.style.position = 'fixed'
-    this.div.style.top = '0'
-    this.div.style.left = '50%'
-    this.div.style.transform = 'translateX(-50%)'
-    this.div.style.padding = '5px 10px'
-    // make the background a little transparent so the page shows through
-    this.div.style.background = 'rgba(0, 0, 0, 0.5)'
-    this.div.style.borderRadius = '0 0 5px 5px'
-    this.div.style.boxShadow = '0px 0px 5px 0px rgba(0, 0, 0, 0.2)'
-    this.div.style.zIndex = '9999'
-    this.div.style.color = '#FFF'
-    this.div.style.textAlign = 'center'
-    this.div.style.fontFamily = 'monospace'
-    this.div.style.fontSize = '12px'
-    this.div.style.cursor = 'pointer'
+    this.container = document.createElement('div')
+    this.container.id = 'tabtimer-root'
+    this.applyContainerStyles()
+    document.body.appendChild(this.container)
 
-    const triangle = document.createElement('div')
-    triangle.style.width = '0'
-    triangle.style.height = '0'
-    triangle.style.borderStyle = 'solid'
-    triangle.style.borderWidth = '0 15px 15px 15px'
-    triangle.style.borderColor = 'transparent transparent #333 transparent'
-    triangle.style.position = 'absolute'
-    triangle.style.top = '-15px'
-    triangle.style.left = '50%'
-    triangle.style.transform = 'translateX(-50%)'
+    this.render()
 
-    this.div.appendChild(triangle)
-    this.updateDisplayText()
-    this.div.addEventListener('click', this.handleClick)
-
-    document.body.appendChild(this.div)
-
-    // Listen for the visibilitychange event and handle it
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
-
-    // Listen for the blur event and handle it
     window.addEventListener('blur', this.handleBlur)
-
-    // Listen for the focus event and handle it
     window.addEventListener('focus', this.handleFocus)
+    document.addEventListener('click', this.handleOutsideClick)
   }
 
-  private getBackground(displayClock: DisplayClockType) {
-    return BACKGROUNDS[displayClock]
+  private applyContainerStyles() {
+    const s = this.container.style
+    s.position = 'fixed'
+    s.top = '0'
+    s.left = '50%'
+    s.transform = 'translateX(-50%)'
+    s.zIndex = '2147483647'
+    s.fontFamily = 'system-ui, -apple-system, sans-serif'
+    s.fontSize = '13px'
+    s.userSelect = 'none'
   }
 
-  private getFontSize = (millis: number) => {
-    if (millis > MILLIS_3_HOURS) {
-      return '20px'
-    } else if (millis > MILLIS_2_HOURS) {
-      return '18px'
-    } else if (millis > MILLIS_1_HOUR) {
-      return '16px'
-    } else if (millis > MILLIS_30_MIN) {
-      return '14px'
-    } else if (millis > MILLIS_15_MIN) {
-      return '12px'
-    } else {
-      return '10px'
-    }
-  }
-
-  changeDisplayClock = () => {
-    // rotate array according to DISPLAY_ORDER
-    const index = DISPLAY_ORDER.indexOf(this.displayClock)
-    this.displayClock = DISPLAY_ORDER[(index + 1) % DISPLAY_ORDER.length]
-    this.updateDisplayText()
-  }
-
-  // Update the timer text every second
-  updateDisplayText() {
+  private render() {
     this.model.readElapsed().then((elapsed) => {
-      const millis = elapsed[this.displayClock].elapsed
-      this.div.innerText = `${formatTime(millis)}`
-      this.div.style.background = this.getBackground(this.displayClock)
-      this.div.style.fontSize = this.getFontSize(millis)
+      // If we just need to update times, do that without rebuilding DOM
+      if (!this.needsRebuild && this.timeElements.size > 0) {
+        this.updateTimes(elapsed)
+        return
+      }
+
+      this.needsRebuild = false
+      this.timeElements.clear()
+      this.container.innerHTML = ''
+
+      if (this.expanded) {
+        this.renderExpanded(elapsed)
+      } else {
+        this.renderCollapsed(elapsed)
+      }
     })
   }
 
-  handleClick = () => {
-    this.changeDisplayClock()
+  private updateTimes(elapsed: ElapsedState) {
+    if (this.expanded) {
+      for (const key of TIMER_KEYS) {
+        const el = this.timeElements.get(key)
+        if (el) {
+          el.textContent = formatTime(getElapsedForKey(elapsed, key))
+        }
+      }
+    } else {
+      const el = this.timeElements.get('collapsed')
+      if (el) {
+        el.textContent = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+      }
+    }
+  }
+
+  private renderCollapsed(elapsed: ElapsedState) {
+    const div = document.createElement('div')
+    const millis = getElapsedForKey(elapsed, this.selectedTimer)
+
+    Object.assign(div.style, {
+      background: 'rgba(0, 0, 0, 0.85)',
+      color: '#fff',
+      padding: '6px 14px',
+      borderRadius: '0 0 8px 8px',
+      cursor: 'pointer',
+      fontFamily: 'monospace',
+      fontSize: '13px',
+      fontWeight: '500',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+    })
+
+    div.textContent = formatTime(millis)
+    this.timeElements.set('collapsed', div as unknown as HTMLSpanElement)
+
+    div.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.expanded = true
+      this.needsRebuild = true
+      this.render()
+    })
+
+    this.container.appendChild(div)
+  }
+
+  private renderExpanded(elapsed: ElapsedState) {
+    const panel = document.createElement('div')
+
+    Object.assign(panel.style, {
+      background: 'rgba(0, 0, 0, 0.9)',
+      color: '#fff',
+      borderRadius: '0 0 10px 10px',
+      overflow: 'hidden',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+      minWidth: '160px',
+    })
+
+    for (const key of TIMER_KEYS) {
+      const row = document.createElement('div')
+      const isSelected = key === this.selectedTimer
+      const millis = getElapsedForKey(elapsed, key)
+
+      Object.assign(row.style, {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '10px 14px',
+        cursor: 'pointer',
+        background: isSelected ? 'rgba(99, 102, 241, 0.3)' : 'transparent',
+        borderLeft: isSelected ? '3px solid #6366f1' : '3px solid transparent',
+        transition: 'background 0.15s',
+      })
+
+      row.addEventListener('mouseenter', () => {
+        if (!isSelected) {
+          row.style.background = 'rgba(255,255,255,0.1)'
+        }
+      })
+      row.addEventListener('mouseleave', () => {
+        row.style.background = isSelected ? 'rgba(99, 102, 241, 0.3)' : 'transparent'
+      })
+
+      const label = document.createElement('span')
+      label.textContent = LABELS[key]
+      Object.assign(label.style, {
+        color: isSelected ? '#a5b4fc' : '#999',
+        fontSize: '12px',
+        fontWeight: '500',
+      })
+
+      const time = document.createElement('span')
+      time.textContent = formatTime(millis)
+      Object.assign(time.style, {
+        fontFamily: 'monospace',
+        fontSize: '13px',
+        fontWeight: '600',
+        color: isSelected ? '#fff' : '#ccc',
+      })
+      this.timeElements.set(key, time)
+
+      row.appendChild(label)
+      row.appendChild(time)
+
+      row.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.selectedTimer = key
+        this.expanded = false
+        this.needsRebuild = true
+        this.render()
+      })
+
+      panel.appendChild(row)
+    }
+
+    this.container.appendChild(panel)
+  }
+
+  updateDisplayText() {
+    this.render()
+  }
+
+  private handleOutsideClick = (e: MouseEvent) => {
+    if (this.expanded && !this.container.contains(e.target as Node)) {
+      this.expanded = false
+      this.needsRebuild = true
+      this.render()
+    }
   }
 
   handleBlur = () => {
-    // nothing to do
-    this.div.style.background = '#433'
+    // Keep showing current state
   }
 
   handleFocus = () => {
-    this.div.style.background = '#333'
-    // update the display text
-    this.updateDisplayText()
+    this.render()
   }
 
   handleVisibilityChange = () => {
-    if (document.hidden) {
-      // nothing to do
-      this.div.style.background = '#433'
-    } else {
-      this.updateDisplayText()
-      this.div.style.background = '#333'
+    if (!document.hidden) {
+      this.render()
     }
   }
 }

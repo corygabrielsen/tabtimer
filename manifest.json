@@ -4,9 +4,9 @@
   "description": "Watch how much time you've spent on a website today.",
   "version": "1.0",
   "icons": {
-    "32": "favicon32.png",
-    "64": "favicon64.png",
-    "128": "favicon128.png"
+    "32": "icon32.png",
+    "64": "icon64.png",
+    "128": "icon128.png"
   },
   "action": {
     "default_popup": "popup.html"
@@ -33,6 +33,7 @@
     "*://*.tiktok.com/*",
     "*://*.twitch.tv/*",
     "*://*.twitter.com/*",
+    "*://x.com/*",
     "*://*.x.com/*",
     "*://*.tumblr.com/*",
     "*://*.whatsapp.com/*",
@@ -57,6 +58,8 @@
         "*://*.tiktok.com/*",
         "*://*.twitch.tv/*",
         "*://*.twitter.com/*",
+        "*://x.com/*",
+        "*://*.x.com/*",
         "*://*.tumblr.com/*",
         "*://*.whatsapp.com/*",
         "*://*.youtube.com/*"

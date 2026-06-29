@@ -1,4 +1,4 @@
-import Timer, { TimerState } from './Timer'
+import Timer, { TimerState, TimerType } from './Timer'
 
 interface Storage {
   get: <T>(key: string, defaultValue: T, storageArea: 'sync' | 'local' | 'managed') => Promise<T>
