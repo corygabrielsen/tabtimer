@@ -126,7 +126,24 @@ export default class Model {
     return key
   }
 
+  // Fallback rollover: the daily reset is normally driven by a setTimeout,
+  // but that can fire late or not at all (system sleep across midnight,
+  // clock changes, background-tab timer throttling). Re-check the boundary
+  // on the hot paths so the day still rolls over. Returns true if it reset.
+  private maybeRollover(): boolean {
+    if (this.isResetTime()) {
+      this.reset()
+      return true
+    }
+    return false
+  }
+
   updateStorageValues = (elapsed: number) => {
+    // If we crossed the reset boundary, reset() has already zeroed today's
+    // key and the timers; the `elapsed` argument is now stale, so bail.
+    if (this.maybeRollover()) {
+      return
+    }
     const key = this.getTodayKey()
     const diff = elapsed - this.previousStorageUpdateElapsedValue
     if (diff < 0) {
@@ -154,6 +171,7 @@ export default class Model {
   }
 
   readElapsed(): Promise<ElapsedState> {
+    this.maybeRollover()
     return this.readStorageElapsedToday().then((storageResult) => {
       const focusElapsed = this.elapsedFocusTime()
       let diff = focusElapsed - this.previousStorageUpdateElapsedValue
