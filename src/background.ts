@@ -1,10 +1,6 @@
 import { storage } from './storage'
 import type { Message, MessageResponse } from './messages'
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('Extension installed!')
-})
-
 // Single-writer accumulator. Every daily focus-time write funnels through the
 // service worker so the read-modify-write happens in one context. Tasks are
 // chained so two messages can't interleave their get/set even within a single
