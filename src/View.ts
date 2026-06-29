@@ -2,6 +2,7 @@ import type Model from './Model'
 import type { ElapsedState } from './Model'
 import { formatTime } from './format'
 import { storage, HIDDEN_KEY } from './storage'
+import { t } from './i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
 const MAX_Z_INDEX = 2147483647
@@ -13,16 +14,16 @@ type TimerKey = 'today' | 'focus' | 'session'
 const TIMER_KEYS: TimerKey[] = ['today', 'focus', 'session']
 
 const LABELS: Record<TimerKey, string> = {
-  today: 'Today',
-  focus: 'Focus',
-  session: 'Session',
+  today: t('labelToday'),
+  focus: t('labelFocus'),
+  session: t('labelSession'),
 }
 
 // Hover definitions — these three are otherwise easy to confuse.
 const TOOLTIPS: Record<TimerKey, string> = {
-  today: 'Time you were actively viewing this site today, across tabs.',
-  focus: 'Time you were actively viewing this page since it loaded.',
-  session: 'Total time this page has been open, active or not.',
+  today: t('tooltipToday'),
+  focus: t('tooltipFocus'),
+  session: t('tooltipSession'),
 }
 
 // Map our display keys to the model's keys.
@@ -248,7 +249,7 @@ export default class View {
     pill.type = 'button'
     pill.className = 'pill'
     pill.setAttribute('aria-expanded', 'false')
-    pill.setAttribute('aria-label', `Tab Timer — ${LABELS[this.selectedTimer]}. Activate to expand.`)
+    pill.setAttribute('aria-label', t('overlayPillAria', LABELS[this.selectedTimer]))
     pill.textContent = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
     this.timeElements.set('collapsed', pill)
 
@@ -264,7 +265,7 @@ export default class View {
     const panel = document.createElement('div')
     panel.className = 'panel'
     panel.setAttribute('role', 'group')
-    panel.setAttribute('aria-label', 'Tab Timer')
+    panel.setAttribute('aria-label', t('overlayLabel'))
 
     const head = document.createElement('div')
     head.className = 'head'
@@ -275,7 +276,7 @@ export default class View {
     close.type = 'button'
     close.className = 'close'
     close.textContent = '×'
-    close.setAttribute('aria-label', 'Hide Tab Timer on this page')
+    close.setAttribute('aria-label', t('overlayHide'))
     close.addEventListener('click', (e) => {
       e.stopPropagation()
       this.setHidden(true)

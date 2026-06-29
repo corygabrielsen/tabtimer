@@ -153,25 +153,33 @@
   </head>
   <body>
     <main class="card">
-      <div class="brand">Tab Timer</div>
-      <h1>Settings</h1>
-      <p class="intro">
+      <div class="brand" data-i18n="overlayLabel">Tab Timer</div>
+      <h1 data-i18n="optionsTitle">Settings</h1>
+      <p class="intro" data-i18n="optionsIntro">
         Tab Timer only tracks time on sites you enable here, and everything stays on your device — nothing is ever sent
         off your browser.
       </p>
 
-      <button id="enable-suggested" type="button" class="btn">Enable all suggested sites</button>
+      <button id="enable-suggested" type="button" class="btn" data-i18n="optionsEnableAll">
+        Enable all suggested sites
+      </button>
 
-      <h2>Suggested</h2>
+      <h2 data-i18n="optionsSuggested">Suggested</h2>
       <ul id="suggested" class="list"></ul>
 
-      <h2>Add a site</h2>
+      <h2 data-i18n="optionsAddHeading">Add a site</h2>
       <form id="add-form" class="addrow">
-        <input id="add-input" type="text" placeholder="example.com" aria-label="Site to track" />
-        <button class="btn" type="submit">Add</button>
+        <input
+          id="add-input"
+          type="text"
+          placeholder="example.com"
+          aria-label="Site to track"
+          data-i18n-attr="placeholder=optionsAddPlaceholder;aria-label=optionsAddAria"
+        />
+        <button class="btn" type="submit" data-i18n="optionsAddButton">Add</button>
       </form>
 
-      <h2 id="custom-h" hidden>Your sites</h2>
+      <h2 id="custom-h" hidden data-i18n="optionsYourSites">Your sites</h2>
       <ul id="custom" class="list"></ul>
     </main>
     <script type="module" src="/src/options.ts"></script>

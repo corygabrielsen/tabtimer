@@ -2,6 +2,7 @@ import { storage, todayKeyForHost, HIDDEN_KEY, baseHost } from './storage'
 import { sendMessage } from './messages'
 import { formatTime } from './format'
 import { originsForHost } from './sites'
+import { localizeDom, t } from './i18n'
 
 type ActiveTab = { id: number; hostname: string }
 type State = 'tracked' | 'enable' | 'untracked' | 'loading'
@@ -55,12 +56,12 @@ function renderTracked(tab: ActiveTab, base: string) {
   const renderToggle = async () => {
     const hidden = await storage.get(HIDDEN_KEY, false, 'local').catch(() => false)
     if (toggleBtn) {
-      toggleBtn.textContent = hidden ? 'Show overlay' : 'Hide overlay'
+      toggleBtn.textContent = hidden ? t('popupShowOverlay') : t('popupHideOverlay')
     }
   }
 
   const resetBtn = byId('reset-btn')
-  resetBtn?.setAttribute('aria-label', `Reset today's time for ${base}`)
+  resetBtn?.setAttribute('aria-label', t('popupResetAria', base))
   resetBtn?.addEventListener('click', () => {
     if (todayEl) {
       todayEl.textContent = formatTime(0) // optimistic
@@ -110,6 +111,7 @@ function renderEnable(tab: ActiveTab, base: string) {
 }
 
 async function init() {
+  localizeDom()
   byId('manage-btn')?.addEventListener('click', () => chrome.runtime.openOptionsPage())
 
   const tab = await activeTab()

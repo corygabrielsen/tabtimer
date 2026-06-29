@@ -128,35 +128,35 @@
   </head>
   <body>
     <main class="card">
-      <div class="brand">Tab Timer</div>
+      <div class="brand" data-i18n="overlayLabel">Tab Timer</div>
 
       <section id="tracked" hidden>
         <div class="site" id="site"></div>
         <div class="metric">
-          <span class="metric-label" title="Time you were actively viewing this site today, across tabs.">Today</span>
+          <span class="metric-label" data-i18n="labelToday" data-i18n-attr="title=tooltipToday">Today</span>
           <span class="metric-value" id="today">00:00:00</span>
         </div>
         <div class="actions">
-          <button id="reset-btn" type="button" class="btn">Reset today</button>
-          <button id="toggle-btn" type="button" class="btn ghost">Hide overlay</button>
+          <button id="reset-btn" type="button" class="btn" data-i18n="popupResetToday">Reset today</button>
+          <button id="toggle-btn" type="button" class="btn ghost" data-i18n="popupHideOverlay">Hide overlay</button>
         </div>
       </section>
 
       <section id="enable" hidden>
         <div class="site" id="enable-site"></div>
-        <p class="empty">Tab Timer isn't tracking this site yet.</p>
+        <p class="empty" data-i18n="popupNotTracking">Tab Timer isn't tracking this site yet.</p>
         <div class="actions">
-          <button id="enable-btn" type="button" class="btn">Enable on this site</button>
+          <button id="enable-btn" type="button" class="btn" data-i18n="popupEnableSite">Enable on this site</button>
         </div>
       </section>
 
       <section id="untracked" hidden>
-        <p class="empty">Tab Timer can't track this page.</p>
+        <p class="empty" data-i18n="popupCantTrack">Tab Timer can't track this page.</p>
       </section>
 
-      <p id="loading" class="empty">Loading…</p>
+      <p id="loading" class="empty" data-i18n="popupLoading">Loading…</p>
 
-      <button id="manage-btn" type="button" class="link">Manage sites…</button>
+      <button id="manage-btn" type="button" class="link" data-i18n="popupManage">Manage sites…</button>
     </main>
     <script type="module" src="/src/popup.ts"></script>
   </body>
