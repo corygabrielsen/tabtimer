@@ -1,10 +1,10 @@
 // The activity page: a day by hour or a week by day, stacked by site, with
 // each site's time and limit below. Reads storage directly; the one write
 // (a site's limit) goes to the service worker as setLimit.
-import { chromeStore } from './chrome/store'
+import { chromeStore, loadThenPatch } from './chrome/store'
 import { dayOf, type DayStamp } from './core/day'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
-import { DAY_KEY_PREFIX, LIMITS_KEY } from './core/schema'
+import { LIMITS_KEY } from './core/schema'
 import {
   barTotal,
   dayLabel,
@@ -13,6 +13,7 @@ import {
   hourLabel,
   maxOffset,
   niceScale,
+  patchHistory,
   periodOf,
   rangeLabel,
   stack,
@@ -409,13 +410,20 @@ function init(): void {
     state.table = !state.table
     render()
   })
-  // Time accrues and limits change while the page is open.
-  local.onChanged((changes) => {
-    if (Object.keys(changes).some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))) {
-      void load()
+  // Time accrues and limits change while the page is open: patch the state,
+  // and draw again only if the shown period (or the one it compares with)
+  // changed.
+  void loadThenPatch(local, load, (changes) => {
+    const days = patchHistory(state.history, changes)
+    const limits = LIMITS_KEY in changes
+    if (limits) {
+      state.limits = normalizeLimits(changes[LIMITS_KEY]!.newValue)
+    }
+    const period = periodOf(state.mode, state.offset, today(), firstDay)
+    if (limits || days.some((day) => period.days.includes(day) || period.previous.includes(day))) {
+      render()
     }
   })
-  void load()
 }
 
 init()

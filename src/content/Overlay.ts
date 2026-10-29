@@ -5,9 +5,8 @@ import { bus as chromeBus } from '../chrome/bus'
 import { MAX_SCALE, MIN_SCALE, SCALE_STEP, snapScale } from '../core/schema'
 import type { Bus } from '../ports'
 import { t } from '../i18n'
-
-// Top of the stacking context so the widget stays visible above page chrome.
-const MAX_Z_INDEX = 2147483647
+import { h } from '../ui'
+import { mountShadowHost } from './shadowHost'
 
 const HOST_ID = 'tabtimer-root'
 
@@ -26,10 +25,6 @@ const TOOLTIPS: Record<TimerKey, string> = {
   today: t('tooltipToday'),
   focus: t('tooltipFocus'),
   session: t('tooltipSession'),
-}
-
-function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
-  return elapsed[key]
 }
 
 // All widget styling lives inside the shadow root, so the host page's CSS
@@ -152,23 +147,12 @@ export default class Overlay {
     private tracker: Pick<FocusTracker, 'readElapsed' | 'onState' | 'prefs'>,
     private bus: Bus = chromeBus
   ) {
-    // Drop a stale widget left by a previous instance (re-injection / SPA
-    // remount) so we never stack duplicate hosts.
-    document.getElementById(HOST_ID)?.remove()
-
-    this.host = document.createElement('div')
-    this.host.id = HOST_ID
+    const { host, shadow } = mountShadowHost(HOST_ID, STYLES)
+    this.host = host
+    this.shadow = shadow
     this.applyHostStyles()
-
-    // Closed shadow root: the page can't query into it, and its CSS is isolated.
-    this.shadow = this.host.attachShadow({ mode: 'closed' })
-    const style = document.createElement('style')
-    style.textContent = STYLES
-    this.mount = document.createElement('div')
-    this.mount.className = 'widget'
-    this.shadow.append(style, this.mount)
-
-    document.body.appendChild(this.host)
+    this.mount = h('div', { class: 'widget' })
+    this.shadow.append(this.mount)
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
@@ -203,15 +187,14 @@ export default class Overlay {
     // Structural styles only, marked important so page rules can't dislodge the
     // widget; everything visual is handled inside the shadow root.
     const s = this.host.style
-    s.setProperty('position', 'fixed', 'important')
     s.setProperty('top', '0', 'important')
     s.setProperty('left', '50%', 'important')
     s.setProperty('transform-origin', 'top center', 'important')
-    s.setProperty('z-index', String(MAX_Z_INDEX), 'important')
     this.applyScale()
   }
 
-  private render() {
+  // Draw the current times: in place when only they changed.
+  render() {
     if (this.hidden) {
       this.timeElements.clear()
       this.mount.replaceChildren()
@@ -240,7 +223,7 @@ export default class Overlay {
       for (const key of TIMER_KEYS) {
         const el = this.timeElements.get(key)
         if (el) {
-          el.textContent = formatTime(getElapsedForKey(elapsed, key))
+          el.textContent = formatTime(elapsed[key])
         }
       }
     } else {
@@ -254,16 +237,13 @@ export default class Overlay {
   // The pill's accessible name carries the time too: aria-label replaces
   // its text content for assistive tech.
   private setPillTime(pill: HTMLElement, elapsed: ElapsedState) {
-    const time = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+    const time = formatTime(elapsed[this.selectedTimer])
     pill.textContent = time
     pill.setAttribute('aria-label', t('overlayPillAria', [LABELS[this.selectedTimer], time]))
   }
 
   private buildCollapsed(elapsed: ElapsedState): HTMLButtonElement {
-    const pill = document.createElement('button')
-    pill.type = 'button'
-    pill.className = 'pill'
-    pill.setAttribute('aria-expanded', 'false')
+    const pill = h('button', { type: 'button', class: 'pill', 'aria-expanded': 'false' })
     this.setPillTime(pill, elapsed)
     this.timeElements.set('collapsed', pill)
 
@@ -276,30 +256,17 @@ export default class Overlay {
   }
 
   private buildExpanded(elapsed: ElapsedState): HTMLDivElement {
-    const panel = document.createElement('div')
-    panel.className = 'panel'
-    panel.setAttribute('role', 'group')
-    panel.setAttribute('aria-label', t('overlayLabel'))
+    const panel = h('div', { class: 'panel', role: 'group', 'aria-label': t('overlayLabel') })
 
     for (const key of TIMER_KEYS) {
-      const isSelected = key === this.selectedTimer
-
-      const row = document.createElement('button')
-      row.type = 'button'
-      row.className = 'row'
-      row.title = TOOLTIPS[key]
-      row.setAttribute('aria-pressed', String(isSelected))
-
-      const label = document.createElement('span')
-      label.className = 'label'
-      label.textContent = LABELS[key]
-
-      const time = document.createElement('span')
-      time.className = 'time'
-      time.textContent = formatTime(getElapsedForKey(elapsed, key))
+      const time = h('span', { class: 'time' }, formatTime(elapsed[key]))
       this.timeElements.set(key, time)
-
-      row.append(label, time)
+      const row = h(
+        'button',
+        { type: 'button', class: 'row', title: TOOLTIPS[key], 'aria-pressed': String(key === this.selectedTimer) },
+        h('span', { class: 'label' }, LABELS[key]),
+        time
+      )
       row.addEventListener('click', (e) => {
         e.stopPropagation()
         this.selectedTimer = key
@@ -315,26 +282,10 @@ export default class Overlay {
 
   // Thin footer strip: size steppers on the left, dismiss on the right.
   private buildControls(): HTMLDivElement {
-    const controls = document.createElement('div')
-    controls.className = 'controls'
-
-    const sizes = document.createElement('div')
-    sizes.className = 'sizes'
-
-    const smaller = document.createElement('button')
-    smaller.type = 'button'
-    smaller.className = 'size'
-    smaller.textContent = '−'
-    smaller.setAttribute('aria-label', t('overlaySmaller'))
-    smaller.disabled = this.scale <= MIN_SCALE
-
-    const larger = document.createElement('button')
-    larger.type = 'button'
-    larger.className = 'size'
-    larger.textContent = '+'
-    larger.setAttribute('aria-label', t('overlayLarger'))
-    larger.disabled = this.scale >= MAX_SCALE
-
+    const sizeButton = (label: string, text: string, disabled: boolean) =>
+      h('button', { type: 'button', class: 'size', 'aria-label': label, disabled }, text)
+    const smaller = sizeButton(t('overlaySmaller'), '−', this.scale <= MIN_SCALE)
+    const larger = sizeButton(t('overlayLarger'), '+', this.scale >= MAX_SCALE)
     const syncSizeButtons = () => {
       smaller.disabled = this.scale <= MIN_SCALE
       larger.disabled = this.scale >= MAX_SCALE
@@ -349,20 +300,14 @@ export default class Overlay {
       this.setScale(this.scale + SCALE_STEP)
       syncSizeButtons()
     })
-    sizes.append(smaller, larger)
 
-    const close = document.createElement('button')
-    close.type = 'button'
-    close.className = 'close'
-    close.textContent = '×'
-    close.setAttribute('aria-label', t('overlayHide'))
+    const close = h('button', { type: 'button', class: 'close', 'aria-label': t('overlayHide') }, '×')
     close.addEventListener('click', (e) => {
       e.stopPropagation()
       this.setHidden(true)
     })
 
-    controls.append(sizes, close)
-    return controls
+    return h('div', { class: 'controls' }, h('div', { class: 'sizes' }, smaller, larger), close)
   }
 
   private setExpanded(expanded: boolean) {
@@ -403,10 +348,6 @@ export default class Overlay {
     document.removeEventListener('click', this.handleOutsideClick)
     document.removeEventListener('keydown', this.handleKeydown)
     this.outsideClickAttached = false
-  }
-
-  updateDisplayText() {
-    this.render()
   }
 
   destroy() {

@@ -9,7 +9,7 @@
     "email": "corygabrielsen@gmail.com"
   },
   "homepage_url": "https://github.com/corygabrielsen/tabtimer",
-  "minimum_chrome_version": "110",
+  "minimum_chrome_version": "117",
   "icons": {
     "16": "icon16.png",
     "32": "icon32.png",

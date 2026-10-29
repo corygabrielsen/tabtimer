@@ -1,22 +1,29 @@
 import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
 import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayOf } from './core/day'
-import { barTotal, dayLabel, hasAnyUsage, historyOf, periodOf, summarize } from './core/usage'
 import {
-  dayKey,
-  normalizeDay,
-  normalizePrefs,
-  siteTotal,
-  snapScale,
-  DAY_KEY_PREFIX,
-  LIMITS_KEY,
-  PREFS_KEY,
-} from './core/schema'
-import { chromeStore } from './chrome/store'
+  barTotal,
+  dayLabel,
+  hasAnyUsage,
+  historyOf,
+  patchHistory,
+  periodOf,
+  summarize,
+  type History,
+} from './core/usage'
+import { normalizePrefs, siteTotal, snapScale, DEFAULT_PREFS, LIMITS_KEY, PREFS_KEY, type Prefs } from './core/schema'
+import { chromeStore, loadThenPatch } from './chrome/store'
+import type { StoreChanges } from './ports'
 import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
 import { h, byId, firstDayOfWeek, flashSaved, formatDuration, setDocumentLang, uiLocale } from './ui'
-import { createLimitPicker, createSiteLimitPicker, formatChipMinutes, GLOBAL_PRESETS } from './limitPicker'
+import {
+  createLimitPicker,
+  createSiteLimitPicker,
+  formatChipMinutes,
+  GLOBAL_PRESETS,
+  type LimitPicker,
+} from './limitPicker'
 
 const LABELS = new Map(SUGGESTED_SITES.map((s) => [s.host, s.label]))
 
@@ -36,21 +43,24 @@ async function grantedHosts(): Promise<Set<string>> {
 
 const local = chromeStore('local')
 
-function readLimits(): Promise<Limits> {
-  return local
-    .get(LIMITS_KEY)
-    .then(normalizeLimits)
-    .catch(() => DEFAULT_LIMITS)
-}
+// The stored limits, days and prefs, read once and then patched from each
+// change (onStorageChange).
+let limits: Limits = DEFAULT_LIMITS
+let history: History = new Map()
+let prefs: Prefs = DEFAULT_PREFS
+const loaded = loadThenPatch(
+  local,
+  async () => {
+    const items = await local.getAll().catch(() => ({}) as Record<string, unknown>)
+    limits = normalizeLimits(items[LIMITS_KEY])
+    history = historyOf(items)
+    prefs = normalizePrefs(items[PREFS_KEY])
+  },
+  (changes) => onStorageChange(changes)
+)
 
-// Each site's time today, from the one stored object for today.
-function readTodays(): Promise<(host: string) => number> {
-  return local
-    .get(dayKey(dayOf(Date.now())))
-    .then(normalizeDay)
-    .catch(() => normalizeDay(undefined))
-    .then((day) => (host: string) => siteTotal(day, host))
-}
+// A site's time today.
+const todayOf = (host: string): number => siteTotal(history.get(dayOf(Date.now())) ?? {}, host)
 
 // --- Tracked site rows -------------------------------------------------------
 
@@ -120,12 +130,17 @@ function limitCell(host: string, current: number | null): { toggle: HTMLElement;
   return { toggle, panel }
 }
 
-function todayText(ms: number, limitMs: number | null): string {
-  return limitMs !== null && ms >= limitMs ? t('optionsTodayOver', formatDuration(ms)) : formatDuration(ms)
+// A row's time today, flagged once it reaches the site's limit.
+function paintToday(el: HTMLElement, host: string): void {
+  const ms = todayOf(host)
+  const limitMs = limitsFor(limits, host).site
+  const over = limitMs !== null && ms >= limitMs
+  el.textContent = over ? t('optionsTodayOver', formatDuration(ms)) : formatDuration(ms)
+  el.toggleAttribute('data-over', over)
+  el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
 }
 
-function siteRow(host: string, limits: Limits, todayMs: number): HTMLLIElement {
-  const limitMs = limitsFor(limits, host).site
+function siteRow(host: string): HTMLLIElement {
   const label = LABELS.get(host)
   const name = h(
     'div',
@@ -133,17 +148,8 @@ function siteRow(host: string, limits: Limits, todayMs: number): HTMLLIElement {
     h('strong', { title: label ?? host }, label ?? host),
     label ? h('span', { title: host }, host) : null
   )
-  const today = h(
-    'span',
-    {
-      class: 'site-today figure',
-      'data-label': t('optionsColToday'),
-      'data-today-host': host,
-      'data-over': limitMs !== null && todayMs >= limitMs,
-      'aria-label': t('optionsTodayAria', [host, formatDuration(todayMs)]),
-    },
-    todayText(todayMs, limitMs)
-  )
+  const today = h('span', { class: 'site-today figure', 'data-label': t('optionsColToday'), 'data-today-host': host })
+  paintToday(today, host)
   const { toggle, panel } = limitCell(host, siteLimitOf(limits, host))
   const stop = h(
     'button',
@@ -210,14 +216,13 @@ async function render() {
     return
   }
 
-  const [granted, limits] = await Promise.all([grantedHosts(), readLimits()])
+  const [granted] = await Promise.all([grantedHosts(), loaded])
 
   // Suggested sites first (by label), then the user's own (by host).
   const tracked = [
     ...SUGGESTED_SITES.filter((s) => granted.has(s.host)).map((s) => s.host),
     ...[...granted].filter((host) => !LABELS.has(host)).sort(),
   ]
-  const today = await readTodays()
   if (seq !== renderSeq) {
     return
   }
@@ -225,7 +230,7 @@ async function render() {
     openLimitHost = null
   }
   rowLimits.clear()
-  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host, limits, today(host))))
+  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host)))
   byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
   const count = byId('tracked-count')
   if (count) {
@@ -244,18 +249,9 @@ async function render() {
   restoreFocus(prev)
 }
 
-async function refreshTodays() {
-  const [limits, today] = await Promise.all([readLimits(), readTodays()])
-  for (const sync of rowLimits.values()) {
-    sync(limits)
-  }
+function refreshTodays() {
   for (const el of document.querySelectorAll<HTMLElement>('[data-today-host]')) {
-    const host = el.dataset.todayHost ?? ''
-    const ms = today(host)
-    const limitMs = limitsFor(limits, host).site
-    el.textContent = todayText(ms, limitMs)
-    el.toggleAttribute('data-over', limitMs !== null && ms >= limitMs)
-    el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
+    paintToday(el, el.dataset.todayHost ?? '')
   }
 }
 
@@ -302,12 +298,14 @@ function initAddForm() {
 
 // --- Global limit -------------------------------------------------------------
 
+let globalPicker: LimitPicker | null = null
+
 async function initGlobalLimit() {
   const mount = byId('global-limit')
   if (!mount) {
     return
   }
-  const limits = await readLimits()
+  await loaded
   const picker = createLimitPicker({
     id: 'global-limit',
     presets: GLOBAL_PRESETS,
@@ -322,38 +320,30 @@ async function initGlobalLimit() {
     },
   })
   mount.replaceWith(picker.el)
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[LIMITS_KEY]) {
-      void readLimits().then((l) => picker.set(l.global))
-    }
-  })
+  globalPicker = picker
 }
 
 // --- On-page timer ------------------------------------------------------------
 
-async function initOverlay() {
-  const sw = byId('overlay-switch')
-  const radios = [...document.querySelectorAll<HTMLInputElement>('input[name="overlay-size"]')]
-  const saved = byId('overlay-saved')
+const sw = byId('overlay-switch')
+const radios = [...document.querySelectorAll<HTMLInputElement>('input[name="overlay-size"]')]
 
-  const renderSwitch = (hidden: boolean) => sw?.setAttribute('aria-checked', String(!hidden))
-  const renderSize = (scale: number) => {
-    const v = snapScale(scale)
-    for (const r of radios) {
-      r.checked = Number(r.value) === v
-    }
+function paintPrefs({ hidden, scale }: Prefs): void {
+  sw?.setAttribute('aria-checked', String(!hidden))
+  const v = snapScale(scale)
+  for (const r of radios) {
+    r.checked = Number(r.value) === v
   }
+}
 
-  const { hidden, scale } = await local
-    .get(PREFS_KEY)
-    .then(normalizePrefs)
-    .catch(() => normalizePrefs(undefined))
-  renderSwitch(hidden)
-  renderSize(scale)
+async function initOverlay() {
+  const saved = byId('overlay-saved')
+  await loaded
+  paintPrefs(prefs)
 
   sw?.addEventListener('click', async () => {
     const next = sw.getAttribute('aria-checked') === 'true' // checked -> hide
-    renderSwitch(next)
+    sw.setAttribute('aria-checked', String(!next))
     await bus.send('setPrefs', { hidden: next })
     flashSaved(saved)
   })
@@ -365,35 +355,25 @@ async function initOverlay() {
       }
     })
   }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') {
-      return
-    }
-    if (changes[PREFS_KEY]) {
-      const prefs = normalizePrefs(changes[PREFS_KEY].newValue)
-      renderSwitch(prefs.hidden)
-      renderSize(prefs.scale)
-    }
-  })
 }
 
 // --- This week ---------------------------------------------------------------
 
+const locale = uiLocale()
+const thisWeek = () => periodOf('week', 0, dayOf(Date.now()), firstDayOfWeek(locale))
+
 // The week so far: its total, the daily average and a bar per day.
-async function renderWeek() {
+function renderWeek() {
   const card = byId('week-card')
   if (!card) {
     return
   }
-  const history = historyOf(await local.getAll().catch(() => ({})))
   card.hidden = !hasAnyUsage(history)
   if (card.hidden) {
     return
   }
-  const locale = uiLocale()
+  const week = thisWeek()
   const today = dayOf(Date.now())
-  const week = periodOf('week', 0, today, firstDayOfWeek(locale))
   const summary = summarize(history, week, today, null)
   byId('week-total')!.textContent = formatDuration(summary.total)
   byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))
@@ -418,17 +398,30 @@ byId('enable-suggested')?.addEventListener('click', () => {
 chrome.permissions.onAdded.addListener(() => void render())
 chrome.permissions.onRemoved.addListener(() => void render())
 
-// Today's totals tick in the background while this page is open; a new limit
-// can also flip a row to over.
-chrome.storage.onChanged.addListener((changes, area) => {
-  const keys = Object.keys(changes)
-  if (area === 'local' && keys.some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))) {
-    void refreshTodays()
+// Time ticks in the background while this page is open, and limits and prefs
+// can change from the popup or the activity page.
+function onStorageChange(changes: StoreChanges): void {
+  const days = patchHistory(history, changes)
+  if (LIMITS_KEY in changes) {
+    limits = normalizeLimits(changes[LIMITS_KEY]!.newValue)
+    for (const sync of rowLimits.values()) {
+      sync(limits)
+    }
+    globalPicker?.set(limits.global)
   }
-  if (area === 'local' && keys.some((k) => k.startsWith(DAY_KEY_PREFIX))) {
-    void renderWeek()
+  if (PREFS_KEY in changes) {
+    prefs = normalizePrefs(changes[PREFS_KEY]!.newValue)
+    paintPrefs(prefs)
   }
-})
+  // A new limit can flip a row to over.
+  if (LIMITS_KEY in changes || days.includes(dayOf(Date.now()))) {
+    refreshTodays()
+  }
+  const week = thisWeek().days
+  if (days.some((day) => week.includes(day))) {
+    renderWeek()
+  }
+}
 
 setDocumentLang()
 localizeDom()
@@ -436,4 +429,4 @@ initAddForm()
 void initGlobalLimit()
 void initOverlay()
 void render()
-void renderWeek()
+void loaded.then(renderWeek)

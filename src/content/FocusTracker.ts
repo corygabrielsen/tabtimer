@@ -39,10 +39,12 @@ export default class FocusTracker {
   private windowFocused = false
   // A snooze asked for and not yet reflected in a state from the worker.
   private snoozing = false
-  // The presence last reported (as JSON), and when a failed report may be
-  // retried.
-  private lastReport: string | null = null
+  // The presence last reported (null: none, or it failed), and when a
+  // failed report may be retried.
+  private lastReport: Presence | null = null
   private retryAt = 0
+  // The page's video and audio elements (live: the DOM keeps them current).
+  private media: HTMLCollectionOf<HTMLMediaElement>[] = []
   // Display-only stopwatches: when the page opened, this page's focus time
   // so far, and since when it has been running (null: not running).
   private sessionStart: number
@@ -65,6 +67,7 @@ export default class FocusTracker {
     }
     this.started = true
     this.windowFocused = document.hasFocus()
+    this.media = [document.getElementsByTagName('video'), document.getElementsByTagName('audio')]
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('blur', this.handleBlur)
     window.addEventListener('focus', this.handleFocus)
@@ -75,7 +78,7 @@ export default class FocusTracker {
     this.unsubscribePush = this.pushes.onState((state) => {
       this.apply(state)
       const presence = this.presence()
-      this.lastReport = JSON.stringify(presence)
+      this.lastReport = presence
       return presence
     })
     // A tab can load hidden or unfocused, with no event for that initial
@@ -138,8 +141,9 @@ export default class FocusTracker {
         this.focusFrom = startOfDay(now)
       }
       void this.report(true)
-    } else {
-      // Catches what no event announces (media that stalled or ran out).
+    } else if (!document.hidden || this.lastReport === null) {
+      // Catches what no event announces (media that stalled or ran out). A
+      // hidden page never accrues, so only a failed report is retried there.
       void this.report()
     }
     for (const listener of this.tickListeners) {
@@ -148,7 +152,12 @@ export default class FocusTracker {
   }
 
   private presence(): Presence {
-    return { visible: !document.hidden, focused: this.windowFocused, media: mediaPlaying(), blocked: this.blocked }
+    return {
+      visible: !document.hidden,
+      focused: this.windowFocused,
+      media: this.media.some(anyPlaying),
+      blocked: this.blocked,
+    }
   }
 
   // Tell the worker the page's presence, if it changed (or `force`), and
@@ -158,17 +167,16 @@ export default class FocusTracker {
       return
     }
     const presence = this.presence()
-    const key = JSON.stringify(presence)
     const now = this.clock.now()
-    if (!force && (key === this.lastReport || now < this.retryAt)) {
+    if (!force && (samePresence(presence, this.lastReport) || now < this.retryAt)) {
       return
     }
-    this.lastReport = key
+    this.lastReport = presence
     const response = await this.bus.send('presence', presence)
     if (response.ok) {
       this.retryAt = 0
       this.apply(response.value)
-    } else if (this.lastReport === key) {
+    } else if (this.lastReport === presence) {
       // Not heard: report again once the worker may be back.
       this.lastReport = null
       this.retryAt = now + RETRY_MS
@@ -292,14 +300,20 @@ export default class FocusTracker {
 
 const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended'] as const
 
-// Whether the page is playing audio or video (muted or not): watching or
-// listening keeps idle time counting. Media in closed shadow roots or
-// cross-origin frames isn't seen. readyState 2 is HAVE_CURRENT_DATA.
-export function mediaPlaying(): boolean {
-  for (const media of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
-    if (!media.paused && !media.ended && media.readyState >= 2) {
+// Whether any of `media` is playing (muted or not): watching or listening
+// keeps idle time counting. Media in closed shadow roots or cross-origin
+// frames isn't seen. readyState 2 is HAVE_CURRENT_DATA.
+function anyPlaying(media: HTMLCollectionOf<HTMLMediaElement>): boolean {
+  for (const el of media) {
+    if (!el.paused && !el.ended && el.readyState >= 2) {
       return true
     }
   }
   return false
+}
+
+function samePresence(a: Presence, b: Presence | null): boolean {
+  return (
+    b !== null && a.visible === b.visible && a.focused === b.focused && a.media === b.media && a.blocked === b.blocked
+  )
 }

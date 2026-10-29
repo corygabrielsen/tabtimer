@@ -207,20 +207,28 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Site rows: name | today | limit | actions, on the same tracks as the
-   header (.cols). Every track but the site's is a fixed width, so the
-   header and each row resolve to the same columns whatever a row holds;
-   a content-sized track would size per row and shift the header. The site
-   is each row's key, so it takes all spare width. */
+/* Site rows: name | today | limit | actions. The header (.cols) and every
+   row are subgrids of one grid, so each column fits its widest cell and the
+   header stays over it. The site is each row's key, so it takes all spare
+   width. */
+.sites {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto auto auto;
+  column-gap: var(--s-4);
+}
+
+.cols,
+.sites .list,
+.site-row {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  align-items: center;
+}
+
 .cols,
 .site-row {
-  --col-today: 9rem;
-  --col-limit: 6.5rem;
-  --col-actions: 7.5rem;
-  display: grid;
-  grid-template-columns: minmax(12rem, 1fr) var(--col-today) var(--col-limit) var(--col-actions);
-  align-items: center;
-  gap: var(--s-4);
+  row-gap: var(--s-4);
 }
 
 .cols > :nth-child(2),
@@ -351,6 +359,10 @@ h1 {
 @media (max-width: 560px) {
   .cols {
     display: none;
+  }
+  .sites,
+  .sites .list {
+    display: block;
   }
   .site-row {
     grid-template-columns: minmax(0, 1fr) auto;

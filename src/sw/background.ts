@@ -15,7 +15,8 @@ import { createTracker } from './tracker'
 const CHECKPOINT_ALARM = 'checkpoint'
 const ACTIVITY_PAGE = 'usage.html'
 
-const ledger = createLedger(chromeStore('local'), chromeStore('session'), systemClock)
+const local = chromeStore('local')
+const ledger = createLedger(local, chromeStore('session'), systemClock)
 
 // The checkpoint alarm runs only while an interval is open, so the worker
 // sleeps while nothing is being counted. Created only if missing: creating
@@ -55,8 +56,8 @@ chrome.alarms.onAlarm.addListener(({ name }) => {
 })
 // The limits (the snooze included) decide when pages block, and the prefs
 // how their overlay looks: tell them of a change, whoever made it.
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (LIMITS_KEY in changes || PREFS_KEY in changes)) {
+local.onChanged((changes) => {
+  if (LIMITS_KEY in changes || PREFS_KEY in changes) {
     void tracker.refresh().catch(() => undefined)
   }
 })
