@@ -37,6 +37,15 @@ const isBlocked = () => host().style.getPropertyValue('display') === 'block'
 const screen = () => shadowOf('tabtimer-block')
 const snoozeButton = () => screen().querySelector<HTMLButtonElement>('.snooze')
 
+// An element of the host page, removed after the test.
+const pageElements: Element[] = []
+function page<K extends keyof HTMLElementTagNameMap>(tag: K): HTMLElementTagNameMap[K] {
+  const el = document.createElement(tag)
+  document.body.prepend(el)
+  pageElements.push(el)
+  return el
+}
+
 beforeEach(async () => {
   browser = fakeChrome()
   await startBackground()
@@ -49,6 +58,9 @@ afterEach(() => {
     b.destroy()
   }
   disposeModels()
+  for (const el of pageElements.splice(0)) {
+    el.remove()
+  }
 })
 
 describe('deciding to block', () => {
@@ -259,27 +271,272 @@ describe('block screen', () => {
     expect(document.getElementById('tabtimer-block')).toBeNull()
   })
 
-  it.fails('B6: is modal and moves focus to the snooze button', async () => {
+  it('is a modal dialog shown in the top layer', async () => {
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
     await mount()
-    expect(screen().querySelector('.screen')?.getAttribute('aria-modal')).toBe('true')
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(showModal).toHaveBeenCalledOnce()
+    const dialog = screen().querySelector<HTMLDialogElement>('dialog.screen')!
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    // showModal(), not show(): the e2e suite checks :modal in Chromium.
+    expect(dialog.open).toBe(true)
   })
 
-  it.fails('B6: keeps keyboard focus inside the block screen', async () => {
-    const pageLink = document.createElement('a')
-    pageLink.href = '#'
-    document.body.prepend(pageLink)
+  it('moves focus to the snooze button when it appears', async () => {
     await mount()
-    pageLink.focus()
-    // A focus trap pulls focus back into the dialog.
+    expect(screen().activeElement).toBe(snoozeButton())
+    // Focus inside a closed shadow root retargets to its host.
     expect(document.activeElement).toBe(host())
   })
 
-  it.fails('B6: pauses playing media on the page', async () => {
-    const video = document.createElement('video')
-    document.body.append(video)
-    const pause = vi.spyOn(video, 'pause')
+  it('pulls focus back when something on the page takes it', async () => {
+    const pageLink = page('a')
+    pageLink.href = '#'
     await mount()
-    expect(pause).toHaveBeenCalled()
+    pageLink.focus()
+    expect(document.activeElement).toBe(host())
+    expect(screen().activeElement).toBe(snoozeButton())
+  })
+
+  it('cycles Tab and Shift+Tab between its two buttons', async () => {
+    await mount()
+    const manage = screen().querySelector<HTMLButtonElement>('.manage')!
+    const seen: (Element | null)[] = []
+    for (const shiftKey of [false, false, true, false]) {
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+      screen().activeElement!.dispatchEvent(tab)
+      expect(tab.defaultPrevented).toBe(true)
+      seen.push(screen().activeElement)
+    }
+    expect(seen).toEqual([manage, snoozeButton(), manage, snoozeButton()])
+  })
+
+  it('leaves other keys alone', async () => {
+    await mount()
+    const key = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+    snoozeButton()!.dispatchEvent(key)
+    expect(key.defaultPrevented).toBe(false)
+    expect(screen().activeElement).toBe(snoozeButton())
+  })
+
+  it('cannot be dismissed with Escape', async () => {
+    await mount()
+    const dialog = screen().querySelector<HTMLDialogElement>('dialog')!
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    snoozeButton()!.dispatchEvent(esc)
+    expect(esc.defaultPrevented).toBe(true)
+    const cancel = new Event('cancel', { cancelable: true })
+    dialog.dispatchEvent(cancel)
+    expect(cancel.defaultPrevented).toBe(true)
+    expect(dialog.open).toBe(true)
+  })
+
+  it('reopens if the browser closes it while still blocked', async () => {
+    await mount()
+    const dialog = screen().querySelector<HTMLDialogElement>('dialog')!
+    dialog.close()
+    await flush()
+    expect(dialog.open).toBe(true)
+    expect(isBlocked()).toBe(true)
+    expect(screen().activeElement).toBe(snoozeButton())
+  })
+
+  it('still shows if showModal is refused', async () => {
+    // e.g. the page detached the host element.
+    vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(() => {
+      throw new DOMException('not connected', 'InvalidStateError')
+    })
+    await mount()
+    expect(isBlocked()).toBe(true)
+    expect(screen().querySelector('dialog')!.hasAttribute('open')).toBe(true)
+    expect(screen().activeElement).toBe(snoozeButton())
+  })
+
+  it('gives focus back to the page when dismissed', async () => {
+    const pageButton = page('button')
+    pageButton.focus()
+    await mount()
+    expect(document.activeElement).toBe(host())
+    click(snoozeButton())
+    expect(document.activeElement).toBe(pageButton)
+    expect(screen().querySelector<HTMLDialogElement>('dialog')!.open).toBe(false)
+  })
+
+  it('gives focus back on destroy too, and skips an element that is gone', async () => {
+    const pageButton = page('button')
+    pageButton.focus()
+    const blocker = await mount()
+    blocker.destroy()
+    expect(document.activeElement).toBe(pageButton)
+
+    const gone = page('button')
+    gone.focus()
+    await mount()
+    gone.remove()
+    click(snoozeButton())
+    expect(document.activeElement).not.toBe(gone)
+  })
+
+  it('takes the snooze length from SNOOZE_MS', async () => {
+    await mount()
+    expect(text(screen(), '.snooze')).toBe(`${SNOOZE_MS / 60_000} more minutes`)
+  })
+})
+
+describe('media behind the block screen', () => {
+  beforeEach(() => {
+    limits({ perSite: { 'reddit.com': minutes(1) } })
+    logged('reddit.com', minutes(2))
+  })
+
+  // happy-dom media never plays; fake a playing element whose pause() works.
+  function playing(media: HTMLMediaElement): HTMLMediaElement {
+    let paused = false
+    Object.defineProperty(media, 'paused', { configurable: true, get: () => paused })
+    vi.spyOn(media as HTMLMediaElement, 'pause').mockImplementation(() => {
+      paused = true
+    })
+    return media
+  }
+
+  it('pauses playing video and audio', async () => {
+    const video = playing(page('video'))
+    const audio = playing(page('audio'))
+    const idle = page('video')
+    const idlePause = vi.spyOn(idle, 'pause')
+    await mount()
+    expect(video.pause).toHaveBeenCalledOnce()
+    expect(audio.pause).toHaveBeenCalledOnce()
+    expect(idlePause).not.toHaveBeenCalled()
+  })
+
+  it('keeps media paused while blocked, and does not resume it after', async () => {
+    const video = playing(page('video'))
+    await mount()
+    video.dispatchEvent(new Event('play'))
+    expect(video.pause).toHaveBeenCalledTimes(2)
+
+    click(snoozeButton())
+    expect(video.paused).toBe(true)
+    // Once dismissed, the page may play again.
+    video.dispatchEvent(new Event('play'))
+    expect(video.pause).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores play events from non-media elements', async () => {
+    await mount()
+    expect(() => document.body.dispatchEvent(new Event('play'))).not.toThrow()
+  })
+})
+
+describe('fullscreen', () => {
+  let fullscreenElement: Element | null
+  let exitFullscreen: ReturnType<typeof vi.fn<() => Promise<void>>>
+
+  beforeEach(() => {
+    limits({ perSite: { 'reddit.com': minutes(1) } })
+    logged('reddit.com', minutes(2))
+    fullscreenElement = null
+    exitFullscreen = vi.fn(() => {
+      fullscreenElement = null
+      return Promise.resolve()
+    })
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => fullscreenElement })
+    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exitFullscreen })
+  })
+
+  afterEach(() => {
+    delete (document as { fullscreenElement?: unknown }).fullscreenElement
+    delete (document as { exitFullscreen?: unknown }).exitFullscreen
+  })
+
+  it('leaves fullscreen when it blocks', async () => {
+    fullscreenElement = page('video')
+    await mount()
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+  })
+
+  it('leaves fullscreen again if the page re-enters it while blocked', async () => {
+    await mount()
+    expect(exitFullscreen).not.toHaveBeenCalled()
+    fullscreenElement = page('div')
+    document.dispatchEvent(new Event('fullscreenchange'))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+    // The exit's own fullscreenchange finds nothing in fullscreen.
+    document.dispatchEvent(new Event('fullscreenchange'))
+    expect(exitFullscreen).toHaveBeenCalledOnce()
+  })
+
+  it('swallows a refused exit', async () => {
+    exitFullscreen.mockImplementation(() => Promise.reject(new TypeError('not allowed')))
+    fullscreenElement = page('div')
+    await mount()
+    await flush()
+    expect(isBlocked()).toBe(true)
+  })
+
+  it('lets the page go fullscreen once dismissed', async () => {
+    await mount()
+    click(snoozeButton())
+    fullscreenElement = page('div')
+    document.dispatchEvent(new Event('fullscreenchange'))
+    expect(exitFullscreen).not.toHaveBeenCalled()
+  })
+})
+
+describe('page scroll lock', () => {
+  const style = () => document.documentElement.style
+
+  beforeEach(() => {
+    limits({ perSite: { 'reddit.com': minutes(1) } })
+    logged('reddit.com', minutes(2))
+  })
+
+  afterEach(() => {
+    document.documentElement.removeAttribute('style')
+  })
+
+  it('restores the page’s own inline overflow and its priority', async () => {
+    style().setProperty('overflow', 'scroll', 'important')
+    await mount()
+    expect(style().getPropertyValue('overflow')).toBe('hidden')
+    click(snoozeButton())
+    expect(style().getPropertyValue('overflow')).toBe('scroll')
+    expect(style().getPropertyPriority('overflow')).toBe('important')
+  })
+
+  it('restores a non-important inline overflow as non-important', async () => {
+    style().setProperty('overflow', 'auto')
+    const blocker = await mount()
+    blocker.destroy()
+    expect(style().getPropertyValue('overflow')).toBe('auto')
+    expect(style().getPropertyPriority('overflow')).toBe('')
+  })
+
+  it('restores per-axis overflow', async () => {
+    style().setProperty('overflow-y', 'scroll', 'important')
+    await mount()
+    click(snoozeButton())
+    expect(style().getPropertyValue('overflow-y')).toBe('scroll')
+    expect(style().getPropertyPriority('overflow-y')).toBe('important')
+    expect(style().getPropertyValue('overflow-x')).toBe('')
+  })
+
+  it('leaves the page’s overflow alone if it never blocked', async () => {
+    limits({ perSite: {} })
+    style().setProperty('overflow', 'clip')
+    const blocker = await mount()
+    expect(isBlocked()).toBe(false)
+    // The page changes its own overflow; tearing down must not undo that.
+    style().setProperty('overflow', 'scroll')
+    blocker.destroy()
+    expect(style().getPropertyValue('overflow')).toBe('scroll')
+  })
+
+  it('does not restore twice', async () => {
+    const blocker = await mount()
+    click(snoozeButton())
+    style().setProperty('overflow', 'scroll')
+    blocker.destroy()
+    expect(style().getPropertyValue('overflow')).toBe('scroll')
   })
 })

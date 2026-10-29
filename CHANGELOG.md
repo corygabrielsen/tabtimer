@@ -4,6 +4,24 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-10-28
+
+### Fixed
+
+- The block screen now really blocks the page: keyboard focus moves to "5 more
+  minutes" and stays on the block screen (Tab no longer reaches the page), the
+  page behind it can't be clicked or read by screen readers, and Escape doesn't
+  dismiss it. Dismissing it returns focus to where you were.
+- Video and audio playing on the page pause when the block screen appears and
+  stay paused; nothing resumes on its own afterwards.
+- Hitting a limit while a video is fullscreen now leaves fullscreen, and the
+  page can't go back into fullscreen while blocked, so the block screen can't
+  end up hidden behind a fullscreen player.
+- A page's own scroll setting is restored exactly after the block screen goes
+  away, instead of being cleared.
+- Screen readers now hear the time on the collapsed on-page timer, not just its
+  label.
+
 ## [1.2.0] - 2026-10-28
 
 ### Changed
@@ -82,6 +100,7 @@ All notable changes to Tab Timer. The format follows
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.2.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.0.0...v1.1.0

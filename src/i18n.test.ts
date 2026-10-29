@@ -4,6 +4,7 @@ import { t, localizeDom } from './i18n'
 import enMessages from '../_locales/en/messages.json'
 import popupHtml from '../popup.html?raw'
 import optionsHtml from '../options.html?raw'
+import manifestJson from '../manifest.json?raw'
 
 const sources = import.meta.glob<string>(['./*.ts', '!./*.test.ts'], { query: '?raw', import: 'default', eager: true })
 
@@ -44,32 +45,74 @@ describe('localizeDom', () => {
   })
 })
 
-describe('locale catalogue', () => {
-  const defined = new Set(Object.keys(enMessages))
+// Every place a message key can be referenced. Add a page or script here and
+// both directions of the coverage check below include it.
+const SCRIPTS = Object.values(sources)
+const PAGES = [popupHtml, optionsHtml]
+const MANIFESTS = [manifestJson]
 
-  it('defines every key the scripts look up', () => {
-    const used = new Set<string>()
-    for (const code of Object.values(sources)) {
-      for (const m of code.matchAll(/\bt\(\s*'([A-Za-z0-9_]+)'/g)) {
-        used.add(m[1]!)
+function keysInScripts(): Set<string> {
+  const used = new Set<string>()
+  for (const code of SCRIPTS) {
+    for (const m of code.matchAll(/\bt\(\s*'([A-Za-z0-9_]+)'/g)) {
+      used.add(m[1]!)
+    }
+  }
+  return used
+}
+
+function keysInPages(): Set<string> {
+  const used = new Set<string>()
+  for (const html of PAGES) {
+    for (const m of html.matchAll(/data-i18n="([^"]+)"/g)) {
+      used.add(m[1]!)
+    }
+    for (const m of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
+      for (const pair of m[1]!.split(';')) {
+        used.add(pair.split('=')[1]!.trim())
       }
     }
-    expect(used.size).toBeGreaterThan(10)
-    expect([...used].filter((k) => !defined.has(k))).toEqual([])
+  }
+  return used
+}
+
+function keysInManifests(): Set<string> {
+  const used = new Set<string>()
+  for (const json of MANIFESTS) {
+    for (const m of json.matchAll(/__MSG_([A-Za-z0-9_@]+)__/g)) {
+      used.add(m[1]!)
+    }
+  }
+  return used
+}
+
+describe('locale catalogue', () => {
+  const defined = new Set(Object.keys(enMessages))
+  const missing = (used: Set<string>) => [...used].filter((k) => !defined.has(k))
+
+  it('defines every key the scripts look up', () => {
+    const used = keysInScripts()
+    // Guard against the pattern silently matching nothing.
+    expect(used.size).toBeGreaterThan(30)
+    expect(used).toContain('blockSnooze')
+    expect(used).toContain('popupResetToday')
+    expect(missing(used)).toEqual([])
   })
 
   it('defines every key the HTML pages reference', () => {
-    const used = new Set<string>()
-    for (const html of [popupHtml, optionsHtml]) {
-      for (const m of html.matchAll(/data-i18n="([^"]+)"/g)) {
-        used.add(m[1]!)
-      }
-      for (const m of html.matchAll(/data-i18n-attr="([^"]+)"/g)) {
-        for (const pair of m[1]!.split(';')) {
-          used.add(pair.split('=')[1]!.trim())
-        }
-      }
-    }
-    expect([...used].filter((k) => !defined.has(k))).toEqual([])
+    const used = keysInPages()
+    expect(used.size).toBeGreaterThan(10)
+    expect(missing(used)).toEqual([])
+  })
+
+  it('defines every key the manifest references', () => {
+    const used = keysInManifests()
+    expect(used).toContain('appName')
+    expect(missing(used)).toEqual([])
+  })
+
+  it('has no unused keys', () => {
+    const used = new Set([...keysInScripts(), ...keysInPages(), ...keysInManifests()])
+    expect([...defined].filter((k) => !used.has(k))).toEqual([])
   })
 })

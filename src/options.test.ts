@@ -164,6 +164,17 @@ describe('tracked sites', () => {
     expect(document.activeElement).toBe($('add-input'))
   })
 
+  it('stopping the second of two custom sites revokes exactly that site', async () => {
+    grant('alpha.org', 'beta.org')
+    await openOptions()
+    expect(trackedHosts()).toEqual(['alpha.org', 'beta.org'])
+    click(stopButton('beta.org'))
+    await flush()
+    expect(browser.permissions.remove).toHaveBeenCalledExactlyOnceWith({ origins: originsForHost('beta.org') })
+    expect(browser.granted).toEqual(new Set(originsForHost('alpha.org')))
+    expect(trackedHosts()).toEqual(['alpha.org'])
+  })
+
   it('tracks every suggested site at once, then says so', async () => {
     await openOptions()
     click($('enable-suggested'))

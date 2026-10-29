@@ -11,8 +11,11 @@
   "tooltipSession": { "message": "Total time this page has been open, active or not." },
   "overlayLabel": { "message": "Tab Timer" },
   "overlayPillAria": {
-    "message": "Tab Timer — $label$. Activate to expand.",
-    "placeholders": { "label": { "content": "$1" } }
+    "message": "Tab Timer — $label$ $time$. Activate to expand.",
+    "placeholders": {
+      "label": { "content": "$1" },
+      "time": { "content": "$2" }
+    }
   },
   "overlayHide": { "message": "Hide Tab Timer on this page" },
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
@@ -23,7 +26,10 @@
     "message": "$elapsed$ today · $limit$ limit",
     "placeholders": { "elapsed": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "blockSnooze": { "message": "5 more minutes" },
+  "blockSnooze": {
+    "message": "$minutes$ more minutes",
+    "placeholders": { "minutes": { "content": "$1" } }
+  },
   "blockManage": { "message": "Limits…" },
   "durMinutes": { "message": "$n$ min", "placeholders": { "n": { "content": "$1" } } },
   "durHours": { "message": "$h$ h", "placeholders": { "h": { "content": "$1" } } },

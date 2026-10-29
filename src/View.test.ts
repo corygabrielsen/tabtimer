@@ -55,7 +55,7 @@ describe('collapsed pill', () => {
     browser.storage.local.seed({ [todayKeyForHost('youtube.com')]: minutes(62) + seconds(5) })
     await mount()
     expect(pill()?.textContent).toBe('01:02:05')
-    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today. Activate to expand.')
+    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 01:02:05. Activate to expand.')
     expect(pill()?.getAttribute('aria-expanded')).toBe('false')
   })
 
@@ -63,6 +63,8 @@ describe('collapsed pill', () => {
     const view = await mount()
     await tickView(view, seconds(3))
     expect(pill()?.textContent).toBe('00:00:03')
+    // The accessible name keeps up with the visible time.
+    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 00:00:03. Activate to expand.')
   })
 
   it('updates the same element in place rather than rebuilding each second', async () => {
@@ -113,7 +115,7 @@ describe('expanded panel', () => {
     click(rows()[2])
     await flush()
     expect(rows()).toHaveLength(0)
-    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Session. Activate to expand.')
+    expect(pill()?.getAttribute('aria-label')).toMatch(/^Tab Timer — Session \d\d:\d\d:\d\d\. Activate to expand\.$/)
     click(pill())
     await flush()
     expect(rows().map((r) => r.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])

@@ -182,3 +182,60 @@ test('untracked site gets no overlay', async ({ context, serviceWorker, site }) 
   await expect(untracked.locator(`#${BLOCK_ID}`)).toHaveCount(0)
   expect(await untracked.evaluate(() => document.documentElement.style.overflow)).toBe('')
 })
+
+test('a limit exactly equal to today’s time blocks; popup reset clears it', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  const key = await todayKey(serviceWorker, SITE_A)
+  await seed(serviceWorker, { [key]: 3 * MINUTE })
+  const page = await context.newPage()
+  await page.goto(site(SITE_A))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+
+  // Take window focus away so SITE_A stops accruing, then let the last
+  // report (every 5 s) land: the stored total is what the limit compares.
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await page.waitForTimeout(6_000)
+  const today = Number(await read(serviceWorker, key))
+  expect(today).toBeGreaterThanOrEqual(3 * MINUTE)
+  const block = page.locator(`#${BLOCK_ID}`)
+
+  // One second under: no block. Exactly equal: blocked.
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: today + 1_000 } } })
+  await page.waitForTimeout(500)
+  await expect(block).toBeHidden()
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: today } } })
+  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
+  await expect(block).toBeVisible()
+
+  // The popup acts on the active tab; opened as a page, point it at SITE_A.
+  const [tab] = await serviceWorker.evaluate((url) => chrome.tabs.query({ url }), `${site(SITE_A)}*`)
+  const popup = await context.newPage()
+  await popup.addInitScript(
+    ({ id, url }) => {
+      const query = chrome.tabs.query.bind(chrome.tabs)
+      chrome.tabs.query = ((info: chrome.tabs.QueryInfo, callback?: (tabs: chrome.tabs.Tab[]) => void) => {
+        if (info.active && callback) {
+          callback([{ id, url } as chrome.tabs.Tab])
+          return
+        }
+        return query(info, callback as never)
+      }) as typeof chrome.tabs.query
+    },
+    { id: tab!.id!, url: tab!.url! }
+  )
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`)
+
+  // Two clicks: arm, then confirm.
+  await popup.getByRole('button', { name: `Reset today's time for ${SITE_A}` }).click()
+  await popup.getByRole('button', { name: `Confirm: reset today's time for ${SITE_A}` }).click()
+  await expect.poll(() => read(serviceWorker, key)).toBe(0)
+
+  // Back on the site: unblocked, and the overlay starts again from zero.
+  await page.bringToFront()
+  await expect(block).toBeHidden()
+  await expect.poll(async () => seconds(await shadowText(page, OVERLAY_ID))).toBeLessThan(10)
+})

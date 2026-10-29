@@ -262,9 +262,17 @@ export default class View {
     } else {
       const el = this.timeElements.get('collapsed')
       if (el) {
-        el.textContent = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+        this.setPillTime(el, elapsed)
       }
     }
+  }
+
+  // The pill's accessible name carries the time too: aria-label replaces
+  // its text content for assistive tech.
+  private setPillTime(pill: HTMLElement, elapsed: ElapsedState) {
+    const time = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+    pill.textContent = time
+    pill.setAttribute('aria-label', t('overlayPillAria', [LABELS[this.selectedTimer], time]))
   }
 
   private buildCollapsed(elapsed: ElapsedState): HTMLButtonElement {
@@ -272,8 +280,7 @@ export default class View {
     pill.type = 'button'
     pill.className = 'pill'
     pill.setAttribute('aria-expanded', 'false')
-    pill.setAttribute('aria-label', t('overlayPillAria', LABELS[this.selectedTimer]))
-    pill.textContent = formatTime(getElapsedForKey(elapsed, this.selectedTimer))
+    this.setPillTime(pill, elapsed)
     this.timeElements.set('collapsed', pill)
 
     pill.addEventListener('click', (e) => {
