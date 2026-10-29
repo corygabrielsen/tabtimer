@@ -4,6 +4,22 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-10-28
+
+### Changed
+
+- Time no longer counts while you're away from the computer or the screen is
+  locked. You count as away after 5 minutes without keyboard or mouse input,
+  and the time since your last input is taken back, so stepping away is never
+  counted. Reading a page without scrolling keeps counting for those 5
+  minutes.
+- Video or audio playing on a tracked site keeps counting while you're not
+  touching the keyboard or mouse, so watching counts. A locked screen always
+  pauses the count.
+- Tab Timer now asks Chrome whether you're idle (the `idle` permission). This
+  adds no install or update prompt, and the idle state never leaves your
+  device.
+
 ## [1.3.0] - 2026-10-28
 
 Upgrading resets stored time, sites and limits once (new storage format).
@@ -134,6 +150,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.4.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.0...v1.2.1
