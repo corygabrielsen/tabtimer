@@ -23,6 +23,9 @@ jobs:
     timeout-minutes: 15
     # Gates the CWS_* secrets behind the environment's protection rules.
     environment: chrome-web-store
+    env:
+      # Plain version in the manifest (no commit in version_name; see vite.config.ts).
+      TABTIMER_RELEASE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

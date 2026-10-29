@@ -45,8 +45,18 @@ pre-commit install
 ## Conventions
 
 - TypeScript, strict mode; Prettier-formatted (no semicolons, single quotes).
-- Keep commit subjects in the imperative mood and ≤ 50 characters.
-- Add or update unit tests (`vitest`) for logic changes to `Timer`/`storage`,
-  and e2e tests for user-visible overlay/block behaviour.
-- The tracked-site list lives in `manifest.json` `host_permissions` (the
-  content script's `matches` is derived from it at build time).
+- Conventional commit subjects in the imperative mood (`feat:`, `fix:`,
+  `build:`, …).
+- Add or update unit tests (`vitest`) for logic changes, and e2e tests for
+  user-visible overlay/block behaviour.
+- Tracked sites are chosen at runtime: each is an optional host permission the
+  user grants, and the content script is registered for the granted hosts
+  (see `src/sites.ts` and `src/background.ts`).
+
+## Versioning
+
+`package.json` holds the version; the build stamps it onto the manifest. A PR
+with a user-visible change bumps it ([SemVer](https://semver.org/): new
+feature → minor, fix → patch) and adds an entry to `CHANGELOG.md`.
+Development builds also carry the commit in `version_name`, so the extensions
+page shows which build is loaded.
