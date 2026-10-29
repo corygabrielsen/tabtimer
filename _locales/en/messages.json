@@ -166,5 +166,6 @@
     "message": "Everything Tab Timer records stays in this browser. Nothing is sent anywhere: no accounts, no analytics, no servers."
   },
   "optionsPrivacyLink": { "message": "Privacy policy" },
-  "optionsSourceLink": { "message": "Source code" }
+  "optionsSourceLink": { "message": "Source code" },
+  "blockSeeActivity": { "message": "See activity" }
 }

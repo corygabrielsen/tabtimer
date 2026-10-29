@@ -61,6 +61,26 @@ const STYLES = `
     color: #8a8a8a;
     margin-bottom: 28px;
   }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+  }
+  .activity {
+    border: 0;
+    padding: 8px 4px;
+    background: transparent;
+    color: #8a8a8a;
+    font: inherit;
+    font-size: 12px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .activity:hover {
+    color: #f5f5f5;
+  }
   .snooze {
     border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 2px;
@@ -89,6 +109,7 @@ const STYLES = `
     color: #f5f5f5;
   }
   .snooze:focus-visible,
+  .activity:focus-visible,
   .manage:focus-visible {
     outline: 1px solid #9a9a9a;
     outline-offset: 2px;
@@ -128,6 +149,7 @@ export default class BlockScreen {
   private hostLine: HTMLDivElement
   private detailLine: HTMLDivElement
   private snoozeButton: HTMLButtonElement
+  private activityButton: HTMLButtonElement
   private manageButton: HTMLButtonElement
   private blocked = false
   private unsubscribeState: () => void
@@ -191,6 +213,19 @@ export default class BlockScreen {
       void this.tracker.snooze()
     })
 
+    // Opens in a new tab, through the service worker; this page stays blocked.
+    this.activityButton = document.createElement('button')
+    this.activityButton.type = 'button'
+    this.activityButton.className = 'activity'
+    this.activityButton.textContent = t('blockSeeActivity')
+    this.activityButton.addEventListener('click', () => {
+      void this.bus.send('openActivity', {})
+    })
+
+    const row = document.createElement('div')
+    row.className = 'row'
+    row.append(this.snoozeButton, this.activityButton)
+
     this.manageButton = document.createElement('button')
     this.manageButton.type = 'button'
     this.manageButton.className = 'manage'
@@ -199,7 +234,7 @@ export default class BlockScreen {
       void this.bus.send('openOptions', {})
     })
 
-    box.append(title, this.hostLine, this.detailLine, this.snoozeButton, this.manageButton)
+    box.append(title, this.hostLine, this.detailLine, row, this.manageButton)
     this.dialog.append(box)
     this.shadow.append(style, this.dialog)
     document.body.appendChild(this.host)
@@ -466,7 +501,8 @@ export default class BlockScreen {
     }
   }
 
-  // Keep Tab cycling between the two buttons, and swallow Escape.
+  // Keep Tab cycling through the buttons (Shift+Tab backwards), and swallow
+  // Escape.
   private handleKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault()
@@ -476,9 +512,10 @@ export default class BlockScreen {
       return
     }
     e.preventDefault()
-    const order = [this.snoozeButton, this.manageButton]
+    const order = [this.snoozeButton, this.activityButton, this.manageButton]
     const current = order.indexOf(this.shadow.activeElement as HTMLButtonElement)
-    const next = current === -1 ? this.snoozeButton : order[(current + 1) % order.length]!
+    const step = e.shiftKey ? order.length - 1 : 1
+    const next = current === -1 ? this.snoozeButton : order[(current + step) % order.length]!
     next.focus({ preventScroll: true })
   }
 }
