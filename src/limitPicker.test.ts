@@ -10,13 +10,13 @@ import {
 import { flush } from './test/dom'
 
 let picker: LimitPicker
-let commit: ReturnType<typeof vi.fn<(minutes: number | null) => Promise<void>>>
+let commit: ReturnType<typeof vi.fn<(minutes: number | null) => Promise<boolean>>>
 let onChange: ReturnType<typeof vi.fn<(minutes: number | null) => void>>
 let saved: HTMLElement
 
-function mount(value: number | null, extra: { onEscape?: () => void } = {}) {
+function mount(value: number | null, extra: { onEscape?: () => void; closesWhenHidden?: boolean } = {}) {
   saved = document.createElement('span')
-  commit = vi.fn(() => Promise.resolve())
+  commit = vi.fn(() => Promise.resolve(true))
   onChange = vi.fn()
   picker = createLimitPicker({
     id: 'lp',
@@ -91,6 +91,50 @@ describe('limit picker', () => {
     expect(commit).toHaveBeenLastCalledWith(null)
   })
 
+  // U4: "Saved" showed, and the new value stayed, when the write failed.
+  it('U4: a failed save shows no Saved notice and reverts to the stored value', async () => {
+    mount(30)
+    commit.mockResolvedValue(false)
+    chip('1h').click()
+    expect(checked().map((c) => c.textContent)).toEqual(['1h'])
+    await flush()
+    expect(saved.textContent).toBe('')
+    expect(checked().map((c) => c.textContent)).toEqual(['30m'])
+    expect(onChange).toHaveBeenLastCalledWith(30)
+    // The stored value is still 30: picking 1h again tries again.
+    commit.mockResolvedValue(true)
+    chip('1h').click()
+    await flush()
+    expect(commit).toHaveBeenCalledTimes(2)
+    expect(saved.textContent).toBe('Saved')
+  })
+
+  it('U4: reverts to a value stored elsewhere meanwhile', async () => {
+    mount(30)
+    let fail!: (ok: boolean) => void
+    commit.mockReturnValue(new Promise((resolve) => (fail = resolve)))
+    chip('1h').click()
+    picker.set(120)
+    fail(false)
+    await flush()
+    expect(checked().map((c) => c.textContent)).toEqual(['2h'])
+  })
+
+  it('U4: only the latest save is shown', async () => {
+    mount(30)
+    const settle: ((ok: boolean) => void)[] = []
+    commit.mockImplementation(() => new Promise((resolve) => settle.push(resolve)))
+    chip('1h').click()
+    chip('2h').click()
+    settle[0]!(true)
+    await flush()
+    expect(saved.textContent).toBe('')
+    settle[1]!(false)
+    await flush()
+    // 1h was stored; 2h wasn't.
+    expect(checked().map((c) => c.textContent)).toEqual(['1h'])
+  })
+
   it('does not save again when the checked preset is picked', () => {
     mount(30)
     chip('30m').click()
@@ -128,7 +172,7 @@ describe('limit picker', () => {
       mount(null)
       chip('Custom').click()
       field().value = '007'
-      field().dispatchEvent(new Event('blur'))
+      field().blur()
       expect(commit).toHaveBeenCalledWith(7)
       expect(checked()[0]?.textContent).toBe('7m')
     })
@@ -160,7 +204,7 @@ describe('limit picker', () => {
       mount(30)
       chip('Custom').click()
       field().value = 'x'
-      field().dispatchEvent(new Event('blur'))
+      field().blur()
       expect(error().hidden).toBe(false)
       field().value = '45'
       field().dispatchEvent(new Event('input'))
@@ -184,9 +228,96 @@ describe('limit picker', () => {
     it('a blank field on blur cancels', () => {
       mount(30)
       chip('Custom').click()
-      field().dispatchEvent(new Event('blur'))
+      field().blur()
       expect(commit).not.toHaveBeenCalled()
       expect(checked().map((c) => c.textContent)).toEqual(['30m'])
+    })
+
+    // U1: Chrome blurs the field when the tab or window loses focus, with
+    // the field still focused; "4" on the way to "45" was saved.
+    it('U1: keeps the edit open when the tab or window loses focus', () => {
+      mount(30)
+      chip('Custom').click()
+      field().value = '4'
+      field().dispatchEvent(new Event('blur'))
+      const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+      field().blur()
+      hasFocus.mockRestore()
+      expect(commit).not.toHaveBeenCalled()
+      expect(field().closest('[hidden]')).toBeNull()
+      expect(field().value).toBe('4')
+      field().value = '45'
+      key(field(), 'Enter')
+      expect(commit).toHaveBeenCalledExactlyOnceWith(45)
+    })
+
+    // U2: pressing a chip blurred the field first, saving the typed value,
+    // then the click saved the chip.
+    it('U2: a chip pressed mid-edit saves only the chip', () => {
+      mount(30)
+      chip('Custom').click()
+      field().value = '5'
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      chip('Off').dispatchEvent(press)
+      expect(press.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(field())
+      chip('Off').click()
+      expect(commit).toHaveBeenCalledExactlyOnceWith(null)
+      expect(field().closest('[hidden]')).not.toBeNull()
+      expect(document.activeElement).toBe(chip('Off'))
+    })
+
+    it('pressing Custom mid-edit keeps what was typed', () => {
+      mount(30)
+      chip('Custom').click()
+      field().value = '45'
+      chip('Custom').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+      chip('Custom').click()
+      expect(field().value).toBe('45')
+      expect(document.activeElement).toBe(field())
+    })
+
+    it('a chip press outside an edit is left alone', () => {
+      mount(30)
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+      chip('Off').dispatchEvent(press)
+      expect(press.defaultPrevented).toBe(false)
+    })
+
+    // U3: closing the popup mid-edit dropped the typed value.
+    it('U3: saves an open edit when the page goes away', () => {
+      mount(30)
+      chip('Custom').click()
+      field().value = '45'
+      window.dispatchEvent(new Event('pagehide'))
+      expect(commit).toHaveBeenCalledExactlyOnceWith(45)
+    })
+
+    it('U3: saves it when a page that closes once hidden is hidden', () => {
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      try {
+        mount(30)
+        chip('Custom').click()
+        field().value = '45'
+        document.dispatchEvent(new Event('visibilitychange'))
+        expect(commit).not.toHaveBeenCalled() // a tab switch, not a close
+        mount(30, { closesWhenHidden: true })
+        chip('Custom').click()
+        field().value = '45'
+        document.dispatchEvent(new Event('visibilitychange'))
+        expect(commit).toHaveBeenCalledExactlyOnceWith(45)
+      } finally {
+        visibility.mockRestore()
+      }
+    })
+
+    it('does not save an invalid edit when the page goes away', () => {
+      mount(30)
+      chip('Custom').click()
+      field().value = 'x'
+      window.dispatchEvent(new Event('pagehide'))
+      expect(commit).not.toHaveBeenCalled()
+      expect(error().hidden).toBe(true)
     })
 
     it('picking a preset while editing closes the field', () => {

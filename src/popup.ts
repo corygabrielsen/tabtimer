@@ -179,7 +179,9 @@ function summaryText(face: ReturnType<typeof faceFor>, meterLimit: number | null
 
 const local = chromeStore('local')
 
-function renderTracked(tabId: number, base: string) {
+// `focus`: move focus into the view once shown (the enable view it replaces
+// held it).
+function renderTracked(tabId: number, base: string, focus = false) {
   const siteEl = byId('site')
   if (siteEl) {
     siteEl.textContent = base
@@ -223,6 +225,7 @@ function renderTracked(tabId: number, base: string) {
         site: base,
         value: siteLimitOf(limits, base),
         saved: byId('site-limit-saved'),
+        closesWhenHidden: true,
       })
       mount.replaceWith(picker.el)
       return
@@ -257,6 +260,7 @@ function renderTracked(tabId: number, base: string) {
     }
     window.clearTimeout(disarm)
     setArmed(false)
+    const before = tab
     if (tab) {
       // Optimistic: this site's time goes, from the total too.
       const now = Date.now()
@@ -264,21 +268,40 @@ function renderTracked(tabId: number, base: string) {
       tab = { ...tab, asOf: now, today: 0, globalToday: Math.max(0, totals.globalToday - totals.siteToday) }
       drawFace()
     }
-    void bus.send('resetToday', { site: base })
+    const optimistic = tab
+    void bus.send('resetToday', { site: base }).then((res) => {
+      // Not reset: the time comes back.
+      if (!res.ok && tab === optimistic) {
+        tab = before
+        drawFace()
+      }
+    })
   })
   resetBtn?.addEventListener('blur', () => {
     window.clearTimeout(disarm)
     setArmed(false)
   })
 
+  const read = (key: string) => local.get(key).catch(() => undefined)
+
   // The time, the now mark and the snooze countdown run on while the popup
-  // is open.
+  // is open; at midnight the strip and the face start the new day.
+  let shownKey = todayKey()
   window.setInterval(() => {
+    const key = todayKey()
+    if (key !== shownKey) {
+      shownKey = key
+      void Promise.all([read(key), ask()]).then(([d]) => {
+        if (todayKey() === key) {
+          day = normalizeDay(d)
+        }
+        draw()
+      })
+    }
     moveNow()
     drawFace()
   }, 1000)
 
-  const read = (key: string) => local.get(key).catch(() => undefined)
   const load = async () => {
     const [d, l, p] = await Promise.all([read(todayKey()), read(LIMITS_KEY), read(PREFS_KEY), ask()])
     day = normalizeDay(d)
@@ -306,6 +329,9 @@ function renderTracked(tabId: number, base: string) {
     draw()
     renderToggle()
     showView('tracked')
+    if (focus) {
+      picker?.focus()
+    }
   })
 }
 
@@ -325,7 +351,7 @@ function renderEnable(tab: ActiveTab, base: string) {
     void chrome.permissions.request({ origins }).then((granted) => {
       // The worker starts the site's open tabs (permissions.onAdded).
       if (granted) {
-        renderTracked(tab.id, base)
+        renderTracked(tab.id, base, true)
       }
     })
   })
