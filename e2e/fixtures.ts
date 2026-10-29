@@ -43,7 +43,9 @@ function silentWav(): Buffer {
 }
 
 // Every *.test host resolves to the fixture server. Any path serves a plain
-// page; /interactive adds focusable controls and looping audio.
+// page; /interactive adds focusable controls, looping audio, and a way into
+// fullscreen (the button, or the F key like a video player), counting entries
+// in window.fullscreenEntries.
 function startServer(): Promise<Server> {
   const wav = silentWav()
   const server = createServer((req, res) => {
@@ -56,7 +58,17 @@ function startServer(): Promise<Server> {
     const extra =
       req.url === '/interactive'
         ? '<button id="page-button">page button</button><a id="page-link" href="#x">page link</a>' +
-          '<audio id="media" src="/silence.wav" loop></audio>'
+          '<audio id="media" src="/silence.wav" loop></audio>' +
+          '<button id="fullscreen-button">fullscreen</button>' +
+          `<script>
+            window.fullscreenEntries = 0
+            window.pageClicks = 0
+            const enter = () => document.documentElement.requestFullscreen().catch(() => {})
+            document.getElementById('fullscreen-button').addEventListener('click', enter)
+            document.getElementById('page-button').addEventListener('click', () => window.pageClicks++)
+            document.addEventListener('keydown', (e) => e.key === 'f' && enter())
+            document.addEventListener('fullscreenchange', () => document.fullscreenElement && window.fullscreenEntries++)
+          </script>`
         : ''
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end(`<!doctype html><title>${host}</title><h1>fixture ${host}</h1>${extra}`)

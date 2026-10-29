@@ -23,7 +23,10 @@
     "message": "$elapsed$ today · $limit$ limit",
     "placeholders": { "elapsed": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "blockSnooze": { "message": "5 more minutes" },
+  "blockSnooze": {
+    "message": "$minutes$ more minutes",
+    "placeholders": { "minutes": { "content": "$1" } }
+  },
   "blockManage": { "message": "Limits…" },
   "durMinutes": { "message": "$n$ min", "placeholders": { "n": { "content": "$1" } } },
   "durHours": { "message": "$h$ h", "placeholders": { "h": { "content": "$1" } } },
