@@ -125,7 +125,12 @@ function restoreFocus(prevOrder: { tracked: string[]; suggested: string[] }) {
 
 let order = { tracked: [] as string[], suggested: [] as string[] }
 
+// Grant changes can arrive back to back; only the newest render may paint, or
+// a slower, older one would restore rows that were just removed.
+let renderSeq = 0
+
 async function render() {
+  const seq = ++renderSeq
   const trackedUl = byId<HTMLUListElement>('tracked-sites')
   const suggestedUl = byId<HTMLUListElement>('suggested')
   if (!trackedUl || !suggestedUl) {
@@ -140,6 +145,9 @@ async function render() {
     ...[...granted].filter((host) => !LABELS.has(host)).sort(),
   ]
   const todays = await Promise.all(tracked.map(readToday))
+  if (seq !== renderSeq) {
+    return
+  }
   trackedUl.replaceChildren(...tracked.map((host, i) => siteRow(host, limits.perSite[host], todays[i] ?? 0)))
   byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
   const count = byId('tracked-count')
