@@ -7,9 +7,9 @@
 // Pages are told their state by message; a page's reply is its presence,
 // which is how the worker asks a page to report again (`probe`).
 import { dayOf, startOfDay } from '../core/day'
-import { blockAt } from '../core/limits'
+import { blockAt, type Limits } from '../core/limits'
 import { parsePresence, type StatePush, type TabState } from '../core/messages'
-import { dayTotal, siteTotal, type DayUsage } from '../core/schema'
+import { dayTotal, siteTotal, type DayUsage, type Prefs } from '../core/schema'
 import type { Site } from '../core/site'
 import { creditEnd, step, type Attest, type TrackerEvent, type TrackerState } from '../core/tracker'
 import type { Ledger, Tx } from './ledger'
@@ -33,10 +33,10 @@ export function createTracker(deps: TrackerDeps) {
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
-    let ctx: Promise<[DayUsage, Awaited<ReturnType<Tx['limits']>>]> | null = null
+    let ctx: Promise<[DayUsage, Limits, Prefs]> | null = null
     return async (tabId: number, attest: Attest, s: TrackerState): Promise<TabState> => {
-      ctx ??= Promise.all([tx.today(), tx.limits()])
-      const [usage, limits] = await ctx
+      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs()])
+      const [usage, limits, prefs] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
       // The open interval's uncredited part, today's share of it.
       const end = open ? creditEnd(open, tx.now) : 0
@@ -53,6 +53,7 @@ export function createTracker(deps: TrackerDeps) {
         running: open !== null,
         blockAt: block?.at ?? null,
         limit: block ? { scope: block.scope, ms: block.limit } : null,
+        prefs,
       }
     }
   }
@@ -143,8 +144,8 @@ export function createTracker(deps: TrackerDeps) {
     // A browser event (tab, window, idle, alarm).
     dispatch: async (event: TrackerEvent): Promise<void> => settle(await run(event)),
 
-    // Limits or the snooze changed: every page that reported learns its new
-    // state (and an open interval now over its limit closes).
+    // Limits, the snooze or the prefs changed: every page that reported
+    // learns its new state (and an open interval now over its limit closes).
     refresh: async (): Promise<void> => settle(await run(null, allTabs)),
 
     // Zero one site's time today, including the open interval's uncredited

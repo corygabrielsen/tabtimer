@@ -21,6 +21,7 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
+    prefs: { hidden: false, scale: 1 },
   }
 
   it('accepts a well-formed state, rebuilt from its fields', () => {
@@ -46,6 +47,9 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, limit: { scope: 'week', ms: 1 } } },
     { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } } },
     { type: 'state', state: { ...state, limit: 5 } },
+    { type: 'state', state: { ...state, prefs: undefined } },
+    { type: 'state', state: { ...state, prefs: { hidden: 'no', scale: 1 } } },
+    { type: 'state', state: { ...state, prefs: { hidden: false, scale: '1' } } },
   ])('rejects %j', (raw) => {
     expect(parseStatePush(raw)).toBeNull()
   })

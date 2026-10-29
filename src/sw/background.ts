@@ -3,7 +3,7 @@ import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { CHECKPOINT_MS } from '../core/tracker'
 import { msToMinutes } from '../core/limits'
-import { LIMITS_KEY } from '../core/schema'
+import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { siteOfUrl } from '../core/site'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
@@ -53,10 +53,10 @@ chrome.alarms.onAlarm.addListener(({ name }) => {
     dispatch({ kind: 'checkpoint' })
   }
 })
-// The limits (the snooze included) decide when pages block: tell them of a
-// change, whoever made it.
+// The limits (the snooze included) decide when pages block, and the prefs
+// how their overlay looks: tell them of a change, whoever made it.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && LIMITS_KEY in changes) {
+  if (area === 'local' && (LIMITS_KEY in changes || PREFS_KEY in changes)) {
     void tracker.refresh().catch(() => undefined)
   }
 })

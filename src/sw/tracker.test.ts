@@ -61,6 +61,7 @@ describe('presence', () => {
       running: true,
       blockAt: null,
       limit: null,
+      prefs: { hidden: false, scale: 1 },
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
     now += 30 * S
@@ -322,7 +323,7 @@ describe('background wiring', () => {
     expect(await navigate({ discarded: true }, 'https://www.reddit.com/')).toBeNull()
   })
 
-  it('tells pages when limits or the snooze change, whoever changed them', async () => {
+  it('tells pages when limits, the snooze or the prefs change, whoever changed them', async () => {
     await report(SHOWN)
     browser.tabs.sendMessage.mockClear()
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 1 } } })
@@ -334,6 +335,14 @@ describe('background wiring', () => {
     )
     browser.tabs.sendMessage.mockClear()
     browser.storage.local.seed({ prefs: { hidden: true, scale: 1 } })
+    await flush()
+    expect(browser.tabs.sendMessage).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ state: expect.objectContaining({ prefs: { hidden: true, scale: 1 } }) }),
+      { frameId: 0 }
+    )
+    browser.tabs.sendMessage.mockClear()
+    browser.storage.local.seed({ other: 1 })
     browser.storage.session.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
     await flush()
     expect(browser.tabs.sendMessage).not.toHaveBeenCalled()

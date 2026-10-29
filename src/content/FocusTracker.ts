@@ -3,6 +3,7 @@ import { systemClock } from '../chrome/clock'
 import { dayOf, startOfDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
 import type { TabState } from '../core/messages'
+import type { Prefs } from '../core/schema'
 import type { Presence } from '../core/tracker'
 import type { Bus, Clock, Pushes } from '../ports'
 
@@ -196,6 +197,11 @@ export default class FocusTracker {
   // The site this page counts under, once the worker has said.
   get site(): string | null {
     return this.state?.site ?? null
+  }
+
+  // The overlay preferences, once the worker has said.
+  get prefs(): Prefs | null {
+    return this.state?.prefs ?? null
   }
 
   // Today's totals now: as of the worker's last state, plus the time since

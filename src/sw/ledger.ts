@@ -43,10 +43,11 @@ export type Tx = {
   // time credited since a back-dated idle start.
   observeIdle(next: IdleState): Promise<void>
   idleState(): IdleState
-  // Today's usage, and the limits (the snooze included), as of this
-  // transaction.
+  // Today's usage, the limits (the snooze included) and the overlay
+  // preferences, as of this transaction.
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
+  prefs(): Promise<Prefs>
   // Zero one site's time for today.
   resetToday(site: Site): Promise<void>
 }
@@ -129,6 +130,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
       idleState: () => away.state,
       today: () => day(todayKey),
       limits: async () => normalizeLimits(await local.get(LIMITS_KEY)),
+      prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
       resetToday: async (site) => {
         const usage = await day(todayKey)
         if (site in usage) {

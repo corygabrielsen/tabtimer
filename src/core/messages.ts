@@ -33,6 +33,8 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
+  // The overlay preferences (the worker is their only writer).
+  prefs: Prefs
 }
 
 export type Contract = {
@@ -117,6 +119,10 @@ export function parseStatePush(raw: unknown): TabState | null {
     }
     limit = { scope: l.scope, ms: l.ms }
   }
+  const p = s.prefs
+  if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
+    return null
+  }
   return {
     site: s.site,
     day: s.day,
@@ -126,5 +132,6 @@ export function parseStatePush(raw: unknown): TabState | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
+    prefs: { hidden: p.hidden, scale: p.scale },
   }
 }

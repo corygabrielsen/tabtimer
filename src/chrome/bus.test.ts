@@ -58,6 +58,7 @@ describe('state pushes', () => {
     running: false,
     blockAt: null,
     limit: null,
+    prefs: { hidden: false, scale: 1 },
   }
   const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 
