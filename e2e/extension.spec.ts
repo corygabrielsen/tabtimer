@@ -33,9 +33,9 @@ test('loads: service worker alive and options page renders', async ({ context, s
   const page = await context.newPage()
   await page.goto(`chrome-extension://${extensionId}/options.html`)
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-  await expect(page.getByRole('spinbutton', { name: 'All tracked sites' })).toBeVisible()
-  // The fixture hosts are granted, so they list as enabled custom sites.
-  await expect(page.locator('#custom')).toContainText(SITE_A)
+  await expect(page.getByRole('textbox', { name: 'All tracked sites combined' })).toBeVisible()
+  // The fixture hosts are granted, so they list as tracked sites.
+  await expect(page.locator('#tracked-sites')).toContainText(SITE_A)
 })
 
 test('tracked site shows the overlay and its time increases', async ({ context, serviceWorker, site }) => {
