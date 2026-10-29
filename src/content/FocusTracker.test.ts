@@ -205,6 +205,36 @@ describe('reporting to the service worker', () => {
     expect(today(model)).toBe(seconds(5))
   })
 
+  it('leaves a hidden page unpolled, and reports what changed once shown', async () => {
+    const reports = presenceReports()
+    const video = document.createElement('video')
+    const state = { paused: false }
+    Object.defineProperty(video, 'paused', { get: () => state.paused })
+    Object.defineProperty(video, 'readyState', { get: () => 4 })
+    document.body.append(video)
+    started()
+    await run(seconds(1))
+    setPageState({ hidden: true })
+    await run(seconds(1))
+    const sent = reports.length
+    state.paused = true // stalls, with no event
+    await run(seconds(30))
+    expect(reports).toHaveLength(sent)
+    setPageState({ hidden: false })
+    await run(seconds(1))
+    expect(reports.at(-1)).toMatchObject({ visible: true, media: false })
+    video.remove()
+  })
+
+  it('retries a failed report while hidden', async () => {
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
+    setPageState({ hidden: true, focused: false }, false)
+    const model = trackTracker(new FocusTracker(undefined, { send }))
+    model.start()
+    await run(seconds(10))
+    expect(send).toHaveBeenCalledTimes(2)
+  })
+
   it('shows nothing ticking while the worker is unreachable', async () => {
     browser.runtime.onMessage.listeners.clear()
     const model = started()
