@@ -6,7 +6,11 @@ import popupHtml from '../popup.html?raw'
 import optionsHtml from '../options.html?raw'
 import manifestJson from '../manifest.json?raw'
 
-const sources = import.meta.glob<string>(['./*.ts', '!./*.test.ts'], { query: '?raw', import: 'default', eager: true })
+const sources = import.meta.glob<string>(['./**/*.ts', '!./**/*.test.ts', '!./test/**'], {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+})
 
 describe('t', () => {
   it('returns the localized message', () => {

@@ -1,20 +1,17 @@
-import type Model from './Model'
-import { baseHost } from './storage'
+import type FocusTracker from './FocusTracker'
+import { baseHost, readLimits, readSnoozeUntil, snoozeBlocking } from '../storage'
 import {
   SNOOZE_MS,
   evaluateLimits,
   normalizeLimits,
-  readLimits,
-  readSnoozeUntil,
-  snoozeBlocking,
   LIMITS_KEY,
   BLOCK_SNOOZE_KEY,
   type BlockReason,
   type Limits,
-} from './limits'
-import { sendMessage } from './messages'
-import { formatTime } from './format'
-import { t } from './i18n'
+} from '../core/limits'
+import { sendMessage } from '../messages'
+import { formatTime } from '../format'
+import { t } from '../i18n'
 
 const HOST_ID = 'tabtimer-block'
 const MAX_Z_INDEX = 2147483647
@@ -132,7 +129,7 @@ const ACTIVE_CAPTURE: AddEventListenerOptions = { capture: true, passive: false 
 // fullscreen (a later top-layer element would cover the dialog), media that
 // keeps playing behind it, and focus leaving it (Tab past the last button, or
 // browsers without a modal top layer).
-export default class Blocker {
+export default class BlockScreen {
   private host: HTMLDivElement
   private shadow: ShadowRoot
   private dialog: HTMLDialogElement
@@ -154,7 +151,7 @@ export default class Blocker {
   private frozenWindow: ScrollPosition | null = null
   private frozenElements = new Map<Element, ScrollPosition>()
 
-  constructor(private model: Model) {
+  constructor(private tracker: FocusTracker) {
     this.siteHost = baseHost(window.location.hostname)
 
     document.getElementById(HOST_ID)?.remove()
@@ -238,12 +235,12 @@ export default class Blocker {
     }
 
     const siteToday = hasSite
-      ? await this.model
+      ? await this.tracker
           .readElapsed()
           .then((e) => e.today.elapsed)
           .catch(() => 0)
       : 0
-    const globalToday = hasGlobal ? await this.model.readGlobalToday().catch(() => 0) : 0
+    const globalToday = hasGlobal ? await this.tracker.readGlobalToday().catch(() => 0) : 0
     const reason = evaluateLimits(this.limits, this.siteHost, siteToday, globalToday)
     if (reason) {
       this.block(reason)
@@ -259,7 +256,7 @@ export default class Blocker {
       return
     }
     this.blocked = true
-    this.model.setBlocked(true)
+    this.tracker.setBlocked(true)
     this.previousFocus = document.activeElement
     this.host.style.setProperty('display', 'block', 'important')
     this.lockScroll()
@@ -281,7 +278,7 @@ export default class Blocker {
       return
     }
     this.blocked = false
-    this.model.setBlocked(false)
+    this.tracker.setBlocked(false)
     this.removePageListeners()
     this.dialog.close()
     this.host.style.setProperty('display', 'none', 'important')
@@ -292,7 +289,7 @@ export default class Blocker {
   destroy() {
     if (this.blocked) {
       this.blocked = false
-      this.model.setBlocked(false)
+      this.tracker.setBlocked(false)
       this.removePageListeners()
     }
     chrome.storage.onChanged.removeListener(this.handleStorageChange)

@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.x.com/home"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { LIMITS_KEY } from './limits'
-import { todayKeyForHost } from './storage'
-import { fakeChrome } from './test/chrome'
-import { flush, setPageState, trackShadowRoots } from './test/dom'
-import { minutes, seconds, startBackground, storedToday, useClock } from './test/content'
+import { LIMITS_KEY } from '../core/limits'
+import { todayKeyForHost } from '../storage'
+import { fakeChrome } from '../test/chrome'
+import { flush, setPageState, trackShadowRoots } from '../test/dom'
+import { minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
 
 let shadowOf: (id: string) => ShadowRoot
 

@@ -1,63 +1,9 @@
-export type StorageArea = 'sync' | 'local' | 'managed'
+import { chromeStore } from './chrome/store'
+import { dayOf } from './core/day'
+import { BLOCK_SNOOZE_KEY, DEFAULT_LIMITS, LIMITS_KEY, SNOOZE_MS, normalizeLimits, type Limits } from './core/limits'
 
-interface Storage {
-  get: <T>(key: string, defaultValue: T, storageArea: StorageArea) => Promise<T>
-  set: <T>(key: string, value: T, storageArea: StorageArea) => Promise<void>
-  remove: (keys: string | string[], storageArea: StorageArea) => Promise<void>
-  keys: (storageArea: StorageArea) => Promise<string[]>
-}
-
-export const storage: Storage = {
-  get: <T>(key: string, defaultValue: T, storageArea: StorageArea) => {
-    return new Promise<T>((resolve, reject) => {
-      chrome.storage[storageArea].get({ [key]: defaultValue }, (items: Record<string, unknown>) => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          const value = items[key]
-          resolve((value === undefined ? defaultValue : value) as T)
-        }
-      })
-    })
-  },
-  set: <T>(key: string, value: T, storageArea: StorageArea) => {
-    return new Promise<void>((resolve, reject) => {
-      chrome.storage[storageArea].set({ [key]: value }, () => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          resolve()
-        }
-      })
-    })
-  },
-  remove: (keys: string | string[], storageArea: StorageArea) => {
-    return new Promise<void>((resolve, reject) => {
-      chrome.storage[storageArea].remove(keys, () => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          resolve()
-        }
-      })
-    })
-  },
-  keys: (storageArea: StorageArea) => {
-    return new Promise<string[]>((resolve, reject) => {
-      chrome.storage[storageArea].get(null, (items: Record<string, unknown>) => {
-        const error = chrome.runtime.lastError
-        if (error) {
-          reject(error)
-        } else {
-          resolve(Object.keys(items))
-        }
-      })
-    })
-  },
-}
+// chrome.storage.local, where every key below lives.
+export const local = chromeStore('local')
 
 export const ELAPSED_KEY_PREFIX = 'focusTimer_elapsed_today'
 
@@ -85,41 +31,65 @@ export function baseKeyForHost(hostname: string): string {
   return `${ELAPSED_KEY_PREFIX}_${baseHost(hostname)}`
 }
 
-function dateStamp(date: Date): string {
-  // ISO yyyy-mm-dd with zero padding.
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(
-    2,
-    '0'
-  )}`
-}
-
 export function todayKeyForHost(hostname: string, date: Date = new Date()): string {
-  return `${baseKeyForHost(hostname)}_${dateStamp(date)}`
+  return `${baseKeyForHost(hostname)}_${dayOf(date.getTime())}`
 }
 
 // Is `key` some tracked site's daily focus-time key for `date`? The global
 // daily total is the sum of every such key.
 export function isElapsedKeyForDay(key: string, date: Date): boolean {
-  return key.startsWith(`${ELAPSED_KEY_PREFIX}_`) && key.endsWith(`_${dateStamp(date)}`)
+  return key.startsWith(`${ELAPSED_KEY_PREFIX}_`) && key.endsWith(`_${dayOf(date.getTime())}`)
 }
 
 // Sum today's stored focus time across every tracked host (the global daily
 // total). Excludes in-flight, not-yet-flushed deltas, so it can lag a live
 // counter by a few seconds — fine for a minute-scale limit.
-export function readGlobalElapsedToday(date: Date = new Date()): Promise<number> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(null, (items: Record<string, unknown>) => {
-      if (chrome.runtime.lastError) {
-        resolve(0)
-        return
-      }
-      let total = 0
-      for (const [key, value] of Object.entries(items)) {
-        if (isElapsedKeyForDay(key, date) && typeof value === 'number') {
-          total += value
-        }
-      }
-      resolve(total)
-    })
-  })
+export async function readGlobalElapsedToday(date: Date = new Date()): Promise<number> {
+  const items = await local.getAll().catch(() => ({}) as Record<string, unknown>)
+  let total = 0
+  for (const [key, value] of Object.entries(items)) {
+    if (isElapsedKeyForDay(key, date) && typeof value === 'number') {
+      total += value
+    }
+  }
+  return total
+}
+
+export function readLimits(): Promise<Limits> {
+  return local
+    .get(LIMITS_KEY)
+    .then(normalizeLimits)
+    .catch(() => DEFAULT_LIMITS)
+}
+
+function writeLimits(limits: Limits): Promise<void> {
+  return local.set({ [LIMITS_KEY]: limits }).catch(() => undefined)
+}
+
+export async function setGlobalLimit(ms: number | null): Promise<void> {
+  const limits = await readLimits()
+  await writeLimits({ ...limits, global: ms })
+}
+
+export async function setPerSiteLimit(host: string, ms: number | null): Promise<void> {
+  const limits = await readLimits()
+  const perSite = { ...limits.perSite }
+  if (ms === null) {
+    delete perSite[host]
+  } else {
+    perSite[host] = ms
+  }
+  await writeLimits({ ...limits, perSite })
+}
+
+export function readSnoozeUntil(): Promise<number> {
+  return local
+    .get<number>(BLOCK_SNOOZE_KEY)
+    .then((v) => v ?? 0)
+    .catch(() => 0)
+}
+
+// Suppress all blocking for SNOOZE_MS of wall-clock time.
+export function snoozeBlocking(): Promise<void> {
+  return local.set({ [BLOCK_SNOOZE_KEY]: Date.now() + SNOOZE_MS }).catch(() => undefined)
 }

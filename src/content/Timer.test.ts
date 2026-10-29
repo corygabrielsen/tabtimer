@@ -4,7 +4,7 @@ import Timer, { TimerState, TimerType } from './Timer'
 const SECOND = 1000
 
 // Advance the clock `ms` in 1s steps, ticking the timer after each, as the
-// Model's per-second interval does.
+// FocusTracker's per-second interval does.
 function run(t: Timer, ms: number): void {
   for (let left = ms; left > 0; left -= SECOND) {
     vi.advanceTimersByTime(Math.min(SECOND, left))

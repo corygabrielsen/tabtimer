@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { HIDDEN_KEY, todayKeyForHost } from './storage'
-import { LIMITS_KEY, BLOCK_SNOOZE_KEY } from './limits'
+import { LIMITS_KEY, BLOCK_SNOOZE_KEY } from './core/limits'
 import { originsForHost } from './sites'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { click, flush, loadPageBody } from './test/dom'

@@ -1,8 +1,8 @@
-import type Model from './Model'
-import type { ElapsedState } from './Model'
-import { formatTime } from './format'
-import { storage, HIDDEN_KEY, SCALE_KEY } from './storage'
-import { t } from './i18n'
+import type FocusTracker from './FocusTracker'
+import type { ElapsedState } from './FocusTracker'
+import { formatTime } from '../format'
+import { local, HIDDEN_KEY, SCALE_KEY } from '../storage'
+import { t } from '../i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
 const MAX_Z_INDEX = 2147483647
@@ -39,7 +39,7 @@ const TOOLTIPS: Record<TimerKey, string> = {
   session: t('tooltipSession'),
 }
 
-// Map our display keys to the model's keys.
+// Map our display keys to the tracker's keys.
 function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
   if (key === 'session') {
     return elapsed.countup.elapsed
@@ -146,7 +146,7 @@ const STYLES = `
   }
 `
 
-export default class View {
+export default class Overlay {
   private host: HTMLDivElement
   private shadow: ShadowRoot
   private mount: HTMLDivElement
@@ -158,7 +158,7 @@ export default class View {
   private needsRebuild = true
   private outsideClickAttached = false
 
-  constructor(private model: Model) {
+  constructor(private tracker: FocusTracker) {
     // Drop a stale widget left by a previous instance (re-injection / SPA
     // remount) so we never stack duplicate hosts.
     document.getElementById(HOST_ID)?.remove()
@@ -178,7 +178,10 @@ export default class View {
     document.body.appendChild(this.host)
 
     // Respect the saved hide/size preferences before the first paint.
-    Promise.all([storage.get(HIDDEN_KEY, false, 'local'), storage.get(SCALE_KEY, 1, 'local')])
+    Promise.all([
+      local.get<boolean>(HIDDEN_KEY).then((v) => v ?? false),
+      local.get<number>(SCALE_KEY).then((v) => v ?? 1),
+    ])
       .then(([hidden, scale]) => {
         this.hidden = hidden
         this.scale = clampScale(scale)
@@ -205,7 +208,7 @@ export default class View {
     }
     this.scale = next
     this.applyScale()
-    void storage.set(SCALE_KEY, next, 'local').catch(() => {})
+    void local.set({ [SCALE_KEY]: next }).catch(() => {})
   }
 
   private applyHostStyles() {
@@ -227,7 +230,7 @@ export default class View {
       return
     }
 
-    this.model
+    this.tracker
       .readElapsed()
       .then((elapsed) => {
         // If we just need fresh times, update text in place without rebuilding.
@@ -397,7 +400,7 @@ export default class View {
     this.expanded = false
     this.detachOutsideClick()
     this.needsRebuild = true
-    void storage.set(HIDDEN_KEY, hidden, 'local').catch(() => {})
+    void local.set({ [HIDDEN_KEY]: hidden }).catch(() => {})
     this.render()
   }
 

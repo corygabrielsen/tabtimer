@@ -1,8 +1,8 @@
 // In-memory fake of the chrome.* surface the extension uses. One instance is
 // installed on globalThis before every test (see setup.ts), so content-script,
 // popup, options and background code all talk to the same fake "browser":
-// a message sent by Model reaches background.ts's onMessage listener, whose
-// storage writes fire storage.onChanged listeners in Blocker/View/popup.
+// a message sent by FocusTracker reaches background.ts's onMessage listener, whose
+// storage writes fire storage.onChanged listeners in BlockScreen/Overlay/popup.
 //
 // Callbacks and events are delivered asynchronously (microtask, or a timer
 // when `latency` is set) like the real APIs, with runtime.lastError set only
@@ -41,36 +41,82 @@ export class FakeStorageArea {
     private readonly name: AreaName
   ) {}
 
-  get = (keys: string | string[] | Record<string, unknown> | null, callback: Callback<Record<string, unknown>>) => {
+  // Each operation takes an optional callback (callback style: lastError set
+  // while it runs) and returns a promise (promise style: rejects on error),
+  // as the real API does.
+  get = (
+    keys: string | string[] | Record<string, unknown> | null,
+    callback?: Callback<Record<string, unknown>>
+  ): Promise<Record<string, unknown>> => {
     // Snapshot at call time; delivered later (models read/write interleaving).
     const snapshot = this.read(keys)
-    this.browser.deliver(this.error, () => callback(snapshot))
+    return this.complete(this.error, () => snapshot, callback)
   }
 
-  set = (items: Record<string, unknown>, callback?: () => void) => {
+  set = (items: Record<string, unknown>, callback?: () => void): Promise<void> => {
     const error = this.error
-    this.browser.deliver(error, () => {
-      if (!error) {
-        this.write(items)
-      }
-      callback?.()
-    })
-  }
-
-  remove = (keys: string | string[], callback?: () => void) => {
-    const error = this.error
-    this.browser.deliver(error, () => {
-      if (!error) {
-        const changes: StorageChanges = {}
-        for (const key of typeof keys === 'string' ? [keys] : keys) {
-          if (key in this.data) {
-            changes[key] = { oldValue: this.data[key] }
-            delete this.data[key]
-          }
+    return this.complete(
+      error,
+      () => {
+        if (!error) {
+          this.write(items)
         }
-        this.emit(changes)
-      }
-      callback?.()
+      },
+      callback
+    )
+  }
+
+  remove = (keys: string | string[], callback?: () => void): Promise<void> => {
+    const error = this.error
+    return this.complete(
+      error,
+      () => {
+        if (!error) {
+          const changes: StorageChanges = {}
+          for (const key of typeof keys === 'string' ? [keys] : keys) {
+            if (key in this.data) {
+              changes[key] = { oldValue: this.data[key] }
+              delete this.data[key]
+            }
+          }
+          this.emit(changes)
+        }
+      },
+      callback
+    )
+  }
+
+  clear = (callback?: () => void): Promise<void> => {
+    const error = this.error
+    return this.complete(
+      error,
+      () => {
+        if (!error) {
+          const changes: StorageChanges = {}
+          for (const [key, oldValue] of Object.entries(this.data)) {
+            changes[key] = { oldValue }
+          }
+          this.data = {}
+          this.emit(changes)
+        }
+      },
+      callback
+    )
+  }
+
+  // Apply `effect` asynchronously, then hand its result to the callback (with
+  // lastError set) and settle the returned promise.
+  private complete<T>(error: string | null, effect: () => T, callback?: Callback<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.browser.deliver(error, () => {
+        const value = effect()
+        callback?.(value)
+        if (error) {
+          reject(new Error(error))
+        } else {
+          resolve(value)
+        }
+      })
     })
   }
 

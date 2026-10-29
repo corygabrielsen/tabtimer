@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { fakeChrome, type FakeChrome } from './test/chrome'
-import { flush } from './test/dom'
-import { sendMessage, type MessageResponse } from './messages'
-import { originsForHost } from './sites'
+import { fakeChrome, type FakeChrome } from '../test/chrome'
+import { flush } from '../test/dom'
+import { sendMessage, type MessageResponse } from '../messages'
+import { originsForHost } from '../sites'
 
 // Send an arbitrary (possibly malformed) payload, resolving with the response
 // or the lastError message.

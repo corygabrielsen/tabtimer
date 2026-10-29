@@ -1,18 +1,18 @@
-import { storage, todayKeyForHost, HIDDEN_KEY, ELAPSED_KEY_PREFIX, baseHost, readGlobalElapsedToday } from './storage'
-import { sendMessage } from './messages'
-import { formatTime } from './format'
-import { originsForHost } from './sites'
 import {
+  local,
+  todayKeyForHost,
+  HIDDEN_KEY,
+  ELAPSED_KEY_PREFIX,
+  baseHost,
+  readGlobalElapsedToday,
   readLimits,
   readSnoozeUntil,
   setPerSiteLimit,
-  msToMinutes,
-  minutesToMs,
-  evaluateLimits,
-  LIMITS_KEY,
-  BLOCK_SNOOZE_KEY,
-  type Limits,
-} from './limits'
+} from './storage'
+import { sendMessage } from './messages'
+import { formatTime } from './format'
+import { originsForHost } from './sites'
+import { msToMinutes, minutesToMs, evaluateLimits, LIMITS_KEY, BLOCK_SNOOZE_KEY, type Limits } from './core/limits'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, setDocumentLang } from './ui'
 import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'
@@ -169,7 +169,10 @@ function renderTracked(tab: ActiveTab, base: string) {
 
   const snapshot = async (): Promise<Snapshot> => {
     const [siteToday, globalToday, limits, snoozeUntil] = await Promise.all([
-      storage.get(key, 0, 'local').catch(() => 0),
+      local
+        .get<number>(key)
+        .then((v) => v ?? 0)
+        .catch(() => 0),
       readGlobalElapsedToday().catch(() => 0),
       readLimits(),
       readSnoozeUntil(),
@@ -214,12 +217,18 @@ function renderTracked(tab: ActiveTab, base: string) {
   // --- overlay switch ---
   const toggleBtn = byId('toggle-btn')
   const renderToggle = async () => {
-    const hidden = await storage.get(HIDDEN_KEY, false, 'local').catch(() => false)
+    const hidden = await local
+      .get<boolean>(HIDDEN_KEY)
+      .then((v) => v ?? false)
+      .catch(() => false)
     toggleBtn?.setAttribute('aria-checked', String(!hidden))
   }
   toggleBtn?.addEventListener('click', async () => {
-    const hidden = await storage.get(HIDDEN_KEY, false, 'local').catch(() => false)
-    await storage.set(HIDDEN_KEY, !hidden, 'local').catch(() => undefined)
+    const hidden = await local
+      .get<boolean>(HIDDEN_KEY)
+      .then((v) => v ?? false)
+      .catch(() => false)
+    await local.set({ [HIDDEN_KEY]: !hidden }).catch(() => undefined)
     await renderToggle()
   })
 
