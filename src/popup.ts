@@ -93,7 +93,7 @@ function faceFor(base: string, s: Snapshot) {
   const { site: siteLimit, global: globalLimit } = limitsFor(s.limits, base)
   const { tab, now } = s
   const totals = tab ? totalsAt(tab, now) : { siteToday: 0, globalToday: 0 }
-  const reason = tab ? overAt(tab, now) : null
+  const reason = tab ? overAt(tab, now, 'ignored') : null
   // Over, and the worker moved the block past now: a snooze.
   const resumes = reason && tab?.blockAt != null && tab.blockAt > now ? tab.blockAt - now : null
   let state: FaceState = 'open'

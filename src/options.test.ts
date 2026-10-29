@@ -2,9 +2,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { SUGGESTED_SITES, originsForSite } from './core/site'
+import { bus } from './chrome/bus'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, enterCustom, flush, loadPageBody, normText } from './test/dom'
-import { dayEntry, seedToday, startBackground } from './test/content'
+import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
@@ -116,6 +117,68 @@ describe('tracked sites', () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } } })
     await flush()
     expect(todayCell('reddit.com')?.textContent).toBe('2 h 05 min (over)')
+  })
+
+  // Storage lacks the open interval's uncredited part, so a row lagged the
+  // popup and the page by up to a checkpoint (a minute), its flag included.
+  describe('as the worker sees it', () => {
+    const page = { url: 'https://www.reddit.com/', frameId: 0, documentLifecycle: 'active' }
+    // Tab 1 reports itself in use, then `ms` pass.
+    const report = async (visible: boolean) => {
+      const options = browser.sender
+      browser.sender = { ...page, id: browser.runtime.id, tab: { id: 1, windowId: 1 } }
+      await bus.send('presence', { visible, focused: true, media: false, blocked: false })
+      browser.sender = options
+    }
+    const inUse = async (ms: number) => {
+      await report(true)
+      vi.setSystemTime(Date.now() + ms)
+    }
+
+    it('counts the time not yet credited, and flags the limit when the page blocks', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+      try {
+        grant('reddit.com')
+        browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 1 }, snoozeUntil: 0 } })
+        await inUse(40_000)
+        await openOptions()
+        expect(storedToday('reddit.com')).toBe(0)
+        expect(todayCell('reddit.com')?.textContent).toBe('1 min')
+        expect(todayCell('reddit.com')?.hasAttribute('data-over')).toBe(false)
+        // It runs on while the tab does.
+        vi.advanceTimersByTime(20_000)
+        expect(todayCell('reddit.com')?.textContent).toBe('1 min (over)')
+        expect(todayCell('reddit.com')?.hasAttribute('data-over')).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('stops running once the tab stops', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+      try {
+        grant('reddit.com')
+        await inUse(80_000)
+        await openOptions()
+        await report(false)
+        await flush()
+        expect(storedToday('reddit.com')).toBe(80_000)
+        vi.advanceTimersByTime(MIN)
+        expect(todayCell('reddit.com')?.textContent).toBe('1 min')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('shows storage’s time when the worker doesn’t answer', async () => {
+      grant('reddit.com')
+      seedToday({ 'reddit.com': 5 * MIN })
+      browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 5 } } })
+      // Not an extension page: the worker refuses it.
+      browser.sender = { id: browser.runtime.id, url: 'https://reddit.com/' }
+      await openOptions()
+      expect(todayCell('reddit.com')?.textContent).toBe('5 min (over)')
+    })
   })
 
   it('tracks a suggested site from its chip and keeps focus nearby', async () => {

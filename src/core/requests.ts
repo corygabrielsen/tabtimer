@@ -49,6 +49,8 @@ export function parseRequest(raw: unknown): Request | null {
   switch (raw.type) {
     case 'snooze':
       return { type: 'snooze' }
+    case 'todayTotals':
+      return { type: 'todayTotals' }
     case 'open':
       return raw.page === 'options' || raw.page === 'activity' ? { type: 'open', page: raw.page } : null
     case 'presence': {

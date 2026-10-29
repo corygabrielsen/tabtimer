@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { overAt, parsePresence, parseStatePush, totalsAt, SENDERS, type TabState } from './messages'
+import type { BlockReason } from './limits'
+import {
+  overAt,
+  parsePresence,
+  parseStatePush,
+  siteTodayAt,
+  totalsAt,
+  SENDERS,
+  type TabState,
+  type TodayTotals,
+} from './messages'
 
 const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 
@@ -34,15 +44,46 @@ describe('a state read at a later moment', () => {
     expect(totalsAt({ ...state, running: false }, MIDNIGHT + 3000)).toEqual({ siteToday: 0, globalToday: 0 })
   })
 
-  it('is over its limit once it reaches it, but not after midnight', () => {
-    expect(overAt(state, NOON + 9000)).toBeNull()
-    expect(overAt(state, NOON + 10_000)).toEqual({ scope: 'site', limit: 60_000, elapsed: 60_000 })
-    // Snoozed: over, the block later.
-    expect(overAt({ ...state, today: 70_000, running: false, blockAt: NOON + 60_000 }, NOON)).toMatchObject({
-      elapsed: 70_000,
-    })
-    expect(overAt(state, MIDNIGHT)).toBeNull()
-    expect(overAt({ ...state, limit: null, blockAt: null }, NOON + 10_000)).toBeNull()
+  // The block screen ('holds') and the popup ('ignored') differ only while
+  // the worker has moved blockAt past the limit: a snooze.
+  const SNOOZED = { ...state, today: 70_000, running: false, blockAt: NOON + 60_000 }
+  const GLOBAL = { ...state, limit: { scope: 'global' as const, ms: 90_000 } }
+  const site = (elapsed: number): BlockReason => ({ scope: 'site', limit: 60_000, elapsed })
+  const global: BlockReason = { scope: 'global', limit: 90_000, elapsed: 90_000 }
+  it.each<[string, TabState, number, BlockReason | null, BlockReason | null]>([
+    ['under its limit', state, NOON + 9000, null, null],
+    ['at its limit', state, NOON + 10_000, site(60_000), site(60_000)],
+    ['past its limit', state, NOON + 15_000, site(65_000), site(65_000)],
+    ['over, snoozed', SNOOZED, NOON, null, site(70_000)],
+    ['over, the snooze over', SNOOZED, NOON + 60_000, site(70_000), site(70_000)],
+    ['over, the clock gone back', { ...SNOOZED, blockAt: NOON }, NOON - 1000, null, site(70_000)],
+    ['at the all-sites cap', GLOBAL, NOON + 10_000, global, global],
+    ['from before midnight', state, MIDNIGHT, null, null],
+    ['with no limit', { ...state, limit: null, blockAt: null }, NOON + 10_000, null, null],
+  ])('%s: blocks, and is over', (_, s, now, holds, ignored) => {
+    expect(overAt(s, now, 'holds')).toEqual(holds)
+    expect(overAt(s, now, 'ignored')).toEqual(ignored)
+  })
+})
+
+describe('every site’s time today, read at a later moment', () => {
+  const NOON = new Date(2026, 5, 10, 12).getTime()
+  const MIDNIGHT = new Date(2026, 5, 11).getTime()
+  const totals: TodayTotals = {
+    day: '2026-06-10',
+    asOf: NOON,
+    seq: 1,
+    running: 'a.com',
+    sites: { 'a.com': 50_000, 'b.com': 20_000 },
+  }
+
+  it('runs on for the running site only, and starts again at midnight', () => {
+    expect(siteTodayAt(totals, 'a.com', NOON + 4000)).toBe(54_000)
+    expect(siteTodayAt(totals, 'b.com', NOON + 4000)).toBe(20_000)
+    expect(siteTodayAt(totals, 'c.com', NOON + 4000)).toBe(0)
+    expect(siteTodayAt({ ...totals, running: null }, 'a.com', NOON + 4000)).toBe(50_000)
+    expect(siteTodayAt(totals, 'a.com', MIDNIGHT + 3000)).toBe(3000)
+    expect(siteTodayAt(totals, 'b.com', MIDNIGHT + 3000)).toBe(0)
   })
 })
 
@@ -103,6 +144,7 @@ describe('SENDERS', () => {
     expect(SENDERS.presence).toEqual(['content'])
     expect(SENDERS.resetToday).toEqual(['extension'])
     expect(SENDERS.setLimit).toEqual(['extension'])
+    expect(SENDERS.todayTotals).toEqual(['extension'])
   })
 
   it('lets only content scripts snooze and open pages', () => {
