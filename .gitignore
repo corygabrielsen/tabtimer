@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+dist-e2e/
 *.zip
 
 # Caches
@@ -12,6 +13,8 @@ dist/
 
 # Test / coverage
 coverage/
+test-results/
+playwright-report/
 
 # Editor / OS
 .DS_Store

@@ -25,7 +25,16 @@ pnpm lint
 pnpm format:check     # or `pnpm format` to fix
 pnpm test
 pnpm build
+pnpm test:e2e         # Playwright, real Chromium (see below)
 ```
+
+`pnpm test:e2e` builds the e2e variant (`TABTIMER_E2E=1`, output in
+`dist-e2e/`; see `build.e2e.ts`) and runs the suite in `e2e/` against it,
+loaded as an unpacked extension. The variant only adds `host_permissions` for
+the fixture hosts — standing in for the user's runtime grant, which would
+otherwise need a permission prompt — and the production build is unaffected.
+Install the browser once with `pnpm exec playwright install chromium` (add
+`--with-deps` on a fresh Linux box).
 
 Optionally install the git hooks so they run on commit:
 
@@ -37,6 +46,7 @@ pre-commit install
 
 - TypeScript, strict mode; Prettier-formatted (no semicolons, single quotes).
 - Keep commit subjects in the imperative mood and ≤ 50 characters.
-- Add or update unit tests (`vitest`) for logic changes to `Timer`/`storage`.
+- Add or update unit tests (`vitest`) for logic changes to `Timer`/`storage`,
+  and e2e tests for user-visible overlay/block behaviour.
 - The tracked-site list lives in `manifest.json` `host_permissions` (the
   content script's `matches` is derived from it at build time).
