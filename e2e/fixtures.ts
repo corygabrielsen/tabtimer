@@ -42,10 +42,24 @@ function silentWav(): Buffer {
   return Buffer.concat([header, Buffer.alloc(samples, 128)])
 }
 
+// Pages that scroll the ways real sites do, on a bright background: the
+// document itself, <body> as the scroller (html and body sized to the
+// viewport, body overflow:auto), and an app shell whose content scrolls in an
+// inner element (#shell) while the document stays put.
+const TALL = '<div style="height:5000px;width:5000px;background:linear-gradient(#ff0,#0ff)">tall</div>'
+const SCROLL_PAGES: Record<string, string> = {
+  '/scroll-document': `<style>html,body{background:#fff}</style>${TALL}`,
+  '/scroll-body': `<style>html,body{height:100%;margin:0;background:#fff}body{overflow:auto}</style>${TALL}`,
+  '/scroll-inner':
+    '<style>html,body{height:100%;margin:0;overflow:hidden;background:#fff}' +
+    '#shell{position:absolute;inset:0;overflow:auto}</style>' +
+    `<div id="shell">${TALL}</div>`,
+}
+
 // Every *.test host resolves to the fixture server. Any path serves a plain
 // page; /interactive adds focusable controls, looping audio, and a way into
 // fullscreen (the button, or the F key like a video player), counting entries
-// in window.fullscreenEntries.
+// in window.fullscreenEntries. SCROLL_PAGES serve scrolling layouts.
 function startServer(): Promise<Server> {
   const wav = silentWav()
   const server = createServer((req, res) => {
@@ -56,7 +70,8 @@ function startServer(): Promise<Server> {
       return
     }
     const extra =
-      req.url === '/interactive'
+      SCROLL_PAGES[req.url ?? ''] ??
+      (req.url === '/interactive'
         ? '<button id="page-button">page button</button><a id="page-link" href="#x">page link</a>' +
           '<audio id="media" src="/silence.wav" loop></audio>' +
           '<button id="fullscreen-button">fullscreen</button>' +
@@ -69,7 +84,7 @@ function startServer(): Promise<Server> {
             document.addEventListener('keydown', (e) => e.key === 'f' && enter())
             document.addEventListener('fullscreenchange', () => document.fullscreenElement && window.fullscreenEntries++)
           </script>`
-        : ''
+        : '')
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
     res.end(`<!doctype html><title>${host}</title><h1>fixture ${host}</h1>${extra}`)
   })

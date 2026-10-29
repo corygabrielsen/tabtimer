@@ -157,3 +157,127 @@ test('leaves fullscreen when the limit is hit, and stays out of it', async ({ co
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   expect(await page.evaluate(() => document.elementFromPoint(5, 5)?.id)).toBe(BLOCK_ID)
 })
+
+// Scroll positions of every scroller the fixture pages use, and the inline
+// styles the block screen overrides.
+const scrollState = (page: Page) =>
+  page.evaluate(() => {
+    const shell = document.getElementById('shell')
+    return {
+      window: [window.scrollX, window.scrollY],
+      body: [document.body.scrollLeft, document.body.scrollTop],
+      shell: shell ? [shell.scrollLeft, shell.scrollTop] : null,
+      style: [document.documentElement.style.cssText, document.body.style.cssText],
+    }
+  })
+
+// Everything a user can do to scroll: wheel and trackpad both ways, the
+// scroll keys, and a touch drag.
+async function tryToScroll(page: Page) {
+  const { width, height } = page.viewportSize()!
+  await page.mouse.move(width / 2, height / 2)
+  await page.mouse.wheel(0, 900)
+  await page.mouse.wheel(700, 0)
+  await page.mouse.wheel(0, -300)
+  for (const key of ['PageDown', 'End', 'ArrowDown', 'ArrowRight', 'Home', 'PageUp']) {
+    await page.keyboard.press(key)
+  }
+  // Space and arrows with focus off the snooze button (where Space presses
+  // it): the page's own default.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+  for (const key of ['Space', 'Shift+Space', 'ArrowDown', 'End']) {
+    await page.keyboard.press(key)
+  }
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Input.synthesizeScrollGesture', {
+    x: width / 2,
+    y: height / 2,
+    yDistance: -600,
+    xDistance: -300,
+    gestureSourceType: 'touch',
+    speed: 2000,
+  })
+  await cdp.detach()
+  await page.waitForTimeout(300)
+}
+
+for (const [layout, path] of [
+  ['the document', '/scroll-document'],
+  ['<body>', '/scroll-body'],
+  ['an inner app-shell element', '/scroll-inner'],
+] as const) {
+  test(`keeps a page that scrolls ${layout} from scrolling while blocked`, async ({ context, serviceWorker, site }) => {
+    await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+    const page = await context.newPage()
+    await page.goto(site(SITE_A, path))
+    await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+    const { width, height } = page.viewportSize()!
+    await page.mouse.move(width / 2, height / 2)
+
+    // The fixture really scrolls; leave it partway down so Home/Up count too.
+    const initial = await scrollState(page)
+    await page.mouse.wheel(0, 400)
+    await expect.poll(() => scrollState(page)).not.toEqual(initial)
+    // Let a smooth scroll finish.
+    await page.waitForTimeout(500)
+    const scrolled = await scrollState(page)
+
+    await seed(serviceWorker, BLOCKING)
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+    const blocked = await scrollState(page)
+
+    await tryToScroll(page)
+    const after = await scrollState(page)
+    expect(after.window).toEqual(blocked.window)
+    expect(after.body).toEqual(blocked.body)
+    expect(after.shell).toEqual(blocked.shell)
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+
+    // Dismissed: the page's own overflow is back, it's where it was before
+    // blocking (hiding overflow can clamp a body-sized viewport while
+    // blocked), and it scrolls again.
+    await clickInShadow(page, BLOCK_ID, 'button.snooze')
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+    const dismissed = await scrollState(page)
+    expect(dismissed.style).toEqual(initial.style)
+    expect({ ...dismissed, style: null }).toEqual({ ...scrolled, style: null })
+    await page.mouse.move(width / 2, height / 2)
+    await page.mouse.wheel(0, 400)
+    await expect.poll(() => scrollState(page)).not.toEqual(dismissed)
+  })
+}
+
+test('is fully opaque over a bright page, in light and dark', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  const page = await blockedPage(context, site(SITE_A, '/scroll-document'))
+  expect(await page.evaluate((id) => getComputedStyle(document.getElementById(id)!).backgroundColor, BLOCK_ID)).toBe(
+    'rgb(0, 0, 0)'
+  )
+
+  // Brightest channel anywhere in a strip across the top of the viewport,
+  // clear of the block screen's text.
+  const decoder = await context.newPage()
+  const brightest = async () => {
+    const { width } = page.viewportSize()!
+    const png = await page.screenshot({ clip: { x: 0, y: 0, width, height: 120 } })
+    return decoder.evaluate(async (b64) => {
+      const img = new Image()
+      img.src = `data:image/png;base64,${b64}`
+      await img.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const { data } = ctx.getImageData(0, 0, img.width, img.height)
+      let max = 0
+      for (let i = 0; i < data.length; i += 4) {
+        max = Math.max(max, data[i]!, data[i + 1]!, data[i + 2]!)
+      }
+      return max
+    }, png.toString('base64'))
+  }
+  expect(await brightest()).toBe(0)
+  await page.emulateMedia({ colorScheme: 'dark' })
+  expect(await brightest()).toBe(0)
+})
