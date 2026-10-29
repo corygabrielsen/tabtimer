@@ -1,8 +1,8 @@
 // In-memory fake of the chrome.* surface the extension uses. One instance is
 // installed on globalThis before every test (see setup.ts), so content-script,
 // popup, options and background code all talk to the same fake "browser":
-// a message sent by Model reaches background.ts's onMessage listener, whose
-// storage writes fire storage.onChanged listeners in Blocker/View/popup.
+// a message sent by FocusTracker reaches background.ts's onMessage listener, whose
+// storage writes fire storage.onChanged listeners in BlockScreen/Overlay/popup.
 //
 // Callbacks and events are delivered asynchronously (microtask, or a timer
 // when `latency` is set) like the real APIs, with runtime.lastError set only

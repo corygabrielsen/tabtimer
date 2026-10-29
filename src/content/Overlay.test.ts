@@ -1,21 +1,21 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.youtube.com/watch?v=1"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import View from './Overlay'
-import Model from './FocusTracker'
+import Overlay from './Overlay'
+import FocusTracker from './FocusTracker'
 import { HIDDEN_KEY, SCALE_KEY, todayKeyForHost } from '../storage'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { disposeModels, minutes, seconds, startBackground, trackModel, useClock } from '../test/content'
+import { disposeTrackers, minutes, seconds, startBackground, trackTracker, useClock } from '../test/content'
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
-const views: View[] = []
+const views: Overlay[] = []
 
-async function mount(): Promise<View> {
-  const model = trackModel(new Model())
+async function mount(): Promise<Overlay> {
+  const model = trackTracker(new FocusTracker())
   model.start()
-  const view = new View(model)
+  const view = new Overlay(model)
   views.push(view)
   await flush()
   return view
@@ -30,7 +30,7 @@ const smaller = () => button('.size', 'Make Tab Timer smaller')
 const larger = () => button('.size', 'Make Tab Timer larger')
 const transform = () => document.getElementById('tabtimer-root')!.style.getPropertyValue('transform')
 
-async function tickView(view: View, ms: number): Promise<void> {
+async function tickView(view: Overlay, ms: number): Promise<void> {
   await vi.advanceTimersByTimeAsync(ms)
   view.updateDisplayText()
   await flush()
@@ -47,7 +47,7 @@ afterEach(() => {
   for (const v of views.splice(0)) {
     v.destroy()
   }
-  disposeModels()
+  disposeTrackers()
 })
 
 describe('collapsed pill', () => {

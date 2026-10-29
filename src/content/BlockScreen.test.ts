@@ -1,19 +1,19 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://old.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Blocker from './BlockScreen'
-import Model from './FocusTracker'
+import BlockScreen from './BlockScreen'
+import FocusTracker from './FocusTracker'
 import { LIMITS_KEY, BLOCK_SNOOZE_KEY, SNOOZE_MS, type Limits } from '../core/limits'
 import { todayKeyForHost } from '../storage'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, text, trackShadowRoots } from '../test/dom'
-import { disposeModels, minutes, startBackground, trackModel, useClock } from '../test/content'
+import { disposeTrackers, minutes, startBackground, trackTracker, useClock } from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
-const blockers: Blocker[] = []
+const blockers: BlockScreen[] = []
 
 function limits(l: Partial<Limits>): void {
   browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: {}, ...l } })
@@ -23,10 +23,10 @@ function logged(host: string, ms: number): void {
   browser.storage.local.seed({ [todayKeyForHost(host)]: ms })
 }
 
-async function mount(): Promise<Blocker> {
-  const model = trackModel(new Model())
+async function mount(): Promise<BlockScreen> {
+  const model = trackTracker(new FocusTracker())
   model.start()
-  const blocker = new Blocker(model)
+  const blocker = new BlockScreen(model)
   blockers.push(blocker)
   await flush()
   return blocker
@@ -57,7 +57,7 @@ afterEach(() => {
   for (const b of blockers.splice(0)) {
     b.destroy()
   }
-  disposeModels()
+  disposeTrackers()
   for (const el of pageElements.splice(0)) {
     el.remove()
   }

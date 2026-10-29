@@ -10,7 +10,7 @@ export enum TimerState {
 }
 
 // A passive stopwatch: it owns no interval of its own. Its owner calls tick()
-// on a shared tick source (one per tab, see Model), and elapsed time is the
+// on a shared tick source (one per tab, see FocusTracker), and elapsed time is the
 // sum of the deltas between successive measurements rather than
 // `now - start`. Each delta is clamped to [0, maxStep]: a tick that arrives
 // after a long gap (system sleep, lid closed, a frozen tab) or after the wall

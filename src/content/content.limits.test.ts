@@ -1,39 +1,32 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.reddit.com/r/all"}
 //
-// End-to-end at the unit level: real Model, View, Blocker and Controller in
-// a page, with the real background writer behind the fake chrome.* — only the
-// clock advances; the Model's single 1s tick drives everything.
+// End-to-end at the unit level: the real content script (FocusTracker,
+// Overlay and BlockScreen wired together) in a page, with the real background
+// writer behind the fake chrome.* — only the clock advances; the tracker's
+// single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Blocker from './BlockScreen'
-import Controller from './Controller'
-import Model from './FocusTracker'
-import View from './Overlay'
 import { LIMITS_KEY, SNOOZE_MS, type Limits } from '../core/limits'
 import { todayKeyForHost } from '../storage'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from '../test/content'
+import { minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
-let controllers: Controller[] = []
 
 function limits(l: Partial<Limits>): void {
   browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: {}, ...l } })
 }
 
-async function openTab(): Promise<Controller> {
-  const model = trackModel(new Model())
-  const view = new View(model)
-  const blocker = new Blocker(model)
-  const controller = new Controller(model, view, blocker)
-  model.start()
-  controllers.push(controller)
+// Run the content script entry point, as Chrome does on injection.
+async function openTab(): Promise<void> {
+  vi.resetModules()
+  await import('./content')
   await flush()
-  return controller
 }
 
+const closeTab = () => window.dispatchEvent(new Event('pagehide'))
 const blocked = () => document.getElementById('tabtimer-block')?.style.getPropertyValue('display') === 'block'
 const blockScreen = () => shadowOf('tabtimer-block')
 const pillText = () => shadowOf('tabtimer-root').querySelector('.pill')?.textContent
@@ -47,10 +40,8 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  for (const c of controllers.splice(0)) {
-    c.destroy()
-  }
-  disposeModels()
+  // Tear down whatever instance a test left running.
+  closeTab()
 })
 
 describe('time limits end to end', () => {
@@ -194,7 +185,7 @@ describe('per-tab cost', () => {
   })
 })
 
-describe('Controller', () => {
+describe('tick wiring', () => {
   it('skips per-second rendering while the tab is hidden', async () => {
     browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(1) })
     await openTab()
@@ -206,24 +197,15 @@ describe('Controller', () => {
     expect(pillText()).toBe(before)
   })
 
-  it('reset zeroes the counters and re-renders', async () => {
-    const controller = await openTab()
-    await run(seconds(15))
-    controller.reset()
-    await flush()
-    expect(pillText()).toMatch(/^00:00:0[01]$/)
-  })
-
-  it('tears down the overlay and block screen and stops ticking on destroy', async () => {
+  it('tears down the overlay and block screen and stops ticking on pagehide', async () => {
     limits({ perSite: { 'reddit.com': minutes(1) } })
-    const controller = await openTab()
+    await openTab()
     await run(minutes(1))
-    controller.destroy()
-    controllers = controllers.filter((c) => c !== controller)
+    closeTab()
     expect(document.getElementById('tabtimer-root')).toBeNull()
     expect(document.getElementById('tabtimer-block')).toBeNull()
     expect(document.documentElement.style.getPropertyValue('overflow')).toBe('')
-    expect(vi.getTimerCount()).toBeGreaterThan(0) // the Model's own timers
+    expect(vi.getTimerCount()).toBe(0)
     await run(seconds(5))
     expect(document.getElementById('tabtimer-root')).toBeNull()
   })

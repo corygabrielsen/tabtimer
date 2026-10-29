@@ -1,25 +1,33 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Model from './FocusTracker'
+import FocusTracker from './FocusTracker'
 import { TimerState } from './Timer'
 import { todayKeyForHost } from '../storage'
 import { sendMessage } from '../messages'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush, setPageState } from '../test/dom'
-import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from '../test/content'
+import {
+  disposeTrackers,
+  minutes,
+  seconds,
+  startBackground,
+  storedToday,
+  trackTracker,
+  useClock,
+} from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 
 let browser: FakeChrome
 
-function started(): Model {
-  const model = trackModel(new Model())
+function started(): FocusTracker {
+  const model = trackTracker(new FocusTracker())
   model.start()
   return model
 }
 
-async function today(model: Model): Promise<number> {
+async function today(model: FocusTracker): Promise<number> {
   return (await model.readElapsed()).today.elapsed
 }
 
@@ -41,7 +49,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
-  disposeModels()
+  disposeTrackers()
 })
 
 describe('focus time accrual', () => {
@@ -171,7 +179,7 @@ describe('B10: while the block screen is up', () => {
   })
 
   it('is remembered when set before the timers start', async () => {
-    const model = trackModel(new Model())
+    const model = trackTracker(new FocusTracker())
     model.setBlocked(true)
     model.start()
     await vi.advanceTimersByTimeAsync(seconds(5))
@@ -283,6 +291,17 @@ describe('resets', () => {
     await vi.advanceTimersByTimeAsync(seconds(5))
     expect(storedToday()).toBeLessThanOrEqual(seconds(5))
     expect(await today(model)).toBe(seconds(5))
+  })
+
+  it('reset zeroes the counters and the stored total', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(15))
+    expect(storedToday()).toBeGreaterThan(0)
+    model.reset()
+    await flush()
+    expect(storedToday()).toBe(0)
+    expect(await today(model)).toBe(0)
+    expect((await model.readElapsed()).focus.elapsed).toBe(0)
   })
 
   it('ignores other keys and other storage areas', async () => {

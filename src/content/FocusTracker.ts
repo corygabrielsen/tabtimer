@@ -19,7 +19,7 @@ export const TICK_MS = 1000
 // Minimum spacing between routine reports to the background writer.
 const REPORT_INTERVAL_MS = 10_000
 
-export default class Model {
+export default class FocusTracker {
   // The session timer is wall time on the page, so a long gap between ticks
   // (a throttled background tab wakes about once a minute) still counts in
   // full; only backward clock jumps are ignored.
@@ -81,7 +81,7 @@ export default class Model {
 
   start() {
     if (this.started) {
-      throw new Error('Model timers already started')
+      throw new Error('FocusTracker timers already started')
     }
     this.started = true
     this.countupTimer.start()
@@ -110,7 +110,7 @@ export default class Model {
     this.intervalId = setInterval(this.tick, TICK_MS)
   }
 
-  // Stop ticking and detach every listener. The model can't be restarted.
+  // Stop ticking and detach every listener. The tracker can't be restarted.
   destroy(): void {
     if (this.intervalId !== null) {
       clearInterval(this.intervalId)

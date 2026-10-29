@@ -1,12 +1,12 @@
 // Shared fixtures for content-script tests: a fake clock, the real background
-// single-writer, and teardown for Models.
+// single-writer, and teardown for FocusTrackers.
 import { vi } from 'vitest'
-import Model from '../content/FocusTracker'
+import FocusTracker from '../content/FocusTracker'
 import { todayKeyForHost } from '../storage'
 import { fakeChrome } from './chrome'
 import { resetPageState } from './dom'
 
-// Wire the real background.ts into the fake browser so Model's reports land
+// Wire the real background.ts into the fake browser so FocusTracker's reports land
 // in storage exactly as in the extension.
 export async function startBackground(): Promise<void> {
   vi.resetModules()
@@ -18,16 +18,16 @@ export function useClock(now: Date): void {
   resetPageState()
 }
 
-const models: Model[] = []
+const models: FocusTracker[] = []
 
-export function trackModel(model: Model): Model {
+export function trackTracker(model: FocusTracker): FocusTracker {
   models.push(model)
   return model
 }
 
-// Stop a Model's tick and listeners so it can't keep reporting into a later
+// Stop a FocusTracker's tick and listeners so it can't keep reporting into a later
 // test.
-export function disposeModels(): void {
+export function disposeTrackers(): void {
   for (const model of models.splice(0)) {
     model.destroy()
   }

@@ -1,4 +1,4 @@
-import type Model from './FocusTracker'
+import type FocusTracker from './FocusTracker'
 import type { ElapsedState } from './FocusTracker'
 import { formatTime } from '../format'
 import { storage, HIDDEN_KEY, SCALE_KEY } from '../storage'
@@ -39,7 +39,7 @@ const TOOLTIPS: Record<TimerKey, string> = {
   session: t('tooltipSession'),
 }
 
-// Map our display keys to the model's keys.
+// Map our display keys to the tracker's keys.
 function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
   if (key === 'session') {
     return elapsed.countup.elapsed
@@ -146,7 +146,7 @@ const STYLES = `
   }
 `
 
-export default class View {
+export default class Overlay {
   private host: HTMLDivElement
   private shadow: ShadowRoot
   private mount: HTMLDivElement
@@ -158,7 +158,7 @@ export default class View {
   private needsRebuild = true
   private outsideClickAttached = false
 
-  constructor(private model: Model) {
+  constructor(private tracker: FocusTracker) {
     // Drop a stale widget left by a previous instance (re-injection / SPA
     // remount) so we never stack duplicate hosts.
     document.getElementById(HOST_ID)?.remove()
@@ -227,7 +227,7 @@ export default class View {
       return
     }
 
-    this.model
+    this.tracker
       .readElapsed()
       .then((elapsed) => {
         // If we just need fresh times, update text in place without rebuilding.
