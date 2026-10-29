@@ -12,6 +12,14 @@ import { installTestHook, offsetClock } from './testHook'
 import { createTracker } from './tracker'
 
 const ACTIVITY_PAGE = 'usage.html'
+const OPTIONS_PAGE = 'options.html'
+
+// Bring a window to the front (a page opened in a window behind seems to do
+// nothing).
+const focusWindow = (windowId: number | undefined) =>
+  windowId === undefined || windowId < 0
+    ? Promise.resolve()
+    : chrome.windows.update(windowId, { focused: true }).then(() => undefined)
 
 const local = chromeStore('local')
 // The e2e build's clock can be moved forward (testHook.ts).
@@ -89,11 +97,21 @@ serveRouter(
     tracker,
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
+    // Brought to the front with its window: the options page may be a tab
+    // already open in another window.
     open: async (page) => {
       if (page === 'options') {
         await chrome.runtime.openOptionsPage()
+        const [tab] = await chrome.runtime
+          .getContexts({
+            contextTypes: ['TAB' as chrome.runtime.ContextType],
+            documentUrls: [chrome.runtime.getURL(OPTIONS_PAGE)],
+          })
+          .catch(() => [])
+        await focusWindow(tab?.windowId)
       } else {
-        await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+        const tab = await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+        await focusWindow(tab.windowId)
       }
     },
   })

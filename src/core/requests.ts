@@ -55,6 +55,10 @@ export function parseRequest(raw: unknown): Request | null {
       const presence = parsePresence(raw)
       return presence ? { type: 'presence', ...presence } : null
     }
+    case 'tabState':
+      return isFiniteNumber(raw.tabId) && Number.isInteger(raw.tabId) && isSite(raw.site)
+        ? { type: 'tabState', tabId: raw.tabId, site: raw.site }
+        : null
     case 'resetToday':
       return isSite(raw.site) ? { type: 'resetToday', site: raw.site } : null
     case 'setLimit': {

@@ -187,7 +187,8 @@ describe('week view', () => {
     expect(bars()).toHaveLength(7)
     expect(bars()[2]!.getAttribute('aria-label')).toBe('Tuesday, Oct 27, 40 min')
     expect(text('total')).toBe('2 h 19 min')
-    expect(text('change')).toBe('↑ 248% from last week')
+    // U3: last week up to Wednesday 4:40 PM had nothing (its time came later).
+    expect($('change').hidden).toBe(true)
     expect(text('average')).toBe('Daily average 35 min') // Sun-Wed
     expect(document.querySelector('.ref-average')).not.toBeNull()
     expect(document.querySelector('.ref-limit')).toBeNull()
@@ -263,8 +264,8 @@ describe('week view', () => {
   it('shows a drop from the period before', async () => {
     browser.storage.local.set({ ...day('2026-10-20', { 'reddit.com': { 20: 300 } }) })
     await flush()
-    expect(text('change')).toBe('↓ 59% from last week')
-    expect($('change').getAttribute('aria-label')).toBe('Down 59 percent from last week')
+    expect(text('change')).toBe('↓ 54% from last week')
+    expect($('change').getAttribute('aria-label')).toBe('Down 54 percent from last week')
     click($('prev'))
     browser.storage.local.set({ ...day('2026-10-14', { 'reddit.com': { 20: 340 } }) })
     await flush()
@@ -309,6 +310,35 @@ describe('a selected site', () => {
     click([...$('site-panel').querySelectorAll('[role="radio"]')].find((c) => c.textContent === 'Off'))
     await flush()
     expect(row('reddit.com').querySelector('.site-meter')).toBeNull()
+  })
+
+  // U1: each render rebuilt the list and moved the picker into a new row;
+  // the move blurred the custom field, whose blur saved the "4" typed on
+  // the way to "45" and blocked the site.
+  it('U1: keeps a custom limit being typed through a live update', async () => {
+    click(row('reddit.com'))
+    const panel = $('site-panel')
+    const custom = [...$('site-panel').querySelectorAll<HTMLElement>('[role="radio"]')].at(-1)!
+    click(custom)
+    const input = $<HTMLInputElement>('usage-limit-custom')
+    const blurs = vi.fn()
+    input.addEventListener('blur', blurs)
+    input.value = '4'
+    input.dispatchEvent(new Event('input'))
+    browser.storage.local.set(day('2026-10-28', { 'reddit.com': { 9: 11, 14: 38 }, 'zzz.com': { 16: 90 } }))
+    await flush()
+    expect(row('reddit.com').textContent).toContain('49 min')
+    // Not moved (happy-dom doesn't blur a moved node; Chromium does).
+    expect($('site-panel')).toBe(panel)
+    expect(panel.closest('li')).toBe(row('reddit.com').closest('li'))
+    expect(blurs).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    expect(input.closest('[hidden]')).toBeNull()
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 30 } })
+    input.value = '45'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flush()
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 45 } })
   })
 
   it('stays listed in a period it had no time in', () => {

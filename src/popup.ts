@@ -3,29 +3,11 @@ import { bus } from './chrome/bus'
 import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
+import { overAt, totalsAt, type TabState } from './core/messages'
 import { hourLabel } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
-import {
-  blockAt,
-  limitsFor,
-  msToMinutes,
-  normalizeLimits,
-  siteLimitOf,
-  snoozeOf,
-  DEFAULT_LIMITS,
-  type Limits,
-} from './core/limits'
-import {
-  dayKey,
-  dayTotal,
-  emptyBuckets,
-  normalizeDay,
-  normalizePrefs,
-  siteTotal,
-  LIMITS_KEY,
-  PREFS_KEY,
-  type DayUsage,
-} from './core/schema'
+import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
+import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
@@ -58,7 +40,9 @@ function activeTab(): Promise<ActiveTab | null> {
   })
 }
 
-type Snapshot = { siteToday: number; globalToday: number; limits: Limits; hours: number[] }
+// What the face shows: the worker's state for this tab (null until it
+// answers), read at `now`, against the limits as set.
+type Snapshot = { tab: TabState | null; limits: Limits; now: number }
 
 // The strip's full height: the day's busiest hour, or this much if less, so a
 // few minutes don't fill it.
@@ -107,21 +91,18 @@ function renderStrip(base: string, hours: number[]) {
 
 function faceFor(base: string, s: Snapshot) {
   const { site: siteLimit, global: globalLimit } = limitsFor(s.limits, base)
-  // Not accruing, a block is due only when already over.
-  const over = blockAt(s.limits, base, s.siteToday, s.globalToday, Date.now(), false)
-  const reason = over && {
-    scope: over.scope,
-    limit: over.limit,
-    elapsed: over.scope === 'site' ? s.siteToday : s.globalToday,
-  }
-  const snoozed = reason !== null && Date.now() < snoozeOf(s.limits, Date.now())
+  const { tab, now } = s
+  const totals = tab ? totalsAt(tab, now) : { siteToday: 0, globalToday: 0 }
+  const reason = tab ? overAt(tab, now) : null
+  // Over, and the worker moved the block past now: a snooze.
+  const resumes = reason && tab?.blockAt != null && tab.blockAt > now ? tab.blockAt - now : null
   let state: FaceState = 'open'
   if (reason) {
-    state = snoozed ? 'snoozed' : 'over'
+    state = resumes === null ? 'over' : 'snoozed'
   } else if (siteLimit !== null || globalLimit !== null) {
     state = 'ok'
   }
-  return { state, reason, siteLimit, globalLimit }
+  return { state, reason, resumes, siteLimit, globalLimit, ...totals }
 }
 
 function renderFace(base: string, s: Snapshot) {
@@ -135,7 +116,7 @@ function renderFace(base: string, s: Snapshot) {
 
   hero?.setAttribute('data-state', face.state)
   if (today) {
-    today.textContent = formatTime(s.siteToday)
+    today.textContent = formatTime(face.siteToday)
   }
   if (status) {
     status.textContent = {
@@ -148,7 +129,7 @@ function renderFace(base: string, s: Snapshot) {
 
   // The meter tracks this site's own limit; fall back to the all-sites cap.
   const meterLimit = face.siteLimit ?? face.globalLimit
-  const meterValue = face.siteLimit !== null ? s.siteToday : s.globalToday
+  const meterValue = face.siteLimit !== null ? face.siteToday : face.globalToday
   if (meter) {
     meter.hidden = meterLimit === null
     if (meterLimit !== null) {
@@ -165,7 +146,7 @@ function renderFace(base: string, s: Snapshot) {
   }
 
   if (summary) {
-    summary.textContent = summaryText(face, s, meterLimit, meterValue)
+    summary.textContent = summaryText(face, meterLimit, meterValue)
   }
 
   if (globalLine) {
@@ -173,22 +154,17 @@ function renderFace(base: string, s: Snapshot) {
     const globalLimit = face.siteLimit !== null ? face.globalLimit : null
     globalLine.hidden = globalLimit === null
     if (globalLimit !== null) {
-      globalLine.textContent = t('popupGlobalLine', [formatDuration(s.globalToday), formatDuration(globalLimit)])
+      globalLine.textContent = t('popupGlobalLine', [formatDuration(face.globalToday), formatDuration(globalLimit)])
     }
   }
 }
 
-function summaryText(
-  face: ReturnType<typeof faceFor>,
-  s: Snapshot,
-  meterLimit: number | null,
-  meterValue: number
-): string {
+function summaryText(face: ReturnType<typeof faceFor>, meterLimit: number | null, meterValue: number): string {
   if (face.reason) {
     const over = formatDuration(face.reason.elapsed - face.reason.limit)
     const cause = face.reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)
-    if (face.state === 'snoozed') {
-      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.limits.snoozeUntil - Date.now())))}`
+    if (face.resumes !== null) {
+      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, face.resumes)))}`
     }
     return cause
   }
@@ -203,25 +179,36 @@ function summaryText(
 
 const local = chromeStore('local')
 
-function renderTracked(base: string) {
+function renderTracked(tabId: number, base: string) {
   const siteEl = byId('site')
   if (siteEl) {
     siteEl.textContent = base
     siteEl.title = base
   }
 
-  // Today's usage and the limits: read once, then patched from each change.
+  // The face follows the worker's state for this tab (what its page is
+  // told), asked again whenever stored time or limits change. The strip,
+  // the limits and the prefs are read once, then patched from each change.
+  let tab: TabState | null = null
   let day: DayUsage = {}
   let limits: Limits = DEFAULT_LIMITS
   let hidden = false
-  let last: Snapshot | null = null
+  const snapshot = (): Snapshot => ({ tab, limits, now: Date.now() })
+  const drawFace = () => renderFace(base, snapshot())
   const draw = () => {
-    last = { siteToday: siteTotal(day, base), globalToday: dayTotal(day), limits, hours: day[base] ?? emptyBuckets() }
-    renderStrip(base, last.hours)
-    renderFace(base, last)
+    renderStrip(base, day[base] ?? emptyBuckets())
+    drawFace()
     syncLimitField(limits)
   }
   const todayKey = () => dayKey(dayOf(Date.now()))
+
+  // A state from an earlier worker transaction never replaces the one shown.
+  const ask = async () => {
+    const res = await bus.send('tabState', { tabId, site: base })
+    if (res.ok && (tab === null || res.value.seq >= tab.seq)) {
+      tab = res.value
+    }
+  }
 
   // --- daily limit for this site: preset chips, or a custom whole-minutes value ---
   let picker: LimitPicker | null = null
@@ -270,8 +257,12 @@ function renderTracked(base: string) {
     }
     window.clearTimeout(disarm)
     setArmed(false)
-    if (last) {
-      renderFace(base, { ...last, siteToday: 0, hours: emptyBuckets() }) // optimistic
+    if (tab) {
+      // Optimistic: this site's time goes, from the total too.
+      const now = Date.now()
+      const totals = totalsAt(tab, now)
+      tab = { ...tab, asOf: now, today: 0, globalToday: Math.max(0, totals.globalToday - totals.siteToday) }
+      drawFace()
     }
     void bus.send('resetToday', { site: base })
   })
@@ -280,18 +271,16 @@ function renderTracked(base: string) {
     setArmed(false)
   })
 
-  // Keep the now mark, the snooze countdown and the summary current while the
-  // popup is open.
+  // The time, the now mark and the snooze countdown run on while the popup
+  // is open.
   window.setInterval(() => {
-    if (last) {
-      moveNow()
-      renderFace(base, last)
-    }
-  }, 15000)
+    moveNow()
+    drawFace()
+  }, 1000)
 
   const read = (key: string) => local.get(key).catch(() => undefined)
   const load = async () => {
-    const [d, l, p] = await Promise.all([read(todayKey()), read(LIMITS_KEY), read(PREFS_KEY)])
+    const [d, l, p] = await Promise.all([read(todayKey()), read(LIMITS_KEY), read(PREFS_KEY), ask()])
     day = normalizeDay(d)
     limits = normalizeLimits(l)
     hidden = normalizePrefs(p).hidden
@@ -310,6 +299,7 @@ function renderTracked(base: string) {
     }
     if (key in changes || LIMITS_KEY in changes) {
       draw()
+      void ask().then(drawFace)
     }
   }
   void loadThenPatch(local, load, patch).then(() => {
@@ -338,7 +328,7 @@ function renderEnable(tab: ActiveTab, base: string) {
       }
       // Inject now so tracking starts immediately, without a reload.
       void chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {})
-      renderTracked(base)
+      renderTracked(tab.id, base)
     })
   })
 }
@@ -360,7 +350,7 @@ async function init() {
   const granted = isTracked(perms.origins ?? [], tab.url)
 
   if (granted) {
-    renderTracked(base)
+    renderTracked(tab.id, base)
   } else {
     renderEnable(tab, base)
   }

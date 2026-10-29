@@ -163,6 +163,27 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
     }
   }
 
+  // The page is going away (a popup closes as focus leaves it): save the
+  // choice shown as checked now, not after a delay that won't come.
+  function flushPending() {
+    if (!el.isConnected) {
+      document.removeEventListener('visibilitychange', onHide)
+      window.removeEventListener('pagehide', flushPending)
+    }
+    if (pending) {
+      const { minutes } = pending
+      cancelPending()
+      save(minutes)
+    }
+  }
+  function onHide() {
+    if (document.visibilityState === 'hidden') {
+      flushPending()
+    }
+  }
+  document.addEventListener('visibilitychange', onHide)
+  window.addEventListener('pagehide', flushPending)
+
   function choose(i: number) {
     cancelPending()
     if (i === customIdx) {

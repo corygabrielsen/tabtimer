@@ -131,6 +131,17 @@ describe('tracked sites', () => {
     expect(document.activeElement).toBe(chip('x.com'))
   })
 
+  it('NEW-1: keeps focus on a chip when another site is tracked from elsewhere', async () => {
+    await openOptions()
+    const youtube = chip('youtube.com')!
+    youtube.focus()
+    browser.grant(originsForSite('reddit.com'))
+    await flush()
+    expect(chip('reddit.com')).toBeUndefined()
+    expect(chip('youtube.com')).toBe(youtube)
+    expect(document.activeElement).toBe(youtube)
+  })
+
   it('keeps focus on a chip whose prompt was declined', async () => {
     browser.acceptPermissionPrompts = false
     await openOptions()
@@ -357,6 +368,27 @@ describe('limits', () => {
     await flush()
     expect(trackedHosts()).toEqual(['x.com'])
     expect(limitPanel('x.com')?.hidden).toBe(false)
+  })
+
+  // U1: a grant change rebuilt every row, and with it the picker; the move
+  // blurred the custom field, and its blur saved what was typed so far.
+  it('U1: keeps a custom limit being typed when the grants change', async () => {
+    grant('x.com')
+    await openOptions()
+    const li = row('x.com')
+    click(limitToggle('x.com'))
+    click(radio(limitPanel('x.com'), 'Custom'))
+    const input = $<HTMLInputElement>('limit-x.com-custom')
+    input.focus()
+    input.value = '4'
+    browser.grant(originsForSite('reddit.com'))
+    await flush()
+    expect(trackedHosts()).toEqual(['reddit.com', 'x.com'])
+    // Not rebuilt or moved (happy-dom doesn't blur a moved node; Chromium does).
+    expect(row('x.com')).toBe(li)
+    expect(document.activeElement).toBe(input)
+    expect(input.closest('[hidden]')).toBeNull()
+    expect(storedLimits()).toBeUndefined()
   })
 
   it('follows per-site limits changed elsewhere', async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePresence, parseStatePush, SENDERS, type TabState } from './messages'
+import { overAt, parsePresence, parseStatePush, totalsAt, SENDERS, type TabState } from './messages'
 
 const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 
@@ -8,6 +8,41 @@ describe('parsePresence', () => {
     expect(parsePresence({ ...PRESENT, extra: 1 })).toEqual(PRESENT)
     expect(parsePresence(undefined)).toBeNull()
     expect(parsePresence({ ...PRESENT, blocked: 'no' })).toBeNull()
+  })
+})
+
+describe('a state read at a later moment', () => {
+  const NOON = new Date(2026, 5, 10, 12).getTime()
+  const MIDNIGHT = new Date(2026, 5, 11).getTime()
+  const state: TabState = {
+    site: 'a.com',
+    day: '2026-06-10',
+    seq: 1,
+    asOf: NOON,
+    today: 50_000,
+    globalToday: 80_000,
+    running: true,
+    blockAt: NOON + 10_000,
+    limit: { scope: 'site', ms: 60_000 },
+    prefs: { hidden: false, scale: 1 },
+  }
+
+  it('runs on while running, and starts again at midnight', () => {
+    expect(totalsAt(state, NOON + 4000)).toEqual({ siteToday: 54_000, globalToday: 84_000 })
+    expect(totalsAt({ ...state, running: false }, NOON + 4000)).toEqual({ siteToday: 50_000, globalToday: 80_000 })
+    expect(totalsAt(state, MIDNIGHT + 3000)).toEqual({ siteToday: 3000, globalToday: 3000 })
+    expect(totalsAt({ ...state, running: false }, MIDNIGHT + 3000)).toEqual({ siteToday: 0, globalToday: 0 })
+  })
+
+  it('is over its limit once it reaches it, but not after midnight', () => {
+    expect(overAt(state, NOON + 9000)).toBeNull()
+    expect(overAt(state, NOON + 10_000)).toEqual({ scope: 'site', limit: 60_000, elapsed: 60_000 })
+    // Snoozed: over, the block later.
+    expect(overAt({ ...state, today: 70_000, running: false, blockAt: NOON + 60_000 }, NOON)).toMatchObject({
+      elapsed: 70_000,
+    })
+    expect(overAt(state, MIDNIGHT)).toBeNull()
+    expect(overAt({ ...state, limit: null, blockAt: null }, NOON + 10_000)).toBeNull()
   })
 })
 

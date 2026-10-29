@@ -194,6 +194,19 @@ describe('handlers', () => {
     expect(today()?.['reddit.com']?.[12]).toBe(2000)
   })
 
+  it('tell an extension page the state of a tab, and only an extension page', async () => {
+    await handle(presence, content())
+    NOW += 3000
+    await expect(handle({ type: 'tabState', tabId: 7, site: 'reddit.com' }, page())).resolves.toMatchObject({
+      ok: true,
+      value: { site: 'reddit.com', today: 3000, running: true },
+    })
+    await expect(handle({ type: 'tabState', tabId: 7, site: 'reddit.com' }, content())).resolves.toEqual({
+      ok: false,
+      error: 'forbidden',
+    })
+  })
+
   it('set a limit', async () => {
     await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 }, page())).resolves.toEqual({
       ok: true,

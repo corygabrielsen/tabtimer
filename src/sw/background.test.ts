@@ -76,6 +76,33 @@ describe('messages', () => {
     expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
   })
 
+  // W5: the page opened in a window that stayed behind, so the button
+  // seemed to do nothing while the block stayed up.
+  it('W5: brings the window of the page it opens to the front', async () => {
+    browser.sender = {
+      id: browser.runtime.id,
+      url: 'https://www.reddit.com/',
+      tab: { id: 1, windowId: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
+    await bus.send('open', { page: 'activity' })
+    expect(browser.windows.update).toHaveBeenLastCalledWith(1, { focused: true })
+    // The options page already open in another window: that window.
+    browser.runtime.getContexts.mockResolvedValueOnce([{ windowId: 2, tabId: 8 }])
+    await bus.send('open', { page: 'options' })
+    expect(browser.runtime.getContexts).toHaveBeenLastCalledWith({
+      contextTypes: ['TAB'],
+      documentUrls: ['chrome-extension://tabtimer-test/options.html'],
+    })
+    expect(browser.windows.update).toHaveBeenLastCalledWith(2, { focused: true })
+    // Not found, or the lookup fails: nothing more to do.
+    browser.windows.update.mockClear()
+    browser.runtime.getContexts.mockRejectedValueOnce(new Error('nope'))
+    await bus.send('open', { page: 'options' })
+    expect(browser.windows.update).not.toHaveBeenCalled()
+  })
+
   it('refuses other senders', async () => {
     browser.sender = {
       id: 'someone-else',

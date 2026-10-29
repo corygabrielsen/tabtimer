@@ -26,7 +26,7 @@ import {
 } from './core/usage'
 import { localizeDom, t } from './i18n'
 import { createSiteLimitPicker, formatChipMinutes, type LimitPicker } from './limitPicker'
-import { byId, firstDayOfWeek, formatDuration, h, setDocumentLang, uiLocale } from './ui'
+import { byId, firstDayOfWeek, formatDuration, h, placeChildren, setDocumentLang, uiLocale } from './ui'
 
 const local = chromeStore('local')
 
@@ -55,9 +55,10 @@ const state: State = {
 const locale = uiLocale()
 const firstDay = firstDayOfWeek(locale)
 
-// The limit picker for the selected site, kept across renders so an edit in
-// progress survives a live update.
-let picker: { site: string; picker: LimitPicker; saved: HTMLElement } | null = null
+// The selected site's row with its limit picker, kept across renders and
+// patched in place (never rebuilt or moved), so an edit in progress survives
+// a live update.
+let selectedRow: { site: string; row: HTMLLIElement; picker: LimitPicker } | null = null
 
 const today = (): DayStamp => dayOf(Date.now())
 
@@ -258,18 +259,24 @@ function legend(summary: Summary): HTMLElement[] {
 
 // --- Sites --------------------------------------------------------------------
 
-function limitPanel(site: string): HTMLElement {
-  if (picker?.site !== site) {
+// The selected site's row, holding its button (`button`, replaced on each
+// render) and its limit panel.
+function selectedRowOf(site: string, button: HTMLButtonElement): HTMLLIElement {
+  if (selectedRow?.site !== site) {
     const saved = h('span', { class: 'saved', role: 'status' })
-    picker = { site, picker: createSiteLimitPicker({ id: 'usage-limit', site, value: null, saved }), saved }
+    const picker = createSiteLimitPicker({ id: 'usage-limit', site, value: null, saved })
+    const panel = h(
+      'div',
+      { class: 'site-panel', id: 'site-panel' },
+      h('div', { class: 'site-panel-head' }, h('span', {}, t('popupLimitAria', site)), saved),
+      picker.el
+    )
+    selectedRow = { site, row: h('li', { class: 'site-row', 'data-selected': true }, button, panel), picker }
+  } else {
+    selectedRow.row.firstElementChild!.replaceWith(button)
   }
-  picker.picker.set(siteLimitOf(state.limits, site))
-  return h(
-    'div',
-    { class: 'site-panel', id: 'site-panel' },
-    h('div', { class: 'site-panel-head' }, h('span', {}, t('popupLimitAria', site)), picker.saved),
-    picker.picker.el
-  )
+  selectedRow.picker.set(siteLimitOf(state.limits, site))
+  return selectedRow.row
 }
 
 function siteRow(period: Period, site: string, ms: number, days: number): HTMLLIElement {
@@ -306,7 +313,7 @@ function siteRow(period: Period, site: string, ms: number, days: number): HTMLLI
     render()
     byId(`site-${site}`)?.focus()
   })
-  return h('li', { class: 'site-row', 'data-selected': selected }, button, selected ? limitPanel(site) : null)
+  return selected ? selectedRowOf(site, button) : h('li', { class: 'site-row' }, button)
 }
 
 // --- Render -------------------------------------------------------------------
@@ -324,7 +331,8 @@ function render(): void {
 
   const period = periodOf(state.mode, state.offset, day, firstDay)
   state.offset = period.offset
-  const summary = summarize(state.history, period, day, state.site)
+  const now = new Date()
+  const summary = summarize(state.history, period, day, state.site, now.getHours() + now.getMinutes() / 60)
   const week = period.mode === 'week'
 
   byId('period-label')!.textContent = periodLabel(period)
@@ -365,7 +373,10 @@ function render(): void {
   if (state.site !== null && !sites.some((s) => s.site === state.site)) {
     sites.push({ site: state.site, ms: 0 })
   }
-  byId('site-list')!.replaceChildren(...sites.map((s) => siteRow(period, s.site, s.ms, summary.days)))
+  placeChildren(
+    byId('site-list')!,
+    sites.map((s) => siteRow(period, s.site, s.ms, summary.days))
+  )
   byId('sites-h')!.parentElement!.hidden = sites.length === 0
 
   if (focused) {

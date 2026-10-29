@@ -220,6 +220,31 @@ describe('limit picker', () => {
       expect(commit).toHaveBeenCalledExactlyOnceWith(60)
     })
 
+    // U4: Escape or a click outside closes the popup within the delay, and
+    // the choice shown as checked was never saved.
+    it('U4: saves a choice still settling when the page goes away', () => {
+      mount(null)
+      chip('Off').focus()
+      key(chip('Off'), 'ArrowRight')
+      window.dispatchEvent(new Event('pagehide'))
+      expect(commit).toHaveBeenCalledExactlyOnceWith(15)
+      vi.advanceTimersByTime(ARROW_SAVE_DELAY_MS)
+      expect(commit).toHaveBeenCalledOnce()
+    })
+
+    it('U4: saves it when the page is hidden, and not when it is shown', () => {
+      mount(null)
+      chip('Off').focus()
+      key(chip('Off'), 'ArrowRight')
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(commit).not.toHaveBeenCalled()
+      visibility.mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      expect(commit).toHaveBeenCalledExactlyOnceWith(15)
+      visibility.mockRestore()
+    })
+
     it('wraps around, and Home/End jump to the ends', () => {
       mount(null)
       chip('Off').focus()

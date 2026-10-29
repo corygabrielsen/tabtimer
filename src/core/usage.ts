@@ -272,18 +272,45 @@ export type Summary = {
   // Every site with time in the period, most first.
   sites: SiteTotal[]
   total: number
-  // The fraction changed from the previous period; null when it had none.
+  // The fraction changed from the previous period, up to the point this
+  // one has reached; null when it had none.
   change: number | null
   // The days that count toward the average (countedDays), and the average.
   days: number
   average: number
 }
 
-export function summarize(stored: History, period: Period, today: DayStamp, site: string | null): Summary {
+// The previous period's time up to the point the current one has reached:
+// all of it for a period that is over, else its days before today's
+// counterpart and that day up to `hour` (wall-clock hours into today,
+// fractional). An unfinished period is compared with the same part of the
+// one before, not with all of it.
+function previousSoFar(history: History, period: Period, today: DayStamp, hour: number, site: string | null): number {
+  const at = period.days.indexOf(today)
+  if (at === -1) {
+    return periodTotal(dayBars(history, period.previous), site)
+  }
+  const whole = Math.floor(hour)
+  const hours = hourBars(history, period.previous[at]!)
+  return (
+    periodTotal(dayBars(history, period.previous.slice(0, at)), site) +
+    periodTotal(hours.slice(0, whole), site) +
+    barTotal(hours[whole] ?? {}, site) * (hour - whole)
+  )
+}
+
+// `hour`: how far into today it is, in wall-clock hours (fractional).
+export function summarize(
+  stored: History,
+  period: Period,
+  today: DayStamp,
+  site: string | null,
+  hour = HOURS_PER_DAY
+): Summary {
   const history = keptOf(stored, today)
   const bars = period.mode === 'day' ? hourBars(history, period.days[0]!) : dayBars(history, period.days)
   const total = periodTotal(bars, site)
-  const previous = periodTotal(dayBars(history, period.previous), site)
+  const previous = previousSoFar(history, period, today, hour, site)
   const days = countedDays(period.days, today)
   const sites = siteTotals(bars)
   return {

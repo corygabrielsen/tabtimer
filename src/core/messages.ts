@@ -5,9 +5,9 @@
 // Requests are untrusted input: the service worker accepts only what
 // parseRequest (core/requests.ts) returns. A content script never names the
 // site it reports for; the service worker derives it from the sender's URL.
-import { isDayStamp, type DayStamp } from './day'
+import { dayOf, isDayStamp, startOfDay, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
-import type { BlockScope, LimitEdit } from './limits'
+import type { BlockReason, BlockScope, LimitEdit } from './limits'
 import type { Prefs } from './schema'
 import type { Site } from './site'
 import type { Presence } from './tracker'
@@ -40,11 +40,36 @@ export type TabState = {
   prefs: Prefs
 }
 
+// A state's totals at `now`: as of `asOf`, plus the time since while
+// running. Past midnight, only the running time since midnight.
+export function totalsAt(s: TabState, now: number): { siteToday: number; globalToday: number } {
+  if (dayOf(now) !== s.day) {
+    const since = s.running ? Math.max(0, now - Math.max(s.asOf, startOfDay(now))) : 0
+    return { siteToday: since, globalToday: since }
+  }
+  const running = s.running ? Math.max(0, now - s.asOf) : 0
+  return { siteToday: s.today + running, globalToday: s.globalToday + running }
+}
+
+// The limit a state is over at `now`, or null. Over is not yet blocking:
+// a snooze moves blockAt past `now`. A state from before midnight is over
+// nothing.
+export function overAt(s: TabState, now: number): BlockReason | null {
+  if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day) {
+    return null
+  }
+  const totals = totalsAt(s, now)
+  const elapsed = s.limit.scope === 'site' ? totals.siteToday : totals.globalToday
+  return elapsed >= s.limit.ms || now >= s.blockAt ? { scope: s.limit.scope, limit: s.limit.ms, elapsed } : null
+}
+
 export type Contract = {
   // content: the page's visibility, focus, media and block screen changed
   // (or it was asked). The service worker decides which one tab accrues
   // time and replies with this tab's state.
   presence: { req: Presence; res: TabState }
+  // extension pages: the state a tab on `site` is told (the popup's face).
+  tabState: { req: { tabId: number; site: Site }; res: TabState }
   // extension pages: zero one site's time today.
   resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
@@ -80,6 +105,7 @@ export type Origin = 'content' | 'extension'
 
 export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   presence: ['content'],
+  tabState: ['extension'],
   resetToday: ['extension'],
   setLimit: ['extension'],
   snooze: ['content'],
