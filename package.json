@@ -20,7 +20,7 @@
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^3.0.0",

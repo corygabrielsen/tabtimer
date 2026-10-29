@@ -5,7 +5,7 @@ Thanks for your interest in Tab Timer.
 ## Setup
 
 ```sh
-pnpm install          # Node >= 20 (see .nvmrc)
+pnpm install          # Node >= 24 (see .nvmrc)
 pnpm dev              # Vite dev server
 pnpm build            # production build to dist/
 pnpm package          # build + zip the store artifact
