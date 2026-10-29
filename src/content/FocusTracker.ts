@@ -2,7 +2,7 @@ import { bus as chromeBus, pushes as chromePushes } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { dayOf, startOfDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
-import type { TabState } from '../core/messages'
+import { totalsAt, type TabState } from '../core/messages'
 import type { Prefs } from '../core/schema'
 import type { Presence } from '../core/tracker'
 import type { Bus, Clock, Pushes } from '../ports'
@@ -34,7 +34,9 @@ export default class FocusTracker {
   private intervalId: ReturnType<typeof setInterval> | null = null
   private tickListeners = new Set<() => void>()
   private stateListeners = new Set<() => void>()
+  private stopListeners = new Set<() => void>()
   private unsubscribePush: (() => void) | null = null
+  private unsubscribeStop: (() => void) | null = null
   private state: TabState | null = null
   private blocked = false
   // A snooze asked for and not yet reflected in a state from the worker.
@@ -92,6 +94,7 @@ export default class FocusTracker {
       }
       return presence
     })
+    this.unsubscribeStop = this.pushes.onStop(this.stop)
     // A tab can load hidden or unfocused, with no event for that initial
     // state: the first report samples it.
     void this.report(true)
@@ -111,6 +114,7 @@ export default class FocusTracker {
     }
     this.tickListeners.clear()
     this.stateListeners.clear()
+    this.stopListeners.clear()
     document.removeEventListener('visibilitychange', this.handleChange)
     document.removeEventListener('prerenderingchange', this.handleChange)
     window.removeEventListener('blur', this.handleBlur)
@@ -121,8 +125,13 @@ export default class FocusTracker {
     this.watch(new Set())
     this.unsubscribePush?.()
     this.unsubscribePush = null
+    this.unsubscribeStop?.()
+    this.unsubscribeStop = null
     if (this.started) {
       this.started = false
+      if (!this.bus.alive()) {
+        return
+      }
       void this.bus.send('presence', { visible: false, focused: false, media: false, blocked: this.blocked })
     }
   }
@@ -145,7 +154,27 @@ export default class FocusTracker {
     return () => this.stateListeners.delete(listener)
   }
 
+  // Run `listener` when the page must stop: its site is no longer tracked,
+  // or the extension that ran it is gone. The tracker is destroyed after.
+  onStop(listener: () => void): () => void {
+    this.stopListeners.add(listener)
+    return () => this.stopListeners.delete(listener)
+  }
+
+  // Nothing here may outlive its extension: an orphan's last state would
+  // keep ticking and blocking with no worker to answer.
+  private stop = () => {
+    for (const listener of [...this.stopListeners]) {
+      listener()
+    }
+    this.destroy()
+  }
+
   private tick = () => {
+    if (!this.bus.alive()) {
+      this.stop()
+      return
+    }
     const now = this.clock.now()
     const day = dayOf(now)
     if (day !== this.day) {
@@ -224,6 +253,8 @@ export default class FocusTracker {
     const response = await this.bus.send('presence', presence)
     if (response.ok) {
       this.apply(response.value)
+    } else if (!this.bus.alive()) {
+      this.stop()
     } else if (this.lastReport === presence) {
       // Not heard: send it again once the worker may be back.
       this.lastReport = null
@@ -268,13 +299,7 @@ export default class FocusTracker {
     if (!s) {
       return { site: null, siteToday: 0, globalToday: 0 }
     }
-    const now = this.clock.now()
-    if (dayOf(now) !== s.day) {
-      const since = s.running ? Math.max(0, now - Math.max(s.asOf, startOfDay(now))) : 0
-      return { site: s.site, siteToday: since, globalToday: since }
-    }
-    const running = s.running ? Math.max(0, now - s.asOf) : 0
-    return { site: s.site, siteToday: s.today + running, globalToday: s.globalToday + running }
+    return { site: s.site, ...totalsAt(s, this.clock.now()) }
   }
 
   readElapsed(): ElapsedState {

@@ -53,6 +53,12 @@ function patternCovers(g: string, r: string): boolean {
   return host === base || host.endsWith(`.${base}`)
 }
 
+// A page's URL as a pattern for patternCovers: its scheme and host.
+function pageOf(url: string): string {
+  const u = new URL(url)
+  return `${u.protocol.slice(0, -1)}://${u.hostname}/*`
+}
+
 export class FakeStorageArea {
   data: Record<string, unknown> = {}
   // When set, every operation on this area fails with this lastError message.
@@ -342,10 +348,26 @@ export class FakeChrome {
   openTabs: FakeTab[] = []
 
   readonly tabs = {
-    query: vi.fn((_query: { active?: boolean; currentWindow?: boolean }, callback: Callback<FakeTab[]>) => {
-      const result = this.openTabs.filter((t) => t.active !== false)
-      this.deliver(null, () => callback(result))
-    }),
+    // Every open tab, or the active ones, or those a URL pattern covers. A
+    // tab whose URL the extension can't see has none.
+    query: vi.fn(
+      (
+        query: { active?: boolean; currentWindow?: boolean; url?: string | string[] },
+        callback?: Callback<FakeTab[]>
+      ) => {
+        const patterns = query.url === undefined ? null : [query.url].flat()
+        const result = this.openTabs.filter(
+          (t) =>
+            (query.active === undefined || t.active !== false) &&
+            (patterns === null || (t.url !== undefined && patterns.some((p) => patternCovers(p, pageOf(t.url!)))))
+        )
+        if (!callback) {
+          return Promise.resolve(result)
+        }
+        this.deliver(null, () => callback(result))
+        return undefined
+      }
+    ),
     // A message to a tab's content script, as the service worker sends it.
     // Every onMessage listener hears it (the router answers 'bad_request',
     // asynchronously); the page's listener answers first, synchronously.
@@ -469,7 +491,20 @@ export class FakeChrome {
     }
   }
 
+  // The page outlives its extension (updated, reloaded, disabled, removed):
+  // chrome.runtime loses its id and sendMessage throws, as in an orphaned
+  // content script.
+  orphaned = false
+
+  orphan(): void {
+    this.orphaned = true
+    Object.assign(this.runtime, { id: undefined })
+  }
+
   private sendMessage(message: unknown, callback?: Callback<unknown>): void {
+    if (this.orphaned) {
+      throw new Error('Extension context invalidated.')
+    }
     // Messages are serialized across contexts.
     const payload = structuredClone(message)
     this.deliver(null, () => {

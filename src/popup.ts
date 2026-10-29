@@ -323,12 +323,10 @@ function renderEnable(tab: ActiveTab, base: string) {
   btn?.addEventListener('click', () => {
     // Must run during the click gesture — request first, no awaits before it.
     void chrome.permissions.request({ origins }).then((granted) => {
-      if (!granted) {
-        return
+      // The worker starts the site's open tabs (permissions.onAdded).
+      if (granted) {
+        renderTracked(tab.id, base)
       }
-      // Inject now so tracking starts immediately, without a reload.
-      void chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {})
-      renderTracked(tab.id, base)
     })
   })
 }

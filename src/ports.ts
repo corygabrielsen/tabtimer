@@ -28,10 +28,15 @@ export interface Clock {
 // is a Response with ok: false.
 export interface Bus {
   send<K extends MessageType>(type: K, req: Contract[K]['req']): Promise<Response<K>>
+  // Whether the extension is still there to answer: false once the page
+  // has outlived it (updated, reloaded, disabled or removed).
+  alive(): boolean
 }
 
 // States the service worker pushes to a page. The handler returns the
 // page's presence, which the worker takes as a fresh report if `probe`.
 export interface Pushes {
   onState(handle: (state: TabState, probe: boolean) => Presence): () => void
+  // The worker telling the page its site is no longer tracked.
+  onStop(handle: () => void): () => void
 }
