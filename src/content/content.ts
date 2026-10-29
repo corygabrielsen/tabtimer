@@ -32,7 +32,7 @@ try {
     if (document.hidden) {
       return
     }
-    overlay.updateDisplayText()
+    overlay.render()
     blockScreen.tick()
   }
   const unsubscribeTick = tracker.onTick(render)

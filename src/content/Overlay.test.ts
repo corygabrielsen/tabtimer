@@ -33,7 +33,7 @@ const transform = () => document.getElementById('tabtimer-root')!.style.getPrope
 
 async function tickView(view: Overlay, ms: number): Promise<void> {
   await vi.advanceTimersByTimeAsync(ms)
-  view.updateDisplayText()
+  view.render()
   await flush()
 }
 

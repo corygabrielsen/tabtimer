@@ -4,9 +4,10 @@ import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
 import type { Bus } from '../ports'
 import { formatTime } from '../format'
 import { t } from '../i18n'
+import { h } from '../ui'
+import { mountShadowHost } from './shadowHost'
 
 const HOST_ID = 'tabtimer-block'
-const MAX_Z_INDEX = 2147483647
 
 const STYLES = `
   :host { all: initial; }
@@ -167,77 +168,51 @@ export default class BlockScreen {
     private tracker: Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'onState'>,
     private bus: Bus = chromeBus
   ) {
-    document.getElementById(HOST_ID)?.remove()
-    this.host = document.createElement('div')
-    this.host.id = HOST_ID
-    const s = this.host.style
-    s.setProperty('position', 'fixed', 'important')
+    const { host, shadow } = mountShadowHost(HOST_ID, STYLES)
+    this.host = host
+    this.shadow = shadow
+    const s = host.style
     s.setProperty('inset', '0', 'important')
-    s.setProperty('z-index', String(MAX_Z_INDEX), 'important')
     s.setProperty('display', 'none', 'important')
     // Opaque even before (or without) the modal dialog painting over it.
     s.setProperty('background', '#000', 'important')
 
-    this.shadow = this.host.attachShadow({ mode: 'closed' })
-    const style = document.createElement('style')
-    style.textContent = STYLES
-
-    this.dialog = document.createElement('dialog')
-    this.dialog.className = 'screen'
-    this.dialog.setAttribute('role', 'alertdialog')
-    this.dialog.setAttribute('aria-modal', 'true')
-    this.dialog.setAttribute('aria-label', t('blockTitle'))
-    this.dialog.addEventListener('cancel', this.handleCancel)
-    this.dialog.addEventListener('close', this.handleClose)
-    this.dialog.addEventListener('keydown', this.handleKeydown)
-
-    const box = document.createElement('div')
-    box.className = 'box'
-
-    const title = document.createElement('div')
-    title.className = 'title'
-    title.textContent = t('blockTitle')
-
-    this.hostLine = document.createElement('div')
-    this.hostLine.className = 'host'
-
-    this.detailLine = document.createElement('div')
-    this.detailLine.className = 'detail'
-
-    this.snoozeButton = document.createElement('button')
-    this.snoozeButton.type = 'button'
-    this.snoozeButton.className = 'snooze'
-    this.snoozeButton.textContent = t('blockSnooze', String(msToMinutes(SNOOZE_MS)))
-    this.snoozeButton.addEventListener('click', () => {
+    const button = (cls: string, text: string, onClick: () => void) => {
+      const el = h('button', { type: 'button', class: cls }, text)
+      el.addEventListener('click', onClick)
+      return el
+    }
+    this.snoozeButton = button('snooze', t('blockSnooze', String(msToMinutes(SNOOZE_MS))), () => {
       this.unblock()
       void this.tracker.snooze()
     })
-
     // Opens in a new tab, through the service worker; this page stays blocked.
-    this.activityButton = document.createElement('button')
-    this.activityButton.type = 'button'
-    this.activityButton.className = 'activity'
-    this.activityButton.textContent = t('blockSeeActivity')
-    this.activityButton.addEventListener('click', () => {
+    this.activityButton = button('activity', t('blockSeeActivity'), () => {
       void this.bus.send('open', { page: 'activity' })
     })
-
-    const row = document.createElement('div')
-    row.className = 'row'
-    row.append(this.snoozeButton, this.activityButton)
-
-    this.manageButton = document.createElement('button')
-    this.manageButton.type = 'button'
-    this.manageButton.className = 'manage'
-    this.manageButton.textContent = t('blockManage')
-    this.manageButton.addEventListener('click', () => {
+    this.manageButton = button('manage', t('blockManage'), () => {
       void this.bus.send('open', { page: 'options' })
     })
+    this.hostLine = h('div', { class: 'host' })
+    this.detailLine = h('div', { class: 'detail' })
 
-    box.append(title, this.hostLine, this.detailLine, row, this.manageButton)
-    this.dialog.append(box)
-    this.shadow.append(style, this.dialog)
-    document.body.appendChild(this.host)
+    this.dialog = h(
+      'dialog',
+      { class: 'screen', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': t('blockTitle') },
+      h(
+        'div',
+        { class: 'box' },
+        h('div', { class: 'title' }, t('blockTitle')),
+        this.hostLine,
+        this.detailLine,
+        h('div', { class: 'row' }, this.snoozeButton, this.activityButton),
+        this.manageButton
+      )
+    )
+    this.dialog.addEventListener('cancel', this.handleCancel)
+    this.dialog.addEventListener('close', this.handleClose)
+    this.dialog.addEventListener('keydown', this.handleKeydown)
+    shadow.append(this.dialog)
 
     // A new state from the service worker may block or lift the block.
     this.unsubscribeState = tracker.onState(() => this.tick())
@@ -270,23 +245,13 @@ export default class BlockScreen {
     this.exitFullscreen()
     this.showDialog()
     this.pauseMedia()
-    document.addEventListener('focusin', this.handleFocusIn, true)
-    document.addEventListener('play', this.handlePlay, true)
-    document.addEventListener('fullscreenchange', this.handleFullscreenChange)
-    window.addEventListener('wheel', this.handleWheel, ACTIVE_CAPTURE)
-    window.addEventListener('touchmove', this.preventDefault, ACTIVE_CAPTURE)
-    window.addEventListener('mousedown', this.handleMouseDown, true)
-    window.addEventListener('keydown', this.handleScrollKey, true)
-    window.addEventListener('scroll', this.handleScroll, true)
+    this.listen(true)
   }
 
   private unblock() {
-    if (!this.blocked) {
+    if (!this.release()) {
       return
     }
-    this.blocked = false
-    this.tracker.setBlocked(false)
-    this.removePageListeners()
     this.dialog.close()
     this.host.style.setProperty('display', 'none', 'important')
     this.restoreScroll()
@@ -295,25 +260,43 @@ export default class BlockScreen {
 
   destroy() {
     this.unsubscribeState()
-    if (this.blocked) {
-      this.blocked = false
-      this.tracker.setBlocked(false)
-      this.removePageListeners()
-    }
+    this.release()
     this.restoreScroll()
     this.host.remove()
     this.restoreFocus()
   }
 
-  private removePageListeners() {
-    document.removeEventListener('focusin', this.handleFocusIn, true)
-    document.removeEventListener('play', this.handlePlay, true)
-    document.removeEventListener('fullscreenchange', this.handleFullscreenChange)
-    window.removeEventListener('wheel', this.handleWheel, ACTIVE_CAPTURE)
-    window.removeEventListener('touchmove', this.preventDefault, ACTIVE_CAPTURE)
-    window.removeEventListener('mousedown', this.handleMouseDown, true)
-    window.removeEventListener('keydown', this.handleScrollKey, true)
-    window.removeEventListener('scroll', this.handleScroll, true)
+  // End the block's hold on the page: the tracker told, the page listeners
+  // removed. False if it wasn't blocked.
+  private release(): boolean {
+    if (!this.blocked) {
+      return false
+    }
+    this.blocked = false
+    this.tracker.setBlocked(false)
+    this.listen(false)
+    return true
+  }
+
+  // Add (or remove) the page listeners held while blocked.
+  private listen(on: boolean) {
+    const listeners: Array<[EventTarget, string, (e: never) => void, boolean | AddEventListenerOptions]> = [
+      [document, 'focusin', this.handleFocusIn, true],
+      [document, 'play', this.handlePlay, true],
+      [document, 'fullscreenchange', this.handleFullscreenChange, false],
+      [window, 'wheel', this.handleWheel, ACTIVE_CAPTURE],
+      [window, 'touchmove', this.preventDefault, ACTIVE_CAPTURE],
+      [window, 'mousedown', this.handleMouseDown, true],
+      [window, 'keydown', this.handleScrollKey, true],
+      [window, 'scroll', this.handleScroll, true],
+    ]
+    for (const [target, type, listener, options] of listeners) {
+      if (on) {
+        target.addEventListener(type, listener as EventListener, options)
+      } else {
+        target.removeEventListener(type, listener as EventListener, options)
+      }
+    }
   }
 
   // showModal: top layer, inert page, focus inside. Chromium allows it from a
@@ -378,9 +361,7 @@ export default class BlockScreen {
     }
     // Hiding overflow can shrink the viewport's scroll range (a body sized to
     // the viewport) and clamp its offset; go back to where the page was.
-    if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
-      window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
-    }
+    restoreWindowScroll(frozen)
   }
 
   // Record where everything is scrolled to. Anything not recorded was at the
@@ -400,10 +381,7 @@ export default class BlockScreen {
   private handleScroll = (e: Event) => {
     const target = e.target
     if (target === document || target === document.scrollingElement) {
-      const frozen = this.frozenWindow
-      if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
-        window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
-      }
+      restoreWindowScroll(this.frozenWindow)
       return
     }
     if (!(target instanceof Element)) {
@@ -517,6 +495,13 @@ export default class BlockScreen {
     const step = e.shiftKey ? order.length - 1 : 1
     const next = current === -1 ? this.snoozeButton : order[(current + step) % order.length]!
     next.focus({ preventScroll: true })
+  }
+}
+
+// Scroll the window back to `frozen`, if it moved.
+function restoreWindowScroll(frozen: ScrollPosition | null) {
+  if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
+    window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
   }
 }
 
