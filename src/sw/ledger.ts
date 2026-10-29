@@ -5,9 +5,18 @@
 // different senders (the tracker crediting time, the popup and the options
 // page editing limits) can't interleave and lose an update. The queue is the
 // only in-memory state, and it is empty whenever the worker is idle.
-import { creditable, normalizeAway, observe, remember, MAX_SPAN_AGE_MS, type IdleState, type Span } from '../core/away'
-import { dayOf, splitByHour } from '../core/day'
-import { applyLimit, normalizeLimits, SNOOZE_MS, type LimitEdit, type Limits } from '../core/limits'
+import {
+  asOf,
+  creditable,
+  normalizeAway,
+  observe,
+  remember,
+  MAX_SPAN_AGE_MS,
+  type IdleState,
+  type Span,
+} from '../core/away'
+import { dayOf, isDayStamp, splitByHour, type DayStamp } from '../core/day'
+import { applyLimit, normalizeLimits, snoozeOf, SNOOZE_MS, type LimitEdit, type Limits } from '../core/limits'
 import {
   dayKey,
   emptyBuckets,
@@ -26,8 +35,9 @@ import { normalizeTracker, type Accrual, type TrackerState } from '../core/track
 import type { Site } from '../core/site'
 import type { Clock, Store } from '../ports'
 
-// storage.session key: the worker's state between events ({ tracker, away }),
-// read once at the start of a transaction and written once at its end.
+// storage.session key: the worker's state between events ({ tracker, away,
+// day }), read once at the start of a transaction and written once at its
+// end. `day`: the day of the last transaction.
 export const WORKER_KEY = 'worker'
 
 // What a transaction (Ledger.transaction) may do: the queued operations'
@@ -58,9 +68,10 @@ export type Ledger = ReturnType<typeof createLedger>
 export function createLedger(local: Store, session: Store, clock: Clock) {
   const enqueue = serial()
 
-  // Drop day:* keys outside the retention window.
-  async function pruneNow(now: number): Promise<void> {
-    const stale = expiredDayKeys(await local.keys(), now)
+  // Drop day:* keys outside the retention window (`last`: see
+  // expiredDayKeys).
+  async function pruneNow(now: number, last: DayStamp | null = null): Promise<void> {
+    const stale = expiredDayKeys(await local.keys(), now, last)
     if (stale.length > 0) {
       await local.remove(stale)
     }
@@ -68,20 +79,20 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
   async function run<T>(task: (tx: Tx) => Promise<T>): Promise<T> {
     const now = clock.now()
-    const todayKey = dayKey(dayOf(now))
-    const stored = (await session.get<Partial<Record<'tracker' | 'away', unknown>>>(WORKER_KEY)) ?? {}
-    let away = normalizeAway(stored.away)
-    // The day usages read so far, and those changed; whether today's is new.
+    const today = dayOf(now)
+    const todayKey = dayKey(today)
+    const stored = (await session.get<Partial<Record<'tracker' | 'away' | 'day', unknown>>>(WORKER_KEY)) ?? {}
+    let away = asOf(normalizeAway(stored.away), now)
+    // The day usages read so far, and those changed.
     const days = new Map<string, DayUsage>()
     const changed = new Set<string>()
-    let created = false
+    // The limits with a void snooze cleared, to write back.
+    let unsnoozed: Limits | null = null
 
     async function day(key: string): Promise<DayUsage> {
       let usage = days.get(key)
       if (!usage) {
-        const value = await local.get(key)
-        created ||= key === todayKey && value === undefined
-        usage = normalizeDay(value)
+        usage = normalizeDay(await local.get(key))
         days.set(key, usage)
       }
       return usage
@@ -123,7 +134,14 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
       },
       idleState: () => away.state,
       today: () => day(todayKey),
-      limits: async () => normalizeLimits(await local.get(LIMITS_KEY)),
+      limits: async () => {
+        const limits = normalizeLimits(await local.get(LIMITS_KEY))
+        if (snoozeOf(limits, now) !== limits.snoozeUntil) {
+          unsnoozed = { ...limits, snoozeUntil: 0 }
+          return unsnoozed
+        }
+        return limits
+      },
       prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
       resetToday: async (site) => {
         const usage = await day(todayKey)
@@ -137,13 +155,18 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     }
 
     const result = await task(tx)
+    const writes: Record<string, unknown> = Object.fromEntries([...changed].map((key) => [key, days.get(key)]))
+    if (unsnoozed) {
+      writes[LIMITS_KEY] = unsnoozed
+    }
     await Promise.all([
-      session.set({ [WORKER_KEY]: { tracker: tx.tracker, away } }),
-      changed.size > 0 ? local.set(Object.fromEntries([...changed].map((key) => [key, days.get(key)]))) : null,
+      session.set({ [WORKER_KEY]: { tracker: tx.tracker, away, day: today } }),
+      Object.keys(writes).length > 0 ? local.set(writes) : null,
     ])
-    // The first write of a new day prunes the days that just expired.
-    if (created && changed.has(todayKey)) {
-      await pruneNow(now)
+    // The first transaction of another day (the date moved on, or the
+    // clock went back) prunes the days now outside the window.
+    if (stored.day !== today) {
+      await pruneNow(now, isDayStamp(stored.day) ? stored.day : null)
     }
     return result
   }

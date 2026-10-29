@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  asOf,
   creditable,
   initialAway,
   isIdleState,
@@ -203,6 +204,33 @@ describe('normalizeAway', () => {
       recent: [{ site: 'a.com', start: T, end: T + 1, media: false }],
     })
     expect(normalizeAway({ state: 'idle', periods: 'x' })).toEqual({ ...initialAway(), state: 'idle' })
+  })
+})
+
+describe('asOf', () => {
+  it('drops what was stamped after now (the clock went back), keeping an ongoing period from now at the latest', () => {
+    const s: AwayState = {
+      state: 'locked',
+      since: T + 30 * MIN,
+      periods: [
+        { kind: 'idle', start: T - 10 * MIN, end: T - 5 * MIN },
+        { kind: 'idle', start: T - 2 * MIN, end: T + 10 * MIN },
+        { kind: 'locked', start: T + 20 * MIN, end: null },
+      ],
+      recent: [
+        { site: 'a.com', start: T - 3 * MIN, end: T - MIN, media: false },
+        { site: 'a.com', start: T - MIN, end: T + MIN, media: false },
+      ],
+    }
+    expect(asOf(s, T)).toEqual({
+      state: 'locked',
+      since: T,
+      periods: [
+        { kind: 'idle', start: T - 10 * MIN, end: T - 5 * MIN },
+        { kind: 'locked', start: T, end: null },
+      ],
+      recent: [{ site: 'a.com', start: T - 3 * MIN, end: T - MIN, media: false }],
+    })
   })
 })
 

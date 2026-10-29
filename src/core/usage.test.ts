@@ -171,10 +171,13 @@ describe('change and averages', () => {
     expect(dailyAverage(70, 0)).toBe(0)
   })
 
-  it('knows whether there is any usage', () => {
-    expect(hasAnyUsage(new Map())).toBe(false)
-    expect(hasAnyUsage(history({ '2026-10-28': day({ 'a.com': {} }) }))).toBe(false)
-    expect(hasAnyUsage(history({ '2026-10-28': day({ 'a.com': { 3: 1 } }) }))).toBe(true)
+  it('knows whether there is any usage on a kept day', () => {
+    const today = d('2026-10-28')
+    expect(hasAnyUsage(new Map(), today)).toBe(false)
+    expect(hasAnyUsage(history({ '2026-10-28': day({ 'a.com': {} }) }), today)).toBe(false)
+    expect(hasAnyUsage(history({ '2026-10-28': day({ 'a.com': { 3: 1 } }) }), today)).toBe(true)
+    expect(hasAnyUsage(history({ [addDays(oldestKept(today), -1)]: day({ 'a.com': { 3: 1 } }) }), today)).toBe(false)
+    expect(hasAnyUsage(history({ '2026-10-29': day({ 'a.com': { 3: 1 } }) }), today)).toBe(false)
   })
 })
 
@@ -267,6 +270,17 @@ describe('summarize', () => {
     expect(s.total).toBe(96 * MIN)
     expect(s.change).toBeCloseTo(96 / 50 - 1)
     expect(s.average).toBe(24 * MIN) // Sunday to Wednesday
+  })
+
+  it('leaves out a stored day outside the kept days, as the average does', () => {
+    const expired = addDays(oldestKept(today), -1)
+    const stale = history({ [expired]: day({ 'a.com': { 9: 60 } }), [oldestKept(today)]: day({ 'a.com': { 9: 30 } }) })
+    const period = periodOf('week', maxOffset('week', today, 0), today, 0)
+    expect(period.days).toContain(expired)
+    const s = summarize(stale, period, today, null)
+    expect(s.total).toBe(30 * MIN)
+    expect(s.average).toBe((30 * MIN) / s.days)
+    expect(s.sites).toEqual([{ site: 'a.com', ms: 30 * MIN }])
   })
 
   it('filters to one site', () => {

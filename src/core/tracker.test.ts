@@ -446,6 +446,17 @@ describe('probes and pushes', () => {
     expect(step(state, { kind: 'idle', state: 'locked' }, T + 7 * S, 'locked').probe).toEqual([])
   })
 
+  it('back at the computer after the clock went back, asks the page seen since', () => {
+    const { state } = run([
+      [3600 * S, presence(3)],
+      [3601 * S, { kind: 'idle', state: 'locked' }, 'locked'],
+      // The clock goes back an hour.
+      [5 * S, presence(1)],
+      [6 * S, { kind: 'idle', state: 'locked' }, 'locked'],
+    ])
+    expect(step(state, { kind: 'idle', state: 'active' }, T + 7 * S, 'active').probe).toEqual([1])
+  })
+
   it('after a sleep gap, closes and asks the page again', () => {
     const { probes, state } = run([
       [0, presence(1)],
@@ -470,6 +481,15 @@ describe('probes and pushes', () => {
       [0, presence(2, { visible: false })],
       [S, { kind: 'removed', tabId: 1 }],
       [S, { kind: 'navigated', tabId: 2, site: 'elsewhere.com' }],
+    ])
+    expect(state.tabs).toEqual({})
+  })
+
+  it('keeps a removed tab forgotten when its last page’s hiding arrives late', () => {
+    const { state } = run([
+      [0, presence(1)],
+      [S, { kind: 'removed', tabId: 1 }],
+      [S, presence(1, { visible: false, departing: true })],
     ])
     expect(state.tabs).toEqual({})
   })

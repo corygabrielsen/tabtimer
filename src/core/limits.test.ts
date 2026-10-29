@@ -106,6 +106,11 @@ describe('blockAt', () => {
     expect(blockAt(DEFAULT_LIMITS, 'reddit.com', 600 * MIN, 600 * MIN, T, true)).toBeNull()
   })
 
+  it('ignores a snooze set before the clock went back', () => {
+    const snoozed = { ...limits, snoozeUntil: T + 3600_000 + 5 * MIN }
+    expect(blockAt(snoozed, 'reddit.com', 40 * MIN, 40 * MIN, T, false)?.at).toBe(T)
+  })
+
   it('waits for a snooze to end', () => {
     const snoozed = (until: number) => ({ ...limits, snoozeUntil: until })
     expect(blockAt(snoozed(T + 5 * MIN), 'reddit.com', 40 * MIN, 40 * MIN, T, false)?.at).toBe(T + 5 * MIN)

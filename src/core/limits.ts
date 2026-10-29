@@ -20,6 +20,12 @@ export const MAX_LIMIT_MINUTES = 1440
 
 export const SNOOZE_MS = 5 * 60 * 1000
 
+// The snooze's end as of `now` (0: none). One ending more than SNOOZE_MS
+// after `now` was set before the clock went back: it is void.
+export function snoozeOf(limits: Limits, now: number): number {
+  return limits.snoozeUntil - now > SNOOZE_MS ? 0 : limits.snoozeUntil
+}
+
 export type BlockScope = 'site' | 'global'
 export type BlockReason = { scope: BlockScope; limit: number; elapsed: number }
 
@@ -70,7 +76,7 @@ export function blockAt(
   if (!first || (first.left > 0 && !running)) {
     return null
   }
-  return { at: Math.max(now + first.left, limits.snoozeUntil), scope: first.scope, limit: first.limit }
+  return { at: Math.max(now + first.left, snoozeOf(limits, now)), scope: first.scope, limit: first.limit }
 }
 
 const isLimit = (v: unknown): v is number => isFiniteNumber(v) && v > 0

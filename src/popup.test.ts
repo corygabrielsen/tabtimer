@@ -287,6 +287,15 @@ describe('popup on a tracked site', () => {
       expect(text('summary')).toBe('3 min over limit. Snoozed · 4 min left')
     })
 
+    it('over, not snoozed, when the snooze was set before the clock went back', async () => {
+      browser.storage.local.seed({
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 60 * MIN },
+        ...dayEntry({ 'reddit.com': 48 * MIN }),
+      })
+      await openReddit()
+      expect(face()).toBe('over')
+    })
+
     it('follows limit changes made elsewhere', async () => {
       seedToday({ 'reddit.com': 20 * MIN })
       await openReddit()

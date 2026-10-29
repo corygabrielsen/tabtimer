@@ -101,7 +101,7 @@ describe('retention', () => {
   const seedDays = (...days: string[]) =>
     browser.storage.local.seed(Object.fromEntries(days.map((d) => [`day:${d}`, { 'a.com': bucketsOf({ 1: 1 }) }])))
 
-  it('the first write of a new day prunes days older than 30, and only once that day', async () => {
+  it('the first transaction of a new day prunes days older than 30, and only once that day', async () => {
     seedDays('2026-05-11', '2026-05-12', '2026-06-09')
     await addElapsed('a.com', [[NOON - 1000, NOON]])
     // 11 May is 30 days before 10 June: gone; 12 May is the oldest day kept.
@@ -117,6 +117,28 @@ describe('retention', () => {
     await addElapsed('a.com', [[now - 1000, now]])
     // A day later, 12 May has expired too (as has the stray January day).
     expect(Object.keys(data()).sort()).toEqual(['day:2026-06-09', 'day:2026-06-10', 'day:2026-06-11'])
+  })
+
+  it('drops the days written while the clock was 3 days ahead once it is corrected', async () => {
+    seedDays('2026-07-01')
+    for (const day of [11, 12, 13]) {
+      now = at(2026, 5, day, 9)
+      await addElapsed('a.com', [[now - 1000, now]])
+    }
+    now = NOON
+    await addElapsed('a.com', [[NOON - 1000, NOON]])
+    // Tomorrow stays (a time zone change); days never shown in this session
+    // stay too: the clock may be the one that is wrong.
+    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-10', 'day:2026-06-11', 'day:2026-07-01'])
+  })
+
+  it('keeps the old zone’s day after travelling west across midnight', async () => {
+    now = at(2026, 5, 11, 0, 30)
+    await addElapsed('a.com', [[now - 20 * MIN, now]])
+    // Three hours west: back to 21:30 on the 10th.
+    now = at(2026, 5, 10, 21, 30)
+    await addElapsed('a.com', [[now - 1000, now]])
+    expect(data()['day:2026-06-11']).toEqual({ 'a.com': bucketsOf({ 0: 20 * MIN }) })
   })
 
   it('prunes on demand (install and startup)', async () => {
@@ -205,6 +227,16 @@ describe('snooze and prefs', () => {
     expect(data()[LIMITS_KEY]).toEqual({ global: 90, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
   })
 
+  it('clears a snooze set before the clock went back', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
+    await ledger.snooze()
+    now = NOON - 3600_000
+    await expect(ledger.transaction((tx) => tx.limits())).resolves.toEqual({ global: 60, perSite: {}, snoozeUntil: 0 })
+    expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: 0 })
+    now = NOON + SNOOZE_MS - MIN
+    await expect(ledger.transaction((tx) => tx.limits())).resolves.toMatchObject({ snoozeUntil: 0 })
+  })
+
   it('merges a prefs change into the stored prefs', async () => {
     await ledger.setPrefs({ scale: 0.75 })
     expect(data()[PREFS_KEY]).toEqual({ hidden: false, scale: 0.75 })
@@ -284,6 +316,27 @@ describe('time away from the computer', () => {
     await setIdleState('idle')
     expect(day()).toEqual({ 'a.com': bucketsOf({ 11: 0 }) })
     expect(away().recent).toEqual([])
+  })
+
+  it('after the clock goes back, an away period stamped later no longer pauses', async () => {
+    await setIdleState('locked')
+    now = NOON + 60 * MIN
+    await setIdleState('active')
+    // Back an hour: the lock now lies in the past, not ahead.
+    now = NOON + 2 * MIN
+    await expect(addElapsed('a.com', [[NOON + MIN, now]])).resolves.toBe(MIN)
+    expect(away().periods).toEqual([])
+  })
+
+  it('after the clock goes back, an idle report takes back no time credited before', async () => {
+    now = NOON + 50 * MIN
+    await setIdleState('locked')
+    await setIdleState('active')
+    now = NOON + 60 * MIN
+    await addElapsed('a.com', [[now - 3 * MIN, now]])
+    now = NOON + MIN
+    await setIdleState('idle')
+    expect(day()).toEqual({ 'a.com': bucketsOf({ 12: 3 * MIN }) })
   })
 
   it('survives a service worker restart: a new ledger reads the periods back', async () => {
