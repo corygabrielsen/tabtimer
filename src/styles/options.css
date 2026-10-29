@@ -32,6 +32,89 @@ h1 {
   font-size: var(--t-md);
 }
 
+/* --- This week: one card above the settings ------------------------------ */
+
+.week-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'text bars'
+    'link link';
+  align-items: end;
+  gap: var(--s-4) var(--s-8);
+  margin-top: var(--s-8);
+  padding: var(--s-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.week-text {
+  grid-area: text;
+}
+
+.week-text h2 {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.week-total {
+  margin-top: var(--s-2);
+  font-size: 32px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.week-average {
+  margin-top: var(--s-2);
+  color: var(--ink-3);
+}
+
+.week-bars {
+  grid-area: bars;
+  display: grid;
+  grid-template-columns: repeat(7, 18px);
+  gap: var(--s-2);
+}
+
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+/* A day's bar inside a fixed track, so the days line up at the baseline. */
+.week-bar {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.week-bar::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(var(--v, 0) * 100%);
+  border-radius: 2px 2px 0 0;
+  background: var(--ink-3);
+}
+
+.week-bar[data-today]::before {
+  background: var(--ink);
+}
+
+.week-link {
+  grid-area: link;
+  justify-self: start;
+  font-weight: 600;
+}
+
 /* --- Sections ------------------------------------------------------------ */
 
 .section {

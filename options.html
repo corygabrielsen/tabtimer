@@ -15,6 +15,19 @@
         <p class="lede" data-i18n="optionsIntro">Changes save as you make them.</p>
       </header>
 
+      <!-- This week at a glance; the detail is on the activity page. -->
+      <section id="week-card" class="week-card" aria-labelledby="week-h" hidden>
+        <div class="week-text">
+          <h2 id="week-h" data-i18n="optionsWeekHeading">This week</h2>
+          <p id="week-total" class="week-total"></p>
+          <p id="week-average" class="week-average"></p>
+        </div>
+        <div id="week-bars" class="week-bars" aria-hidden="true"></div>
+        <a id="week-link" class="week-link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
+          >See all activity</a
+        >
+      </section>
+
       <!-- Sites ------------------------------------------------------------ -->
       <section class="section" aria-labelledby="sites-h">
         <div class="section-head">

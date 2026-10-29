@@ -469,3 +469,56 @@ it('localizes the page', async () => {
   expect(document.documentElement.lang).toBe('en-US')
   expect($('privacy-link').textContent).toBe('Privacy policy')
 })
+
+describe('this week', () => {
+  // A Wednesday: the week (from Sunday the 25th) has had four days.
+  const NOW = new Date(2026, 9, 28, 16, 40)
+  const at = (day: number, hour = 12) => new Date(2026, 9, day, hour)
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+  })
+
+  it('is hidden until anything is recorded', async () => {
+    await openOptions()
+    expect($('week-card').hidden).toBe(true)
+  })
+
+  it('shows the week’s total, daily average and a bar per day', async () => {
+    browser.storage.local.seed({
+      ...dayEntry({ 'reddit.com': 60 * MIN }, at(26)),
+      ...dayEntry({ 'reddit.com': 20 * MIN, 'x.com': 20 * MIN }, at(28)),
+      ...dayEntry({ 'reddit.com': 500 * MIN }, at(24)), // last week
+    })
+    await openOptions()
+    expect($('week-card').hidden).toBe(false)
+    expect(text($('week-total'))).toBe('1 h 40 min')
+    expect(text($('week-average'))).toBe('Daily average 25 min')
+    const days = [...$('week-bars').querySelectorAll<HTMLElement>('.week-bar')]
+    expect(days).toHaveLength(7)
+    expect(days.map((d) => d.style.getPropertyValue('--v'))).toEqual([
+      '0',
+      '1',
+      '0',
+      '0.6666666666666666',
+      '0',
+      '0',
+      '0',
+    ])
+    expect(days.map((d) => d.hasAttribute('data-today'))).toEqual([false, false, false, true, false, false, false])
+    expect([...$('week-bars').querySelectorAll('.week-day > span:last-child')].map((s) => s.textContent).join('')).toBe(
+      'SMTWTFS'
+    )
+    const link = $<HTMLAnchorElement>('week-link')
+    expect(link.getAttribute('href')).toBe('usage.html')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('updates as time is recorded', async () => {
+    browser.storage.local.seed(dayEntry({ 'reddit.com': 10 * MIN }, at(28)))
+    await openOptions()
+    browser.storage.local.set(dayEntry({ 'reddit.com': 30 * MIN }, at(28)))
+    await flush()
+    expect(text($('week-total'))).toBe('30 min')
+  })
+})
