@@ -324,7 +324,8 @@ function render(): void {
 
   const period = periodOf(state.mode, state.offset, day, firstDay)
   state.offset = period.offset
-  const summary = summarize(state.history, period, day, state.site)
+  const now = new Date()
+  const summary = summarize(state.history, period, day, state.site, now.getHours() + now.getMinutes() / 60)
   const week = period.mode === 'week'
 
   byId('period-label')!.textContent = periodLabel(period)

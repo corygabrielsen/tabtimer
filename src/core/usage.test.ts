@@ -283,6 +283,24 @@ describe('summarize', () => {
     expect(s.sites).toEqual([{ site: 'a.com', ms: 30 * MIN }])
   })
 
+  // U3: an unfinished period was compared with all of the one before, so
+  // every Monday morning read as a 90% drop.
+  it('U3: compares an unfinished period with the same part of the one before', () => {
+    const early = history({
+      '2026-10-20': day({ 'a.com': { 9: 60, 20: 60 } }),
+      '2026-10-21': day({ 'a.com': { 9: 40, 10: 60, 20: 300 } }),
+      '2026-10-27': day({ 'a.com': { 9: 60, 20: 60 } }),
+      '2026-10-28': day({ 'a.com': { 9: 40 } }),
+    })
+    // 10:30 on Wednesday: yesterday so far is its 9 AM hour.
+    expect(summarize(early, periodOf('day', 0, today, 0), today, null, 10.5).change).toBeCloseTo(40 / 60 - 1)
+    // This week so far: Tuesday's 120, Wednesday's 40. Last week to the same
+    // point: Tuesday's 120, then Wednesday's 40 and half of its 10 AM hour.
+    expect(summarize(early, periodOf('week', 0, today, 0), today, null, 10.5).change).toBeCloseTo(160 / 190 - 1)
+    // A period that is over is compared with all of the one before.
+    expect(summarize(early, periodOf('day', 7, today, 0), today, null, 10.5).change).toBeCloseTo(400 / 120 - 1)
+  })
+
   it('filters to one site', () => {
     const s = summarize(h, periodOf('week', 0, today, 0), today, 'a.com')
     expect(s.top).toEqual([])

@@ -22,7 +22,8 @@ async function activity(context: BrowserContext, extensionId: string): Promise<P
   return page
 }
 
-// Some of today's time on both sites, and a little yesterday.
+// Some of today's time on both sites, and a little yesterday (just after
+// midnight, so it counts in the change at any time of day).
 async function seedUsage(sw: Worker, extra: Record<string, unknown> = {}): Promise<void> {
   const yesterday = await sw.evaluate(() => {
     const d = new Date(Date.now() - 86_400_000)
@@ -31,7 +32,7 @@ async function seedUsage(sw: Worker, extra: Record<string, unknown> = {}): Promi
   })
   await seed(sw, {
     ...(await today(sw, { [SITE_A]: 20 * MINUTE, [SITE_B]: 5 * MINUTE })),
-    [yesterday]: { [SITE_A]: Array.from({ length: 24 }, (_, h) => (h === 9 ? 10 * MINUTE : 0)) },
+    [yesterday]: { [SITE_A]: Array.from({ length: 24 }, (_, h) => (h === 0 ? 10 * MINUTE : 0)) },
     ...extra,
   })
 }
@@ -81,7 +82,7 @@ test('switches between day and week and steps through periods', async ({ context
 
   await expect(label).toHaveText('Today')
   await expect(page.locator('#bars .bar')).toHaveCount(24)
-  await expect(page.locator('#change')).toHaveText('↑ 150% from yesterday')
+  await expect(page.locator('#change')).toHaveText(/^↑ \d+% from yesterday$/)
   await expect(next).toBeDisabled()
   await prev.click()
   await expect(label).toHaveText('Yesterday')

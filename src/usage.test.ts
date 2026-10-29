@@ -187,7 +187,8 @@ describe('week view', () => {
     expect(bars()).toHaveLength(7)
     expect(bars()[2]!.getAttribute('aria-label')).toBe('Tuesday, Oct 27, 40 min')
     expect(text('total')).toBe('2 h 19 min')
-    expect(text('change')).toBe('↑ 248% from last week')
+    // U3: last week up to Wednesday 4:40 PM had nothing (its time came later).
+    expect($('change').hidden).toBe(true)
     expect(text('average')).toBe('Daily average 35 min') // Sun-Wed
     expect(document.querySelector('.ref-average')).not.toBeNull()
     expect(document.querySelector('.ref-limit')).toBeNull()
@@ -263,8 +264,8 @@ describe('week view', () => {
   it('shows a drop from the period before', async () => {
     browser.storage.local.set({ ...day('2026-10-20', { 'reddit.com': { 20: 300 } }) })
     await flush()
-    expect(text('change')).toBe('↓ 59% from last week')
-    expect($('change').getAttribute('aria-label')).toBe('Down 59 percent from last week')
+    expect(text('change')).toBe('↓ 54% from last week')
+    expect($('change').getAttribute('aria-label')).toBe('Down 54 percent from last week')
     click($('prev'))
     browser.storage.local.set({ ...day('2026-10-14', { 'reddit.com': { 20: 340 } }) })
     await flush()
