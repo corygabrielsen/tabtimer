@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createRouter } from './router'
 import { createLedger } from './ledger'
+import { createTracker } from './tracker'
 import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
 import { LIMITS_KEY, PREFS_KEY, SNOOZE_KEY, emptyBuckets } from '../core/schema'
@@ -9,35 +10,49 @@ import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const ID = 'tabtimer-test'
 const EXT = `chrome-extension://${ID}/`
-const NOW = new Date(2026, 5, 10, 12).getTime()
+const NOON = new Date(2026, 5, 10, 12).getTime()
 const MIN = 60_000
 
 let browser: FakeChrome
+let NOW = NOON
 let handle: Handler
 let openOptions: ReturnType<typeof vi.fn<() => Promise<void>>>
 
 const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = {}): Sender => ({
   id: ID,
   url,
-  tab: { id: 7 },
+  tab: { id: 7, windowId: 1 },
   frameId: 0,
   ...extra,
 })
 const page = (path = 'popup.html'): Sender => ({ id: ID, url: `${EXT}${path}` })
 const today = () => browser.storage.local.data['day:2026-06-10'] as Record<string, number[]> | undefined
-const report = { type: 'addElapsed', spans: [[NOW - 3000, NOW]] }
+const PRESENT = { visible: true, focused: true, media: false, blocked: false }
+const presence = { type: 'presence', ...PRESENT }
+const hidden = { type: 'presence', ...PRESENT, visible: false }
+
+// The page reports in, three seconds pass, and it reports itself hidden:
+// three seconds are credited to the sender's site.
+async function visit(sender = content(), extra: Record<string, unknown> = {}) {
+  const shown = await handle({ ...presence, ...extra }, sender)
+  NOW += 3000
+  await handle(hidden, sender)
+  return shown
+}
 
 beforeEach(() => {
   browser = fakeChrome()
   openOptions = vi.fn(() => Promise.resolve())
+  NOW = NOON
   const clock = { now: () => NOW }
-  handle = createRouter({
-    ledger: createLedger(chromeStore('local'), chromeStore('session'), clock),
-    extensionId: ID,
-    extensionUrl: EXT,
-    now: clock.now,
-    openOptions,
+  const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
+  const tracker = createTracker({
+    ledger,
+    session: chromeStore('session'),
+    send: () => Promise.resolve(undefined),
+    alarm: () => Promise.resolve(),
   })
+  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, openOptions })
 })
 
 describe('sender policy', () => {
@@ -46,7 +61,7 @@ describe('sender policy', () => {
       { ...content(), id: 'some-other-extension' },
       { ...page(), id: undefined },
     ]) {
-      await expect(handle({ type: 'hello' }, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
+      await expect(handle(presence, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
     }
     await expect(handle({ type: 'resetToday', site: 'reddit.com' }, { url: `${EXT}popup.html` })).resolves.toEqual({
       ok: false,
@@ -64,10 +79,11 @@ describe('sender policy', () => {
   })
 
   it('takes a content script’s site from its URL and ignores any site in the payload', async () => {
-    const response = await handle({ ...report, site: 'x.com' }, content())
-    expect(response).toEqual({ ok: true, value: { total: 3000 } })
+    const response = await visit(content(), { site: 'x.com' })
+    expect(response).toMatchObject({ ok: true, value: { site: 'reddit.com', running: true, today: 0 } })
     expect(Object.keys(today() ?? {})).toEqual(['reddit.com'])
-    await expect(handle({ type: 'hello', site: 'x.com' }, content('https://news.bbc.co.uk/'))).resolves.toEqual({
+    expect(today()?.['reddit.com']?.[12]).toBe(3000)
+    await expect(handle({ ...presence, site: 'x.com' }, content('https://news.bbc.co.uk/'))).resolves.toMatchObject({
       ok: true,
       value: { site: 'bbc.co.uk' },
     })
@@ -85,19 +101,34 @@ describe('sender policy', () => {
       { id: ID, tab: { id: 7 }, frameId: 0 },
     ]
     for (const sender of refused) {
-      await expect(handle(report, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
+      await expect(handle(presence, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
     }
     expect(today()).toBeUndefined()
   })
 
-  it('still accepts a page’s last report as it leaves (back/forward cache or unload)', async () => {
+  it('still accepts a page’s last report as it leaves, and hears it as hidden', async () => {
     // Chrome numbers a departing top frame like any other frame.
     for (const documentLifecycle of ['cached', 'pending_deletion']) {
-      await expect(handle(report, content(undefined, { frameId: 4, documentLifecycle }))).resolves.toMatchObject({
+      await handle(presence, content())
+      NOW += 3000
+      // Whatever it says, a page in the back/forward cache or unloading
+      // isn't being used.
+      await expect(handle(presence, content(undefined, { frameId: 4, documentLifecycle }))).resolves.toMatchObject({
         ok: true,
+        value: { running: false },
       })
     }
-    expect(Object.keys(today() ?? {})).toEqual(['reddit.com'])
+    expect(today()?.['reddit.com']?.[12]).toBe(6000)
+  })
+
+  it('identifies the tab, its window and its document', async () => {
+    await handle(presence, content(undefined, { tab: { id: 3, windowId: 9 }, documentId: 'doc-a' }))
+    expect(browser.storage.session.data.tracker).toMatchObject({
+      open: { tabId: 3, windowId: 9, doc: 'doc-a', site: 'reddit.com' },
+    })
+    // A tab without a window id still reports (as window -1).
+    await handle(presence, content(undefined, { tab: { id: 4 } }))
+    expect(browser.storage.session.data.tracker).toMatchObject({ open: { tabId: 4, windowId: -1, doc: '' } })
   })
 
   it('reserves resets and limits for extension pages (closes key injection)', async () => {
@@ -113,9 +144,9 @@ describe('sender policy', () => {
     expect(browser.storage.local.data[LIMITS_KEY]).toBeUndefined()
   })
 
-  it('does not take time reports or hellos from extension pages', async () => {
-    await expect(handle(report, page())).resolves.toEqual({ ok: false, error: 'forbidden' })
-    await expect(handle({ type: 'hello' }, page('options.html'))).resolves.toEqual({ ok: false, error: 'forbidden' })
+  it('does not take presence from extension pages', async () => {
+    await expect(handle(presence, page())).resolves.toEqual({ ok: false, error: 'forbidden' })
+    await expect(handle(presence, page('options.html'))).resolves.toEqual({ ok: false, error: 'forbidden' })
   })
 
   it('wants sites from extension pages in canonical form', async () => {
@@ -130,10 +161,18 @@ describe('sender policy', () => {
 })
 
 describe('handlers', () => {
-  it('reset today for one site, from the popup', async () => {
-    browser.storage.local.seed({ 'day:2026-06-10': { 'x.com': emptyBuckets(), 'a.com': emptyBuckets() } })
-    await expect(handle({ type: 'resetToday', site: 'x.com' }, page())).resolves.toEqual({ ok: true, value: null })
+  it('reset today for one site, from the popup, including time not yet credited', async () => {
+    browser.storage.local.seed({ 'day:2026-06-10': { 'reddit.com': emptyBuckets(), 'a.com': emptyBuckets() } })
+    await handle(presence, content())
+    NOW += 3000
+    await expect(handle({ type: 'resetToday', site: 'reddit.com' }, page())).resolves.toEqual({
+      ok: true,
+      value: null,
+    })
     expect(Object.keys(today() ?? {})).toEqual(['a.com'])
+    NOW += 2000
+    await handle(hidden, content())
+    expect(today()?.['reddit.com']?.[12]).toBe(2000)
   })
 
   it('set a limit and answer with all limits', async () => {
@@ -164,14 +203,19 @@ describe('handlers', () => {
     expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5 })
   })
 
-  it('report time with the page’s media flag: idle time counts only with media playing', async () => {
+  it('take the page’s media flag: while idle, only a page playing media accrues', async () => {
     browser.storage.session.seed({
       away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
     })
-    await expect(handle(report, content())).resolves.toEqual({ ok: true, value: { total: 0 } })
-    await expect(handle({ ...report, media: false }, content())).resolves.toEqual({ ok: true, value: { total: 0 } })
-    await expect(handle({ ...report, media: true }, content())).resolves.toEqual({ ok: true, value: { total: 3000 } })
-    await expect(handle({ ...report, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
+    await expect(handle(presence, content())).resolves.toMatchObject({ ok: true, value: { running: false } })
+    await expect(handle({ ...presence, media: true }, content())).resolves.toMatchObject({
+      ok: true,
+      value: { running: true },
+    })
+    NOW += 3000
+    await handle({ ...hidden, media: true }, content())
+    expect(today()?.['reddit.com']?.[12]).toBe(3000)
+    await expect(handle({ ...presence, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
   })
 
   it('open the options page', async () => {
@@ -181,6 +225,6 @@ describe('handlers', () => {
 
   it('answer internal when a handler fails', async () => {
     browser.storage.local.error = 'QUOTA_BYTES quota exceeded'
-    await expect(handle(report, content())).resolves.toEqual({ ok: false, error: 'internal' })
+    await expect(handle(presence, content())).resolves.toEqual({ ok: false, error: 'internal' })
   })
 })

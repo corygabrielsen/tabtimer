@@ -92,17 +92,21 @@ test('a forged message naming another site is ignored or refused', async ({ cont
   await page.waitForTimeout(500)
   const before = await readToday(serviceWorker, SITE_A)
 
-  // A time report from SITE_A's page that names SITE_B: the site comes from
-  // the sender's URL, so it is credited to SITE_A.
-  const now = Date.now()
-  const report = await sendFromTab(serviceWorker, site(SITE_A), {
-    type: 'addElapsed',
-    spans: [[now - 3_000, now]],
-    site: SITE_B,
-  })
-  expect(report).toMatchObject({ ok: true })
-  expect(await readToday(serviceWorker, SITE_A)).toBe(before + 3_000)
+  // A presence report from SITE_A's page that names SITE_B: the site comes
+  // from the sender's URL, so the time is SITE_A's.
+  const presence = { type: 'presence', visible: true, focused: true, media: false, blocked: false, site: SITE_B }
+  const report = await sendFromTab(serviceWorker, site(SITE_A), presence)
+  expect(report).toMatchObject({ ok: true, value: { site: SITE_A, running: true } })
+  await page.waitForTimeout(1_500)
+  await sendFromTab(serviceWorker, site(SITE_A), { ...presence, visible: false })
+  expect(await readToday(serviceWorker, SITE_A)).toBeGreaterThanOrEqual(before + 1_500)
   expect(await readToday(serviceWorker, SITE_B)).toBe(7 * MINUTE)
+  // The old time report, which carried its own spans, is gone.
+  const now = Date.now()
+  expect(await sendFromTab(serviceWorker, site(SITE_A), { type: 'addElapsed', spans: [[now - 3_000, now]] })).toEqual({
+    ok: false,
+    error: 'bad_request',
+  })
 
   // Resetting another site, or changing limits, is for extension pages only.
   for (const forged of [
@@ -158,7 +162,6 @@ test('stored data from an older schema is cleared when the upgraded extension st
         limits: { global: null, perSite: {} },
         prefs: { hidden: false, scale: 1 },
         snoozeUntil: 0,
-        idleState: 'active',
       })
   } finally {
     await after.close()

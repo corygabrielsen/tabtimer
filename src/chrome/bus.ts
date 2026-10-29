@@ -1,11 +1,20 @@
-import type { Bus } from '../ports'
-import type { ErrorCode, MessageType, Request, Response } from '../core/messages'
+import type { Bus, Pushes } from '../ports'
+import {
+  parseStatePush,
+  type ErrorCode,
+  type MessageType,
+  type Request,
+  type Response,
+  type StatePush,
+} from '../core/messages'
 
 // The sender of a message, as the service worker sees it.
 export type Sender = {
   id?: string
   url?: string
-  tab?: { id?: number }
+  tab?: { id?: number; windowId?: number }
+  // The sending document (Chrome 106+).
+  documentId?: string
   frameId?: number
   // 'active', 'prerender', 'cached' (in the back/forward cache) or
   // 'pending_deletion' (unloading).
@@ -50,4 +59,31 @@ export function serveRouter(handle: Handler): void {
     handle(raw, sender).then(sendResponse, () => sendResponse({ ok: false, error: 'internal' }))
     return true
   })
+}
+
+// The page side of state pushes (core/messages.ts StatePush): `handle` gets
+// each state from this extension's service worker and returns the page's
+// presence, sent back as the reply. Returns the unsubscribe function.
+export const pushes: Pushes = {
+  onState(handle) {
+    const listener = (raw: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r: unknown) => void) => {
+      // Only the service worker: not another tab's content script.
+      if (sender.id !== chrome.runtime.id || sender.tab) {
+        return false
+      }
+      const state = parseStatePush(raw)
+      if (state) {
+        sendResponse(handle(state))
+      }
+      return false
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    return () => chrome.runtime.onMessage.removeListener(listener)
+  },
+}
+
+// The service-worker side: send one page its state. `doc` targets that
+// document ('' = the tab's top frame). Resolves with the page's reply.
+export function sendState(tabId: number, doc: string, push: StatePush): Promise<unknown> {
+  return chrome.tabs.sendMessage(tabId, push, doc ? { documentId: doc } : { frameId: 0 })
 }

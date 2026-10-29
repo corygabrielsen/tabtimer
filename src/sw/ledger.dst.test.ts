@@ -6,22 +6,23 @@ import { describe, it, expect } from 'vitest'
 import { createLedger } from './ledger'
 import { chromeStore } from '../chrome/store'
 import { sumBuckets } from '../core/schema'
-import { MAX_REPORT_MS, type Span } from '../core/messages'
+import type { Span } from '../core/away'
 import { fakeChrome } from '../test/chrome'
 
 const HOUR = 3600_000
+const STEP_MS = 10 * 60_000
 
-// A whole local day of active time, reported in 10-minute spans (the most
-// one request carries), each credited when it ends.
+// A whole local day of active time, credited in 10-minute intervals, each
+// when it ends.
 async function creditWholeDay(y: number, m: number, d: number): Promise<number[]> {
   const start = new Date(y, m, d).getTime()
   const end = new Date(y, m, d + 1).getTime()
   let now = start
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), { now: () => now })
-  for (let t = start; t < end; t += MAX_REPORT_MS) {
-    const span: Span = [t, Math.min(t + MAX_REPORT_MS, end)]
+  for (let t = start; t < end; t += STEP_MS) {
+    const span: Span = [t, Math.min(t + STEP_MS, end)]
     now = span[1] - 1
-    await ledger.addElapsed('a.com', [span])
+    await ledger.transaction((tx) => tx.credit([{ site: 'a.com', start: span[0], end: span[1], media: false }]))
   }
   const key = `day:${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
   return (fakeChrome().storage.local.data[key] as Record<string, number[]>)['a.com']!

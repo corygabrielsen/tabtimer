@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { bus, serveRouter } from './bus'
+import { bus, pushes, sendState, serveRouter } from './bus'
+import type { TabState } from '../core/messages'
 import { fakeChrome } from '../test/chrome'
 
 describe('bus.send', () => {
@@ -15,7 +16,7 @@ describe('bus.send', () => {
   })
 
   it('is unreachable when nothing is listening (service worker gone)', async () => {
-    await expect(bus.send('hello', {})).resolves.toEqual({ ok: false, error: 'unreachable' })
+    await expect(bus.send('snooze', {})).resolves.toEqual({ ok: false, error: 'unreachable' })
   })
 
   it('is unreachable when the extension context is gone', async () => {
@@ -44,5 +45,53 @@ describe('serveRouter', () => {
   it('answers internal if the handler itself rejects', async () => {
     serveRouter(() => Promise.reject(new Error('boom')))
     await expect(bus.send('openOptions', {})).resolves.toEqual({ ok: false, error: 'internal' })
+  })
+})
+
+describe('state pushes', () => {
+  const state: TabState = {
+    site: 'reddit.com',
+    day: '2026-06-10',
+    asOf: 1,
+    today: 2,
+    globalToday: 3,
+    running: false,
+    blockAt: null,
+    limit: null,
+  }
+  const PRESENT = { visible: true, focused: true, media: false, blocked: false }
+
+  it('hands the page each state from the worker and replies with its presence', async () => {
+    const handle = vi.fn(() => PRESENT)
+    const stop = pushes.onState(handle)
+    await expect(sendState(4, '', { type: 'state', state })).resolves.toEqual(PRESENT)
+    expect(handle).toHaveBeenCalledWith(state)
+    expect(fakeChrome().tabs.sendMessage).toHaveBeenCalledWith(4, { type: 'state', state }, { frameId: 0 })
+    await sendState(4, 'doc-1', { type: 'state', state })
+    expect(fakeChrome().tabs.sendMessage).toHaveBeenLastCalledWith(4, { type: 'state', state }, { documentId: 'doc-1' })
+    stop()
+    await expect(sendState(4, '', { type: 'state', state })).rejects.toThrow()
+  })
+
+  it('ignores other messages, other extensions and other tabs', () => {
+    const handle = vi.fn(() => PRESENT)
+    pushes.onState(handle)
+    const browser = fakeChrome()
+    const respond = vi.fn()
+    const deliver = (message: unknown, sender: object) => {
+      for (const listener of browser.runtime.onMessage.listeners) {
+        listener(message, sender, respond)
+      }
+    }
+    deliver({ type: 'state', state }, { id: 'someone-else' })
+    deliver({ type: 'state', state }, { id: browser.runtime.id, tab: { id: 2 } })
+    deliver({ type: 'state', state: { ...state, asOf: 'x' } }, { id: browser.runtime.id })
+    expect(handle).not.toHaveBeenCalled()
+    expect(respond).not.toHaveBeenCalled()
+  })
+
+  it('fails to reach a tab whose page is gone', async () => {
+    fakeChrome().closedTabs.add(4)
+    await expect(sendState(4, '', { type: 'state', state })).rejects.toThrow('Receiving end does not exist')
   })
 })

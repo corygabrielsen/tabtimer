@@ -3,6 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
+import { bus } from '../chrome/bus'
 import { SNOOZE_MS, type Limits } from '../core/limits'
 import { LIMITS_KEY, SNOOZE_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
@@ -178,9 +179,11 @@ describe('live re-evaluation', () => {
     logged('reddit.com', minutes(45))
     const blocker = await mount()
     expect(isBlocked()).toBe(true)
-    logged('reddit.com', 0)
+    browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('popup.html') }
+    await bus.send('resetToday', { site: 'reddit.com' })
+    browser.sender = null
     await flush()
-    await blocker.tick()
+    blocker.tick()
     expect(isBlocked()).toBe(false)
   })
 

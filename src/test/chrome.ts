@@ -166,7 +166,14 @@ export class FakeStorageArea {
   }
 }
 
-export type MessageSender = { id?: string; url?: string; tab?: { id: number }; frameId?: number }
+export type MessageSender = {
+  id?: string
+  url?: string
+  tab?: { id: number; windowId?: number }
+  frameId?: number
+  documentId?: string
+  documentLifecycle?: string
+}
 export type SendResponse = (response: unknown) => void
 
 export type FakeTab = { id?: number; url?: string; active?: boolean }
@@ -290,6 +297,81 @@ export class FakeChrome {
       const result = this.openTabs.filter((t) => t.active !== false)
       this.deliver(null, () => callback(result))
     }),
+    // A message to a tab's content script, as the service worker sends it.
+    // Every onMessage listener hears it (the router answers 'bad_request',
+    // asynchronously); the page's listener answers first, synchronously.
+    // The options (documentId or frameId) only pick the frame; this fake
+    // has one page.
+    sendMessage: vi.fn((...[tabId, message]: [number, unknown, { documentId?: string; frameId?: number }?]) =>
+      this.sendToTab(tabId, message)
+    ),
+    onActivated: new FakeEvent<[{ tabId: number; windowId: number }]>(),
+    onRemoved: new FakeEvent<[number]>(),
+    onUpdated: new FakeEvent<[number, { url?: string; status?: string; discarded?: boolean }, { url?: string }]>(),
+  }
+
+  // Tabs whose content script is gone: messages to them fail.
+  readonly closedTabs = new Set<number>()
+
+  readonly windows = {
+    WINDOW_ID_NONE: -1,
+    onFocusChanged: new FakeEvent<[number]>(),
+    update: vi.fn((...[windowId]: [number, { focused?: boolean }]) => Promise.resolve({ id: windowId })),
+  }
+
+  // Alarms run on (fake) timers, as chrome.alarms would fire them.
+  readonly alarmTimers = new Map<string, { alarm: chrome.alarms.Alarm; timer: ReturnType<typeof setInterval> }>()
+
+  readonly alarms = {
+    onAlarm: new FakeEvent<[chrome.alarms.Alarm]>(),
+    create: vi.fn((name: string, info: { periodInMinutes: number }) => {
+      clearInterval(this.alarmTimers.get(name)?.timer)
+      const period = info.periodInMinutes * 60_000
+      const alarm: chrome.alarms.Alarm = {
+        name,
+        periodInMinutes: info.periodInMinutes,
+        scheduledTime: Date.now() + period,
+        persistAcrossSessions: true,
+      }
+      const timer = setInterval(() => {
+        alarm.scheduledTime = Date.now() + period
+        this.alarms.onAlarm.dispatch({ ...alarm })
+      }, period)
+      this.alarmTimers.set(name, { alarm, timer })
+      return Promise.resolve()
+    }),
+    get: vi.fn((name: string) => Promise.resolve(this.alarmTimers.get(name)?.alarm)),
+    clear: vi.fn((name: string) => {
+      const entry = this.alarmTimers.get(name)
+      if (entry) {
+        clearInterval(entry.timer)
+        this.alarmTimers.delete(name)
+      }
+      return Promise.resolve(entry !== undefined)
+    }),
+  }
+
+  private sendToTab(tabId: number, message: unknown): Promise<unknown> {
+    const payload = structuredClone(message)
+    return new Promise((resolve, reject) => {
+      queueMicrotask(() => {
+        if (this.closedTabs.has(tabId)) {
+          reject(new Error('Could not establish connection. Receiving end does not exist.'))
+          return
+        }
+        let responded = false
+        const sendResponse: SendResponse = (response) => {
+          if (!responded) {
+            responded = true
+            resolve(structuredClone(response))
+          }
+        }
+        const results = this.runtime.onMessage.dispatch(payload, { id: this.runtime.id }, sendResponse)
+        if (!responded && !results.includes(true)) {
+          reject(new Error('The message port closed before a response was received.'))
+        }
+      })
+    })
   }
 
   constructor() {
@@ -304,7 +386,7 @@ export class FakeChrome {
     }
     const url = (globalThis as { location?: { href: string } }).location?.href ?? ''
     return /^https?:/.test(url)
-      ? { id: this.runtime.id, url, tab: { id: 1 }, frameId: 0 }
+      ? { id: this.runtime.id, url, tab: { id: 1, windowId: 1 }, frameId: 0 }
       : { id: this.runtime.id, url: this.runtime.getURL('popup.html') }
   }
 

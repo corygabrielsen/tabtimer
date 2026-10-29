@@ -3,19 +3,21 @@ import { test, expect, readToday, shadowText, OVERLAY_ID } from './fixtures'
 
 // Time away from the computer isn't counted. Playwright can't make the OS
 // idle or lock the screen, so these tests set the state through the e2e
-// build's hook (src/sw/testHook.ts), which goes to the same ledger call a
-// chrome.idle event does.
+// build's hook (src/sw/testHook.ts), which runs the same tracker event a
+// chrome.idle event does. The hook also runs the minute's checkpoint, so
+// time is credited without waiting for the alarm.
 
 const SITE_A = 'site-a.test'
 
 type IdleState = 'active' | 'idle' | 'locked'
+type Hook = { idle: (s: string) => Promise<void>; checkpoint: () => Promise<void> }
 
 function setIdle(sw: Worker, state: IdleState): Promise<void> {
-  return sw.evaluate(
-    (state) =>
-      (globalThis as unknown as { __tabtimerTest: { idle: (s: string) => Promise<void> } }).__tabtimerTest.idle(state),
-    state
-  )
+  return sw.evaluate((state) => (globalThis as unknown as { __tabtimerTest: Hook }).__tabtimerTest.idle(state), state)
+}
+
+function checkpoint(sw: Worker): Promise<void> {
+  return sw.evaluate(() => (globalThis as unknown as { __tabtimerTest: Hook }).__tabtimerTest.checkpoint())
 }
 
 // The overlay pill's time today (its first HH:MM:SS), in seconds.
@@ -26,7 +28,14 @@ async function overlaySeconds(page: Parameters<typeof shadowText>[0]): Promise<n
 
 test('headless Chromium reports the user as active, so only the hook moves the state', async ({ serviceWorker }) => {
   expect(await serviceWorker.evaluate(() => chrome.idle.queryState(300))).toBe('active')
-  expect(await serviceWorker.evaluate(() => chrome.storage.local.get('idleState'))).toEqual({ idleState: 'active' })
+  // ...and the worker recorded it (in memory-only session storage).
+  await expect
+    .poll(() =>
+      serviceWorker.evaluate(() =>
+        chrome.storage.session.get('away').then(({ away }) => (away as { state?: string } | undefined)?.state)
+      )
+    )
+    .toBe('active')
 })
 
 test('locking the screen stops the count, and unlocking resumes it', async ({ context, serviceWorker, site }) => {
@@ -60,8 +69,10 @@ test('going idle takes the time since the last input back, and stops the count',
   const stored = () => readToday(serviceWorker, SITE_A)
   const page = await context.newPage()
   await page.goto(site(SITE_A))
-  await expect.poll(stored).toBeGreaterThan(0)
   await expect.poll(() => overlaySeconds(page)).toBeGreaterThanOrEqual(2)
+  // Credited at the checkpoint, so there is stored time to take back.
+  await checkpoint(serviceWorker)
+  await expect.poll(stored).toBeGreaterThan(0)
 
   // Idle is reported five minutes after the last input; everything here is
   // more recent than that.
@@ -82,6 +93,8 @@ test('idle time counts while media plays, but not once the screen locks', async 
   await page.goto(site(SITE_A, '/interactive'))
   // Silent audio, playing for real.
   await page.evaluate(() => (document.getElementById('media') as HTMLAudioElement).play())
+  await expect.poll(() => overlaySeconds(page)).toBeGreaterThanOrEqual(1)
+  await checkpoint(serviceWorker)
   await expect.poll(stored).toBeGreaterThan(0)
 
   await setIdle(serviceWorker, 'idle')

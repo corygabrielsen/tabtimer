@@ -14,7 +14,7 @@ import {
   type AwayState,
   type IdleState,
 } from './away'
-import { MAX_SPAN_AGE_MS, type Span } from './messages'
+import { MAX_SPAN_AGE_MS, type Span } from './away'
 
 const MIN = 60_000
 const T = new Date(2026, 5, 10, 12).getTime()

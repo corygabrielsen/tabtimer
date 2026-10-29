@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { LIMITS_KEY } from '../core/schema'
 import { fakeChrome } from '../test/chrome'
 import { flush, setPageState, trackShadowRoots } from '../test/dom'
-import { dayKeyOf, minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
+import { dayKeyOf, minutes, pageTimers, seconds, startBackground, storedToday, useClock } from '../test/content'
 
 let shadowOf: (id: string) => ShadowRoot
 
@@ -38,9 +38,22 @@ describe('content script', () => {
   it('mounts the overlay and tracks focus time on load', async () => {
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(12))
-    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toMatch(/^00:00:1[12]$/)
-    expect(storedToday()).toBe(seconds(11))
+    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('00:00:12')
+    // The service worker credits the open interval when it closes (or at
+    // its checkpoint, every minute).
+    expect(storedToday()).toBe(0)
     window.dispatchEvent(new Event('pagehide'))
+    await flush()
+    expect(storedToday()).toBe(seconds(12))
+  })
+
+  it('is credited every minute while it stays open', async () => {
+    await inject()
+    await vi.advanceTimersByTimeAsync(minutes(1))
+    expect(storedToday()).toBe(minutes(1))
+    await vi.advanceTimersByTimeAsync(minutes(2))
+    expect(storedToday()).toBe(minutes(3))
+    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('00:03:00')
   })
 
   it('enforces limits through the block screen', async () => {
@@ -54,7 +67,7 @@ describe('content script', () => {
   it('persists pending time and removes its UI on pagehide', async () => {
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(7))
-    expect(storedToday()).toBe(seconds(1))
+    expect(storedToday()).toBe(0)
     window.dispatchEvent(new Event('pagehide'))
     await flush()
     expect(storedToday()).toBe(seconds(7))
@@ -81,22 +94,24 @@ describe('content script', () => {
     await inject()
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(30))
-    expect(storedToday()).toBe(seconds(21))
+    window.dispatchEvent(new Event('pagehide'))
+    await flush()
+    expect(storedToday()).toBe(seconds(30))
   })
 
   it('B5: the replaced instance flushes its time and stops ticking', async () => {
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(5))
     await inject()
-    // The first instance's 5s were persisted when it was disposed...
+    // The first instance's 5s were credited when it was disposed...
     expect(storedToday()).toBe(seconds(5))
     // ...and only the new instance's tick remains.
-    expect(vi.getTimerCount()).toBe(1)
+    expect(pageTimers()).toBe(1)
     await vi.advanceTimersByTimeAsync(seconds(3))
     window.dispatchEvent(new Event('pagehide'))
     await flush()
     expect(storedToday()).toBe(seconds(8))
-    expect(vi.getTimerCount()).toBe(0)
+    expect(pageTimers()).toBe(0)
   })
 
   it('B5: survives a previous instance that fails to tear down', async () => {
@@ -118,7 +133,7 @@ describe('content script', () => {
     setPageState({ hidden: true })
     pageTransition('pagehide', true)
     await flush()
-    // Pending time is persisted, but the instance stays alive.
+    // The time so far is credited, but the instance stays alive.
     expect(storedToday()).toBe(seconds(7))
     expect(document.getElementById('tabtimer-root')).not.toBeNull()
     expect(document.getElementById('tabtimer-block')).not.toBeNull()
@@ -154,6 +169,6 @@ describe('content script', () => {
     await inject()
     pageTransition('pageshow', false)
     await vi.advanceTimersByTimeAsync(seconds(2))
-    expect(vi.getTimerCount()).toBe(1)
+    expect(pageTimers()).toBe(1)
   })
 })
