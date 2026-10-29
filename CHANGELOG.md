@@ -4,6 +4,31 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-10-29
+
+### Added
+
+- An activity page shows where your time went, like Screen Time: today by
+  hour or a week by day, split by your top sites, with the total and how it
+  compares with the day or week before. Step back through the last 30 days,
+  pick a site to see its time against its limit and change that limit right
+  there, or read it all as a table.
+- The popup shows a timeline of today on the current site, hour by hour,
+  with a link to all activity.
+- Settings opens with this week at a glance: the total, the daily average and
+  a bar for each day.
+- The block screen links to your activity. Opening it leaves the block in
+  place.
+
+### Changed
+
+- Shorter wording in the popup and settings.
+
+### Fixed
+
+- The column headings in the settings' list of sites now line up with the
+  columns below them.
+
 ## [1.5.0] - 2026-10-28
 
 ### Changed
@@ -163,6 +188,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.6.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.2...v1.3.0
