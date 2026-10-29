@@ -17,7 +17,7 @@ import {
 // paused, and no way around it through fullscreen.
 
 const SITE_A = 'site-a.test'
-const BLOCKING = { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } } }
+const BLOCKING = { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } } }
 
 const activeId = (page: Page) => page.evaluate(() => document.activeElement?.id)
 const fullscreen = (page: Page) => page.evaluate(() => document.fullscreenElement !== null)

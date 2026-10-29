@@ -1,26 +1,23 @@
-// The chrome.storage.local layout (schema 2). Pure: no chrome, no DOM.
+// The chrome.storage.local layout (schema 3). Pure: no chrome, no DOM.
 //
 // The service worker is the only writer. Every reader goes through the
 // normalize* functions below, so a malformed value reads as its default.
 //
-//   schema       2
-//   limits       Limits (core/limits.ts)
+//   schema       3
+//   limits       Limits (core/limits.ts), the snooze included
 //   prefs        Prefs
-//   snoozeUntil  epoch ms; blocking is suppressed until then
 //   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
 import { addDays, dayOf, isDayStamp, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
-import { DEFAULT_LIMITS, type Limits } from './limits'
 
-export const SCHEMA = 2
+export const SCHEMA = 3
 
 export const SCHEMA_KEY = 'schema'
 export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
-export const SNOOZE_KEY = 'snoozeUntil'
 export const DAY_KEY_PREFIX = 'day:'
 
 // Days of usage kept, today included: older day:* keys are pruned.
@@ -122,19 +119,5 @@ export function normalizePrefs(value: unknown): Prefs {
     hidden: isBool(p.hidden) ? p.hidden : DEFAULT_PREFS.hidden,
     // Out of range is clamped; not a number at all reads as the default.
     scale: isFiniteNumber(p.scale) ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, p.scale)) : DEFAULT_PREFS.scale,
-  }
-}
-
-export function normalizeSnooze(value: unknown): number {
-  return isFiniteNumber(value) ? value : 0
-}
-
-// What a freshly cleared store holds.
-export function defaultState(): Record<string, unknown> {
-  return {
-    [SCHEMA_KEY]: SCHEMA,
-    [LIMITS_KEY]: DEFAULT_LIMITS satisfies Limits,
-    [PREFS_KEY]: DEFAULT_PREFS,
-    [SNOOZE_KEY]: 0,
   }
 }

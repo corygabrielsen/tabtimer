@@ -46,7 +46,7 @@ const SEED = {
     'x.com': { 15: 3 },
     'wikipedia.org': { 15: 1 },
   }),
-  [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 * MIN, 'x.com': 60 * MIN } },
+  [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30, 'x.com': 60 } },
 }
 
 async function open(seed: Record<string, unknown> = SEED): Promise<void> {
@@ -282,7 +282,7 @@ describe('a selected site', () => {
     click(row('reddit.com'))
     click([...$('site-panel').querySelectorAll('[role="radio"]')].find((c) => c.textContent === '1h'))
     await flush()
-    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 60 * MIN } })
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 60 } })
     expect(row('reddit.com').hasAttribute('data-over')).toBe(false)
     expect($('site-panel').querySelector('[aria-checked="true"]')?.textContent).toBe('1h')
     click([...$('site-panel').querySelectorAll('[role="radio"]')].find((c) => c.textContent === 'Off'))

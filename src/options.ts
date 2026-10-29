@@ -1,5 +1,5 @@
 import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
-import { msToMinutes, minutesToMs, normalizeLimits, DEFAULT_LIMITS, type LimitEdit, type Limits } from './core/limits'
+import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayOf } from './core/day'
 import { dayBars, dayLabel, hasAnyUsage, historyOf, periodOf, periodTotal, summarize } from './core/usage'
 import { dayKey, normalizeDay, normalizePrefs, siteTotal, DAY_KEY_PREFIX, LIMITS_KEY, PREFS_KEY } from './core/schema'
@@ -7,7 +7,7 @@ import { chromeStore } from './chrome/store'
 import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
 import { h, byId, firstDayOfWeek, flashSaved, formatDuration, setDocumentLang, uiLocale } from './ui'
-import { createLimitPicker, formatChipMinutes, SITE_PRESETS, GLOBAL_PRESETS, type LimitPicker } from './limitPicker'
+import { createLimitPicker, createSiteLimitPicker, formatChipMinutes, GLOBAL_PRESETS } from './limitPicker'
 
 const LABELS = new Map(SUGGESTED_SITES.map((s) => [s.host, s.label]))
 const SIZES = [0.5, 0.75, 1]
@@ -44,17 +44,7 @@ function readTodays(): Promise<(host: string) => number> {
     .then((day) => (host: string) => siteTotal(day, host))
 }
 
-// Limits change only through the service worker, which applies each edit to
-// the latest stored limits (so edits from here and the popup both survive).
-async function saveLimit(edit: LimitEdit): Promise<void> {
-  await bus.send('setLimit', edit)
-}
-
 // --- Tracked site rows -------------------------------------------------------
-
-const toMinutes = (ms: number | null | undefined): number | null =>
-  typeof ms === 'number' && ms > 0 ? msToMinutes(ms) : null
-const toMs = (minutes: number | null): number | null => (minutes === null ? null : minutesToMs(minutes))
 
 // The table is too narrow for a chip row per site, so each row shows its limit
 // as a compact button that expands the row with the same picker the popup uses.
@@ -62,7 +52,7 @@ const toMs = (minutes: number | null): number | null => (minutes === null ? null
 let openLimitHost: string | null = null
 const rowLimits = new Map<string, (limits: Limits) => void>()
 
-function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLElement; panel: HTMLElement } {
+function limitCell(host: string, current: number | null): { toggle: HTMLElement; panel: HTMLElement } {
   const id = `limit-${host}`
   const panelId = `${id}-panel`
   const toggle = h('button', {
@@ -78,17 +68,15 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
     toggle.textContent = minutes === null ? t('limitOff') : formatChipMinutes(minutes)
     toggle.setAttribute(
       'aria-label',
-      t('optionsLimitToggleAria', [host, minutes === null ? t('limitOff') : formatDuration(minutes * 60000)])
+      t('optionsLimitToggleAria', [host, minutes === null ? t('limitOff') : formatDuration(minutesToMs(minutes))])
     )
   }
-  const picker: LimitPicker = createLimitPicker({
+  const picker = createSiteLimitPicker({
     id,
-    presets: SITE_PRESETS,
+    site: host,
     label: t('optionsSiteLimitAria', host),
-    fieldLabel: t('limitCustomSiteAria', host),
-    value: toMinutes(currentMs),
+    value: current,
     saved,
-    commit: (minutes) => saveLimit({ scope: 'site', site: host, ms: toMs(minutes) }),
     onChange: label,
     onEscape: () => {
       setOpen(false)
@@ -112,9 +100,9 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
       picker.focus()
     }
   })
-  label(toMinutes(currentMs))
+  label(current)
   rowLimits.set(host, (limits) => {
-    const minutes = toMinutes(limits.perSite[host])
+    const minutes = siteLimitOf(limits, host)
     picker.set(minutes)
     label(minutes)
   })
@@ -124,11 +112,12 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
   return { toggle, panel }
 }
 
-function todayText(ms: number, limitMs: number | undefined): string {
-  return typeof limitMs === 'number' && ms >= limitMs ? t('optionsTodayOver', formatDuration(ms)) : formatDuration(ms)
+function todayText(ms: number, limitMs: number | null): string {
+  return limitMs !== null && ms >= limitMs ? t('optionsTodayOver', formatDuration(ms)) : formatDuration(ms)
 }
 
-function siteRow(host: string, limitMs: number | undefined, todayMs: number): HTMLLIElement {
+function siteRow(host: string, limits: Limits, todayMs: number): HTMLLIElement {
+  const limitMs = limitsFor(limits, host).site
   const label = LABELS.get(host)
   const name = h(
     'div',
@@ -142,12 +131,12 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
       class: 'site-today figure',
       'data-label': t('optionsColToday'),
       'data-today-host': host,
-      'data-over': typeof limitMs === 'number' && todayMs >= limitMs,
+      'data-over': limitMs !== null && todayMs >= limitMs,
       'aria-label': t('optionsTodayAria', [host, formatDuration(todayMs)]),
     },
     todayText(todayMs, limitMs)
   )
-  const { toggle, panel } = limitCell(host, limitMs)
+  const { toggle, panel } = limitCell(host, siteLimitOf(limits, host))
   const stop = h(
     'button',
     { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', host), 'data-host': host },
@@ -228,7 +217,7 @@ async function render() {
     openLimitHost = null
   }
   rowLimits.clear()
-  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host, limits.perSite[host], today(host))))
+  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host, limits, today(host))))
   byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
   const count = byId('tracked-count')
   if (count) {
@@ -255,8 +244,9 @@ async function refreshTodays() {
   for (const el of document.querySelectorAll<HTMLElement>('[data-today-host]')) {
     const host = el.dataset.todayHost ?? ''
     const ms = today(host)
-    el.textContent = todayText(ms, limits.perSite[host])
-    el.toggleAttribute('data-over', typeof limits.perSite[host] === 'number' && ms >= (limits.perSite[host] ?? 0))
+    const limitMs = limitsFor(limits, host).site
+    el.textContent = todayText(ms, limitMs)
+    el.toggleAttribute('data-over', limitMs !== null && ms >= limitMs)
     el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
   }
 }
@@ -315,14 +305,18 @@ async function initGlobalLimit() {
     presets: GLOBAL_PRESETS,
     label: t('optionsGlobalLimit'),
     fieldLabel: t('limitCustomGlobalAria'),
-    value: toMinutes(limits.global),
+    value: limits.global,
     saved: byId('global-limit-saved'),
-    commit: (minutes) => saveLimit({ scope: 'global', ms: toMs(minutes) }),
+    // The service worker applies each edit to the latest stored limits, so
+    // edits from here and the popup both survive.
+    commit: async (minutes) => {
+      await bus.send('setLimit', { scope: 'global', minutes })
+    },
   })
   mount.replaceWith(picker.el)
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[LIMITS_KEY]) {
-      void readLimits().then((l) => picker.set(toMinutes(l.global)))
+      void readLimits().then((l) => picker.set(l.global))
     }
   })
 }

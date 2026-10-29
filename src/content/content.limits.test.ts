@@ -48,7 +48,7 @@ afterEach(() => {
 
 describe('time limits end to end', () => {
   it('blocks the moment focus time reaches the per-site limit', async () => {
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(seconds(59))
     expect(blocked()).toBe(false)
@@ -58,7 +58,7 @@ describe('time limits end to end', () => {
   })
 
   it('includes time other tabs already spent on the site today', async () => {
-    limits({ perSite: { 'reddit.com': minutes(20) } })
+    limits({ perSite: { 'reddit.com': 20 } })
     seedToday({ 'reddit.com': minutes(19) + seconds(50) })
     await openTab()
     await run(seconds(9))
@@ -68,7 +68,7 @@ describe('time limits end to end', () => {
   })
 
   it('does not accrue or block in a hidden tab', async () => {
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     setPageState({ hidden: true, focused: false }, false)
     await openTab()
     await run(minutes(10))
@@ -82,7 +82,7 @@ describe('time limits end to end', () => {
   })
 
   it('does not accrue while the window is unfocused', async () => {
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(seconds(30))
     setPageState({ focused: false })
@@ -94,7 +94,7 @@ describe('time limits end to end', () => {
   })
 
   it('B10: stops counting while blocked, so the global allowance is not consumed', async () => {
-    limits({ global: minutes(30), perSite: { 'reddit.com': minutes(1) } })
+    limits({ global: 30, perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(minutes(1))
     expect(blocked()).toBe(true)
@@ -104,7 +104,7 @@ describe('time limits end to end', () => {
   })
 
   it('enforces the global cap across every tracked site', async () => {
-    limits({ global: minutes(31) })
+    limits({ global: 31 })
     seedToday({ 'x.com': minutes(20), 'youtube.com': minutes(10) })
     await openTab()
     await run(seconds(55))
@@ -119,13 +119,13 @@ describe('time limits end to end', () => {
     await openTab()
     await run(minutes(5))
     expect(blocked()).toBe(false)
-    limits({ perSite: { 'reddit.com': minutes(3) } })
+    limits({ perSite: { 'reddit.com': 3 } })
     await flush()
     expect(blocked()).toBe(true)
   })
 
   it('gives a five-minute reprieve on snooze, then blocks again', async () => {
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(minutes(1))
     expect(blocked()).toBe(true)
@@ -143,7 +143,7 @@ describe('time limits end to end', () => {
 
   it('lifts the block at midnight when the daily total resets', async () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 58, 0))
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(minutes(1)) // 23:59:00
     expect(blocked()).toBe(true)
@@ -161,7 +161,7 @@ describe('per-tab cost', () => {
   })
 
   it('reads no storage per second: the worker pushes what changes', async () => {
-    limits({ global: minutes(30), perSite: { 'reddit.com': minutes(30) } })
+    limits({ global: 30, perSite: { 'reddit.com': 30 } })
     // The service worker already pruned today (its once-a-day get(null)).
     browser.storage.session.seed({ [PRUNED_DAY_KEY]: dayOf(Date.now()) })
     await openTab()
@@ -175,13 +175,13 @@ describe('per-tab cost', () => {
     // this tab's minute crosses the cap once the worker re-checks (here, on
     // the limits changing).
     seedToday({ 'x.com': minutes(29) + seconds(10) })
-    limits({ global: minutes(30), perSite: {} })
+    limits({ global: 30, perSite: {} })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
     // ...and so does this site's own limit.
     seedToday({ 'reddit.com': minutes(5) })
-    limits({ global: null, perSite: { 'reddit.com': minutes(5) } })
+    limits({ global: null, perSite: { 'reddit.com': 5 } })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('reddit.com')
@@ -202,7 +202,7 @@ describe('tick wiring', () => {
   })
 
   it('tears down the overlay and block screen and stops ticking on pagehide', async () => {
-    limits({ perSite: { 'reddit.com': minutes(1) } })
+    limits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(minutes(1))
     closeTab()

@@ -1,37 +1,45 @@
 // Pure (no chrome, no DOM). Stored under LIMITS_KEY (core/schema.ts); only
-// the service worker writes it, through applyLimit.
+// the service worker writes it, through applyLimit and the snooze.
 import { isFiniteNumber, isObject } from './guards'
 
-// Daily time limits (all values in milliseconds, matching the stored "today"
-// focus totals). null / absent means no limit.
+// Daily time limits, in whole minutes (what the pickers set). null / absent
+// means no limit. limitsFor is the one place they become ms, the unit of the
+// daily time they are measured against (DayUsage).
 export type Limits = {
   global: number | null
   perSite: Record<string, number>
+  // Epoch ms; blocking is suppressed until then.
+  snoozeUntil: number
 }
 
-export const DEFAULT_LIMITS: Limits = { global: null, perSite: {} }
+export const DEFAULT_LIMITS: Limits = { global: null, perSite: {}, snoozeUntil: 0 }
+
+// The range a limit can be set to, in minutes.
+export const MIN_LIMIT_MINUTES = 1
+export const MAX_LIMIT_MINUTES = 1440
 
 export const SNOOZE_MS = 5 * 60 * 1000
 
 export type BlockScope = 'site' | 'global'
 export type BlockReason = { scope: BlockScope; limit: number; elapsed: number }
 
-// Pure: is this site over an applicable limit right now? Per-site wins over
-// global when both trip, so the message names the tighter cause.
-export function evaluateLimits(
-  limits: Limits,
-  host: string,
-  siteToday: number,
-  globalToday: number
-): BlockReason | null {
-  const site = limits.perSite[host]
-  if (typeof site === 'number' && site > 0 && siteToday >= site) {
-    return { scope: 'site', limit: site, elapsed: siteToday }
-  }
-  if (typeof limits.global === 'number' && limits.global > 0 && globalToday >= limits.global) {
-    return { scope: 'global', limit: limits.global, elapsed: globalToday }
-  }
-  return null
+export function minutesToMs(minutes: number): number {
+  return Math.round(minutes * 60000)
+}
+
+export function msToMinutes(ms: number): number {
+  return Math.round(ms / 60000)
+}
+
+// `site`'s own limit, in minutes (null: none).
+export function siteLimitOf(limits: Limits, site: string): number | null {
+  return limits.perSite[site] ?? null
+}
+
+// The limits `site`'s time is measured against, in ms (null: none).
+export function limitsFor(limits: Limits, site: string): { site: number | null; global: number | null } {
+  const ms = (minutes: number | null) => (minutes === null ? null : minutesToMs(minutes))
+  return { site: ms(siteLimitOf(limits, site)), global: ms(limits.global) }
 }
 
 // The limit a site's time is measured against, and when it is reached.
@@ -47,23 +55,22 @@ export function blockAt(
   siteToday: number,
   globalToday: number,
   now: number,
-  running: boolean,
-  snoozeUntil: number
+  running: boolean
 ): BlockAt | null {
+  const ms = limitsFor(limits, site)
   const candidates: Array<{ scope: BlockScope; limit: number; left: number }> = []
-  const siteLimit = limits.perSite[site]
-  if (typeof siteLimit === 'number' && siteLimit > 0) {
-    candidates.push({ scope: 'site', limit: siteLimit, left: Math.max(0, siteLimit - siteToday) })
+  if (ms.site !== null) {
+    candidates.push({ scope: 'site', limit: ms.site, left: Math.max(0, ms.site - siteToday) })
   }
-  if (typeof limits.global === 'number' && limits.global > 0) {
-    candidates.push({ scope: 'global', limit: limits.global, left: Math.max(0, limits.global - globalToday) })
+  if (ms.global !== null) {
+    candidates.push({ scope: 'global', limit: ms.global, left: Math.max(0, ms.global - globalToday) })
   }
   // Earliest first; the per-site limit wins a tie (it names the cause).
   const first = candidates.sort((a, b) => a.left - b.left)[0]
   if (!first || (first.left > 0 && !running)) {
     return null
   }
-  return { at: Math.max(now + first.left, snoozeUntil), scope: first.scope, limit: first.limit }
+  return { at: Math.max(now + first.left, limits.snoozeUntil), scope: first.scope, limit: first.limit }
 }
 
 const isLimit = (v: unknown): v is number => isFiniteNumber(v) && v > 0
@@ -72,42 +79,33 @@ export function normalizeLimits(value: unknown): Limits {
   const l = (value ?? {}) as Partial<Limits>
   const perSite: Record<string, number> = {}
   if (isObject(l.perSite)) {
-    for (const [site, ms] of Object.entries(l.perSite)) {
-      if (isLimit(ms)) {
-        perSite[site] = ms
+    for (const [site, minutes] of Object.entries(l.perSite)) {
+      if (isLimit(minutes)) {
+        perSite[site] = minutes
       }
     }
   }
-  return { global: isLimit(l.global) ? l.global : null, perSite }
+  return {
+    global: isLimit(l.global) ? l.global : null,
+    perSite,
+    snoozeUntil: isFiniteNumber(l.snoozeUntil) ? l.snoozeUntil : 0,
+  }
 }
 
 // One limit edit: the all-sites cap, or one site's limit (null = no limit).
-export type LimitEdit = { scope: 'global'; ms: number | null } | { scope: 'site'; site: string; ms: number | null }
+export type LimitEdit =
+  { scope: 'global'; minutes: number | null } | { scope: 'site'; site: string; minutes: number | null }
 
 // `limits` with one edit applied; every other limit is kept as is.
 export function applyLimit(limits: Limits, edit: LimitEdit): Limits {
   if (edit.scope === 'global') {
-    return { ...limits, global: edit.ms }
+    return { ...limits, global: edit.minutes }
   }
   const perSite = { ...limits.perSite }
-  if (edit.ms === null) {
+  if (edit.minutes === null) {
     delete perSite[edit.site]
   } else {
-    perSite[edit.site] = edit.ms
+    perSite[edit.site] = edit.minutes
   }
   return { ...limits, perSite }
-}
-
-export function minutesToMs(minutes: number): number {
-  return Math.round(minutes * 60000)
-}
-
-export function msToMinutes(ms: number): number {
-  return Math.round(ms / 60000)
-}
-
-// Parse a minutes field into ms, or null for blank/invalid (= no limit).
-export function parseLimitMinutes(value: string): number | null {
-  const n = Number(value.trim())
-  return Number.isFinite(n) && n > 0 ? minutesToMs(Math.floor(n)) : null
 }

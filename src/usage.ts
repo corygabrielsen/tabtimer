@@ -1,10 +1,9 @@
 // The activity page: a day by hour or a week by day, stacked by site, with
 // each site's time and limit below. Reads storage directly; the one write
 // (a site's limit) goes to the service worker as setLimit.
-import { bus } from './chrome/bus'
 import { chromeStore } from './chrome/store'
 import { dayOf, type DayStamp } from './core/day'
-import { minutesToMs, msToMinutes, normalizeLimits, DEFAULT_LIMITS, type Limits } from './core/limits'
+import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { DAY_KEY_PREFIX, LIMITS_KEY } from './core/schema'
 import {
   barTotal,
@@ -25,7 +24,7 @@ import {
   type Summary,
 } from './core/usage'
 import { localizeDom, t } from './i18n'
-import { createLimitPicker, formatChipMinutes, SITE_PRESETS, type LimitPicker } from './limitPicker'
+import { createSiteLimitPicker, formatChipMinutes, type LimitPicker } from './limitPicker'
 import { byId, firstDayOfWeek, formatDuration, h, setDocumentLang, uiLocale } from './ui'
 
 const local = chromeStore('local')
@@ -61,10 +60,8 @@ let picker: { site: string; picker: LimitPicker; saved: HTMLElement } | null = n
 
 const today = (): DayStamp => dayOf(Date.now())
 
-const siteLimit = (site: string): number | null => {
-  const ms = state.limits.perSite[site]
-  return typeof ms === 'number' && ms > 0 ? ms : null
-}
+// A site's limit, in ms (null: none).
+const siteLimit = (site: string): number | null => limitsFor(state.limits, site).site
 
 // --- Labels -------------------------------------------------------------------
 
@@ -263,21 +260,9 @@ function legend(summary: Summary): HTMLElement[] {
 function limitPanel(site: string): HTMLElement {
   if (picker?.site !== site) {
     const saved = h('span', { class: 'saved', role: 'status' })
-    const p = createLimitPicker({
-      id: 'usage-limit',
-      presets: SITE_PRESETS,
-      label: t('popupLimitAria', site),
-      fieldLabel: t('limitCustomSiteAria', site),
-      value: null,
-      saved,
-      commit: async (minutes) => {
-        await bus.send('setLimit', { scope: 'site', site, ms: minutes === null ? null : minutesToMs(minutes) })
-      },
-    })
-    picker = { site, picker: p, saved }
+    picker = { site, picker: createSiteLimitPicker({ id: 'usage-limit', site, value: null, saved }), saved }
   }
-  const limit = siteLimit(site)
-  picker.picker.set(limit === null ? null : msToMinutes(limit))
+  picker.picker.set(siteLimitOf(state.limits, site))
   return h(
     'div',
     { class: 'site-panel', id: 'site-panel' },

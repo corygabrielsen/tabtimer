@@ -7,7 +7,7 @@
 // for; the service worker derives it from the sender's URL.
 import { isDayStamp, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject, type Raw } from './guards'
-import type { BlockScope, LimitEdit, Limits } from './limits'
+import { MAX_LIMIT_MINUTES, MIN_LIMIT_MINUTES, type BlockScope, type LimitEdit, type Limits } from './limits'
 import { MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
 import type { Site } from './site'
 import type { Presence } from './tracker'
@@ -80,8 +80,6 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   openActivity: ['content', 'extension'],
 }
 
-export const MAX_LIMIT_MS = 1440 * 60_000
-
 // A plausible lowercase hostname. The service worker additionally checks it
 // is a site in canonical form (that needs the public suffix list).
 function isSiteString(v: unknown): v is Site {
@@ -136,11 +134,13 @@ export function parseStatePush(raw: unknown): TabState | null {
   }
 }
 
-function parseLimitMs(v: unknown): number | null | undefined {
+// A limit: whole minutes in the settable range, or null (no limit).
+// undefined = reject.
+function parseLimitMinutes(v: unknown): number | null | undefined {
   if (v === null) {
     return null
   }
-  return isFiniteNumber(v) && v >= 60_000 && v <= MAX_LIMIT_MS ? v : undefined
+  return isFiniteNumber(v) && Number.isInteger(v) && v >= MIN_LIMIT_MINUTES && v <= MAX_LIMIT_MINUTES ? v : undefined
 }
 
 function parsePrefs(raw: Raw): Partial<Prefs> | null {
@@ -181,15 +181,15 @@ export function parseRequest(raw: unknown): Request | null {
     case 'resetToday':
       return isSiteString(raw.site) ? { type: 'resetToday', site: raw.site } : null
     case 'setLimit': {
-      const ms = parseLimitMs(raw.ms)
-      if (ms === undefined) {
+      const minutes = parseLimitMinutes(raw.minutes)
+      if (minutes === undefined) {
         return null
       }
       if (raw.scope === 'global') {
-        return { type: 'setLimit', scope: 'global', ms }
+        return { type: 'setLimit', scope: 'global', minutes }
       }
       if (raw.scope === 'site' && isSiteString(raw.site)) {
-        return { type: 'setLimit', scope: 'site', site: raw.site, ms }
+        return { type: 'setLimit', scope: 'site', site: raw.site, minutes }
       }
       return null
     }

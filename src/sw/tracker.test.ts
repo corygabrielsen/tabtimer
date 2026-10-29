@@ -3,7 +3,7 @@ import { createTracker, type TrackerDeps } from './tracker'
 import { createLedger } from './ledger'
 import { chromeStore } from '../chrome/store'
 import { bus } from '../chrome/bus'
-import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY, SNOOZE_KEY } from '../core/schema'
+import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY } from '../core/schema'
 import { CHECKPOINT_MS, TRACKER_KEY, type Presence } from '../core/tracker'
 import type { StatePush } from '../core/messages'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
@@ -205,7 +205,7 @@ describe('probes', () => {
 
 describe('limits', () => {
   it('gives the moment to block, and closes an interval already over (the backstop)', async () => {
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 } } })
     const tracker = worker()
     await expect(tracker.presence(1, PAGE, SHOWN)).resolves.toMatchObject({
       running: true,
@@ -225,7 +225,7 @@ describe('limits', () => {
     await tracker.presence(1, PAGE, SHOWN)
     await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b' }, HIDDEN)
     sent = []
-    browser.storage.local.seed({ [SNOOZE_KEY]: NOON + 5 * MIN, [LIMITS_KEY]: { global: MIN, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: NOON + 5 * MIN } })
     await tracker.refresh()
     expect(sent.map(([tabId, , push]) => [tabId, push.state.blockAt])).toEqual([
       [1, NOON + 5 * MIN],
@@ -315,7 +315,7 @@ describe('background wiring', () => {
   it('tells pages when limits or the snooze change, whoever changed them', async () => {
     await report(SHOWN)
     browser.tabs.sendMessage.mockClear()
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 1 } } })
     await flush()
     expect(browser.tabs.sendMessage).toHaveBeenCalledWith(
       1,
@@ -324,7 +324,7 @@ describe('background wiring', () => {
     )
     browser.tabs.sendMessage.mockClear()
     browser.storage.local.seed({ prefs: { hidden: true, scale: 1 } })
-    browser.storage.session.seed({ [SNOOZE_KEY]: 1 })
+    browser.storage.session.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
     await flush()
     expect(browser.tabs.sendMessage).not.toHaveBeenCalled()
   })
@@ -333,7 +333,7 @@ describe('background wiring', () => {
     await report(SHOWN)
     browser.storage.session.error = 'unavailable'
     browser.tabs.onActivated.dispatch({ tabId: 2, windowId: 1 })
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: MIN, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
     browser.setIdleState('locked')
     vi.resetModules()
     await import('./background')

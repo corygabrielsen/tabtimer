@@ -90,8 +90,8 @@ export function createRouter(deps: RouterDeps): Handler {
     setLimit: (req) =>
       ledger.setLimit(
         req.scope === 'global'
-          ? { scope: 'global', ms: req.ms }
-          : { scope: 'site', site: canonical(req.site), ms: req.ms }
+          ? { scope: 'global', minutes: req.minutes }
+          : { scope: 'site', site: canonical(req.site), minutes: req.minutes }
       ),
     snooze: async () => ({ snoozeUntil: await ledger.snooze() }),
     setPrefs: ({ hidden, scale }) =>

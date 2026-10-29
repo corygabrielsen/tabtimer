@@ -1,13 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createLedger, PRUNED_DAY_KEY, type Ledger } from './ledger'
 import { chromeStore } from '../chrome/store'
-import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA, SNOOZE_KEY } from '../core/schema'
+import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
 import { normalizeAway, AWAY_KEY, type IdleState, type Span } from '../core/away'
 import { SNOOZE_MS } from '../core/limits'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const MIN = 60_000
-const HOUR = 60 * MIN
 const at = (...args: [number, number, number, number?, number?, number?]) => new Date(...args).getTime()
 const NOON = at(2026, 5, 10, 12)
 
@@ -79,11 +78,8 @@ describe('credit', () => {
   })
 
   it('reads limits and the snooze for the tracker, tolerating garbage', async () => {
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: MIN, perSite: {} }, [SNOOZE_KEY]: 'soon' })
-    await expect(ledger.transaction(async (tx) => [await tx.limits(), await tx.snoozeUntil()])).resolves.toEqual([
-      { global: MIN, perSite: {} },
-      0,
-    ])
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: 'soon' } })
+    await expect(ledger.transaction((tx) => tx.limits())).resolves.toEqual({ global: 1, perSite: {}, snoozeUntil: 0 })
   })
 
   it('reports a storage failure and keeps serving later writes', async () => {
@@ -119,38 +115,33 @@ describe('retention', () => {
 
   it('prunes on demand (install and startup)', async () => {
     seedDays('2026-04-01', '2026-06-01')
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: MIN, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
     await ledger.prune()
     expect(Object.keys(data()).sort()).toEqual(['day:2026-06-01', LIMITS_KEY])
   })
 })
 
 describe('ensureSchema', () => {
-  it('clears storage written in any other layout, then writes the defaults', async () => {
+  it('clears storage written in any other layout, keeping only the schema mark', async () => {
     browser.storage.local.seed({
       focusTimer_elapsed_today_reddit_com_2026_06_10: 5000,
       tabtimer_limits: { global: MIN, perSite: {} },
       tabtimer_hidden: true,
     })
-    await expect(ledger.ensureSchema()).resolves.toBe(true)
-    expect(data()).toEqual({
-      schema: SCHEMA,
-      limits: { global: null, perSite: {} },
-      prefs: { hidden: false, scale: 1 },
-      snoozeUntil: 0,
-    })
+    await ledger.ensureSchema()
+    expect(data()).toEqual({ schema: SCHEMA })
   })
 
   it('clears a different schema number too', async () => {
-    browser.storage.local.seed({ schema: 3, [LIMITS_KEY]: { global: MIN, perSite: {} } })
+    browser.storage.local.seed({ schema: SCHEMA - 1, [LIMITS_KEY]: { global: MIN, perSite: {} } })
     await ledger.ensureSchema()
-    expect(data()[LIMITS_KEY]).toEqual({ global: null, perSite: {} })
+    expect(data()).toEqual({ schema: SCHEMA })
   })
 
   it('leaves storage in this schema alone', async () => {
-    const stored = { schema: SCHEMA, [LIMITS_KEY]: { global: MIN, perSite: {} }, 'day:2026-06-10': {} }
+    const stored = { schema: SCHEMA, [LIMITS_KEY]: { global: 1, perSite: {} }, 'day:2026-06-10': {} }
     browser.storage.local.seed(stored)
-    await expect(ledger.ensureSchema()).resolves.toBe(false)
+    await ledger.ensureSchema()
     expect(data()).toEqual(stored)
   })
 })
@@ -182,30 +173,33 @@ describe('resetToday', () => {
 describe('setLimit', () => {
   it('Copilot 4408399271: concurrent edits from the popup and the options page both survive', async () => {
     browser.latency = 3
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 5 * MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 5 }, snoozeUntil: 0 } })
     // The popup sets this site's limit while the options page sets the cap.
     const [fromPopup, fromOptions] = await Promise.all([
-      ledger.setLimit({ scope: 'site', site: 'reddit.com', ms: 30 * MIN }),
-      ledger.setLimit({ scope: 'global', ms: 2 * HOUR }),
+      ledger.setLimit({ scope: 'site', site: 'reddit.com', minutes: 30 }),
+      ledger.setLimit({ scope: 'global', minutes: 120 }),
     ])
-    const both = { global: 2 * HOUR, perSite: { 'x.com': 5 * MIN, 'reddit.com': 30 * MIN } }
+    const both = { global: 120, perSite: { 'x.com': 5, 'reddit.com': 30 }, snoozeUntil: 0 }
     expect(data()[LIMITS_KEY]).toEqual(both)
-    expect(fromPopup).toEqual({ global: null, perSite: both.perSite })
+    expect(fromPopup).toEqual({ ...both, global: null })
     expect(fromOptions).toEqual(both)
   })
 
   it('clears a limit, and tolerates garbage in storage', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: 'garbage' })
-    await ledger.setLimit({ scope: 'site', site: 'a.com', ms: MIN })
-    await ledger.setLimit({ scope: 'site', site: 'a.com', ms: null })
-    expect(data()[LIMITS_KEY]).toEqual({ global: null, perSite: {} })
+    await ledger.setLimit({ scope: 'site', site: 'a.com', minutes: 1 })
+    await ledger.setLimit({ scope: 'site', site: 'a.com', minutes: null })
+    expect(data()[LIMITS_KEY]).toEqual({ global: null, perSite: {}, snoozeUntil: 0 })
   })
 })
 
 describe('snooze and prefs', () => {
-  it('snoozes for SNOOZE_MS from now', async () => {
+  it('snoozes for SNOOZE_MS from now, keeping the limits; a limit edit keeps the snooze', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
     await expect(ledger.snooze()).resolves.toBe(NOON + SNOOZE_MS)
-    expect(data()[SNOOZE_KEY]).toBe(NOON + SNOOZE_MS)
+    expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
+    await ledger.setLimit({ scope: 'global', minutes: 90 })
+    expect(data()[LIMITS_KEY]).toEqual({ global: 90, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
   })
 
   it('merges a prefs change into the stored prefs', async () => {

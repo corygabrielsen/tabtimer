@@ -57,7 +57,7 @@ describe('content script', () => {
   })
 
   it('enforces limits through the block screen', async () => {
-    fakeChrome().storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': minutes(1) } } })
+    fakeChrome().storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 1 } } })
     await inject()
     await vi.advanceTimersByTimeAsync(minutes(1) + seconds(1))
     expect(document.getElementById('tabtimer-block')?.style.getPropertyValue('display')).toBe('block')
@@ -127,7 +127,7 @@ describe('content script', () => {
   })
 
   it('B9: survives the back/forward cache and resumes on restore', async () => {
-    fakeChrome().storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': minutes(1) } } })
+    fakeChrome().storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 1 } } })
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(7))
     setPageState({ hidden: true })
@@ -157,7 +157,7 @@ describe('content script', () => {
     // gets no storage.onChanged for either.
     const data = fakeChrome().storage.local.data
     data[dayKeyOf()] = { 'x.com': [minutes(10)] }
-    data[LIMITS_KEY] = { global: null, perSite: { 'x.com': minutes(5) } }
+    data[LIMITS_KEY] = { global: null, perSite: { 'x.com': 5 } }
 
     setPageState({ hidden: false })
     pageTransition('pageshow', true)

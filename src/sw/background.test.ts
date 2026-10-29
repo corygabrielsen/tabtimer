@@ -16,19 +16,14 @@ beforeEach(async () => {
 })
 
 describe('storage on install and startup', () => {
-  it('clears data from an older storage format, then writes the defaults', async () => {
+  it('clears data from an older storage format, keeping only the schema mark', async () => {
     browser.storage.local.seed({
       focusTimer_elapsed_today_reddit_com_2026_06_10: 5000,
       tabtimer_limits: { global: 60_000, perSite: {} },
     })
     browser.runtime.onInstalled.dispatch({ reason: 'update' })
     await flush()
-    expect(browser.storage.local.data).toEqual({
-      schema: SCHEMA,
-      limits: { global: null, perSite: {} },
-      prefs: { hidden: false, scale: 1 },
-      snoozeUntil: 0,
-    })
+    expect(browser.storage.local.data).toEqual({ schema: SCHEMA })
   })
 
   it('keeps data in the current format and prunes expired days on startup', async () => {
@@ -36,12 +31,12 @@ describe('storage on install and startup', () => {
     const old = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 45, 12)
     const pad = (n: number) => String(n).padStart(2, '0')
     const oldKey = `day:${old.getFullYear()}-${pad(old.getMonth() + 1)}-${pad(old.getDate())}`
-    browser.storage.local.seed({ schema: SCHEMA, limits: { global: 60_000, perSite: {} }, [oldKey]: {} })
+    browser.storage.local.seed({ schema: SCHEMA, limits: { global: 60, perSite: {} }, [oldKey]: {} })
     browser.runtime.onStartup.dispatch()
     await flush()
     expect(browser.storage.local.data).toEqual({
       schema: SCHEMA,
-      limits: { global: 60_000, perSite: {} },
+      limits: { global: 60, perSite: {} },
     })
   })
 })

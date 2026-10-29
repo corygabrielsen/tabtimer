@@ -1,6 +1,6 @@
 import type FocusTracker from './FocusTracker'
 import { bus as chromeBus } from '../chrome/bus'
-import { SNOOZE_MS, type BlockReason } from '../core/limits'
+import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
 import type { Bus } from '../ports'
 import { formatTime } from '../format'
 import { t } from '../i18n'
@@ -207,7 +207,7 @@ export default class BlockScreen {
     this.snoozeButton = document.createElement('button')
     this.snoozeButton.type = 'button'
     this.snoozeButton.className = 'snooze'
-    this.snoozeButton.textContent = t('blockSnooze', String(Math.round(SNOOZE_MS / 60_000)))
+    this.snoozeButton.textContent = t('blockSnooze', String(msToMinutes(SNOOZE_MS)))
     this.snoozeButton.addEventListener('click', () => {
       this.unblock()
       void this.tracker.snooze()

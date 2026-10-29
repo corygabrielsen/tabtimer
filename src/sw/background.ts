@@ -2,7 +2,8 @@ import { chromeStore } from '../chrome/store'
 import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { CHECKPOINT_MS } from '../core/tracker'
-import { LIMITS_KEY, SNOOZE_KEY } from '../core/schema'
+import { msToMinutes } from '../core/limits'
+import { LIMITS_KEY } from '../core/schema'
 import { siteOfUrl } from '../core/site'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
@@ -23,7 +24,7 @@ const ledger = createLedger(chromeStore('local'), session, systemClock)
 async function alarm(on: boolean): Promise<void> {
   const existing = await chrome.alarms.get(CHECKPOINT_ALARM)
   if (on && !existing) {
-    await chrome.alarms.create(CHECKPOINT_ALARM, { periodInMinutes: CHECKPOINT_MS / 60_000 })
+    await chrome.alarms.create(CHECKPOINT_ALARM, { periodInMinutes: msToMinutes(CHECKPOINT_MS) })
   } else if (!on && existing) {
     await chrome.alarms.clear(CHECKPOINT_ALARM)
   }
@@ -53,10 +54,10 @@ chrome.alarms.onAlarm.addListener(({ name }) => {
     dispatch({ kind: 'checkpoint' })
   }
 })
-// Limits and the snooze decide when pages block: tell them of a change,
-// whoever made it.
+// The limits (the snooze included) decide when pages block: tell them of a
+// change, whoever made it.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (LIMITS_KEY in changes || SNOOZE_KEY in changes)) {
+  if (area === 'local' && LIMITS_KEY in changes) {
     void tracker.refresh().catch(() => undefined)
   }
 })
@@ -73,7 +74,7 @@ if (__TABTIMER_E2E__) {
 // Storage first (a different schema is cleared, expired days pruned), then
 // the content script registration for the granted sites.
 async function boot(): Promise<void> {
-  await ledger.ensureSchema().catch(() => false)
+  await ledger.ensureSchema().catch(() => undefined)
   await ledger.prune().catch(() => undefined)
   await syncContentScripts()
 }

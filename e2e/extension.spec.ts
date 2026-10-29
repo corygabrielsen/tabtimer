@@ -9,7 +9,6 @@ import {
   shadowText,
   clickInShadow,
   LIMITS_KEY,
-  SNOOZE_KEY,
   OVERLAY_ID,
   BLOCK_ID,
   MINUTE,
@@ -44,7 +43,7 @@ test('the tracking table’s headers sit over their columns', async ({ context, 
   // A long today value and an expanded limit, the cases that once pushed
   // the header off its columns.
   await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 30 * MINUTE } },
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 30 } },
     ...(await today(serviceWorker, { [SITE_A]: 125 * MINUTE })),
   })
   const page = await context.newPage()
@@ -94,7 +93,7 @@ test('limits set from the options page: a preset chip and a custom value', async
   const cap = page.getByRole('radiogroup', { name: 'All sites' })
   await cap.getByRole('radio', { name: '2 h' }).click()
   await expect(cap.getByRole('radio', { name: '2 h' })).toHaveAttribute('aria-checked', 'true')
-  await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toEqual({ global: 120 * MINUTE, perSite: {} })
+  await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toEqual({ global: 120, perSite: {}, snoozeUntil: 0 })
 
   // Per-site: expand the row, pick Custom, type minutes, Enter.
   await page.getByRole('button', { name: `Daily limit for ${SITE_A}: Off` }).click()
@@ -106,7 +105,7 @@ test('limits set from the options page: a preset chip and a custom value', async
   await expect(page.getByRole('button', { name: `Daily limit for ${SITE_A}: 50 min` })).toHaveText('50m')
   await expect
     .poll(() => read(serviceWorker, LIMITS_KEY))
-    .toEqual({ global: 120 * MINUTE, perSite: { [SITE_A]: 50 * MINUTE } })
+    .toEqual({ global: 120, perSite: { [SITE_A]: 50 }, snoozeUntil: 0 })
 
   // Arrow keys move and select; the value saves once the keys settle.
   await picker.getByRole('radio', { name: 'Custom: 50 min' }).focus()
@@ -115,7 +114,7 @@ test('limits set from the options page: a preset chip and a custom value', async
   await expect(picker.getByRole('radio', { name: '15 min' })).toBeFocused()
   await expect
     .poll(() => read(serviceWorker, LIMITS_KEY))
-    .toEqual({ global: 120 * MINUTE, perSite: { [SITE_A]: 15 * MINUTE } })
+    .toEqual({ global: 120, perSite: { [SITE_A]: 15 }, snoozeUntil: 0 })
 })
 
 test('tracked site shows the overlay and its time increases', async ({ context, serviceWorker, site }) => {
@@ -132,7 +131,7 @@ test('tracked site shows the overlay and its time increases', async ({ context, 
 
 test('per-site limit blocks and names the site', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 * MINUTE } },
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 } },
     ...(await today(serviceWorker, { [SITE_A]: 10 * MINUTE + 1_000 })),
   })
   const page = await context.newPage()
@@ -149,7 +148,7 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
   // Neither site alone reaches the 10-minute cap; together they exceed it.
   await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: 10 * MINUTE, perSite: {} },
+    [LIMITS_KEY]: { global: 10, perSite: {} },
     ...(await today(serviceWorker, { [SITE_A]: 6 * MINUTE, [SITE_B]: 5 * MINUTE })),
   })
   for (const host of [SITE_A, SITE_B]) {
@@ -164,7 +163,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
 
 test('"5 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } },
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
     ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
   })
   const page = await context.newPage()
@@ -174,17 +173,19 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
 
   await clickInShadow(page, BLOCK_ID, 'button.snooze')
   await expect(block).toBeHidden()
-  const until = Number(await read(serviceWorker, SNOOZE_KEY))
-  expect(until).toBeGreaterThan(Date.now() + 4 * MINUTE)
+  const { snoozeUntil } = (await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil: number }
+  expect(snoozeUntil).toBeGreaterThan(Date.now() + 4 * MINUTE)
 
   // Fast-forward: expire the snooze in storage instead of waiting 5 minutes.
-  await seed(serviceWorker, { [SNOOZE_KEY]: Date.now() - 1_000 })
+  await seed(serviceWorker, {
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 }, snoozeUntil: Date.now() - 1_000 },
+  })
   await expect(block).toBeVisible()
 })
 
 test('changing the limit lifts or restores the block live', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } },
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
     ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
   })
   const page = await context.newPage()
@@ -193,11 +194,11 @@ test('changing the limit lifts or restores the block live', async ({ context, se
   await expect(block).toBeVisible()
 
   // Raise it above today's time: lifts without a reload.
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60 * MINUTE } } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60 } } })
   await expect(block).toBeHidden()
 
   // Lower it again: blocks again.
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } } })
   await expect(block).toBeVisible()
 
   // Clear it: lifts.
@@ -207,7 +208,7 @@ test('changing the limit lifts or restores the block live', async ({ context, se
 
 test('untracked site gets no overlay', async ({ context, serviceWorker, site }) => {
   // Same profile and limits that would block any tracked site.
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: MINUTE, perSite: {} } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: 1, perSite: {} } })
   await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
 
   const untracked = await context.newPage()
@@ -238,18 +239,19 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
 
   // Take window focus away so SITE_A stops accruing, then let the last
-  // report (every 5 s) land: the stored total is what the limit compares.
+  // report (every 5 s) land and put the stored total back on a whole
+  // minute: the stored total is what the limit compares.
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
   await page.waitForTimeout(6_000)
-  const stored = await readToday(serviceWorker, SITE_A)
-  expect(stored).toBeGreaterThanOrEqual(3 * MINUTE)
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 3 * MINUTE }))
+  expect(await readToday(serviceWorker, SITE_A)).toBe(3 * MINUTE)
   const block = page.locator(`#${BLOCK_ID}`)
 
-  // One second under: no block. Exactly equal: blocked.
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: stored + 1_000 } } })
+  // A minute under: no block. Exactly equal: blocked.
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 4 } } })
   await page.waitForTimeout(500)
   await expect(block).toBeHidden()
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: stored } } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 3 } } })
   await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
   await expect(block).toBeVisible()
 

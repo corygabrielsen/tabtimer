@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest'
-import { h, firstDayOfWeek, formatDuration, uiLocale, validateMinutes, flashSaved, MAX_LIMIT_MINUTES } from './ui'
+import { MAX_LIMIT_MINUTES } from './core/limits'
+import { h, firstDayOfWeek, formatDuration, uiLocale, validateMinutes, flashSaved } from './ui'
 
 describe('h', () => {
   it('builds an element with attributes and text children, never parsing HTML', () => {
@@ -29,15 +30,15 @@ describe('formatDuration', () => {
 })
 
 describe('validateMinutes', () => {
-  it('accepts blank (no limit) and whole minutes in range, canonicalized', () => {
-    expect(validateMinutes('  ')).toEqual({ ok: true, value: '' })
-    expect(validateMinutes(' 30 ')).toEqual({ ok: true, value: '30' })
-    expect(validateMinutes('007')).toEqual({ ok: true, value: '7' })
-    expect(validateMinutes(String(MAX_LIMIT_MINUTES))).toEqual({ ok: true, value: '1440' })
+  it('reads blank as no limit, and whole minutes in range as a number', () => {
+    expect(validateMinutes('  ')).toBeNull()
+    expect(validateMinutes(' 30 ')).toBe(30)
+    expect(validateMinutes('007')).toBe(7)
+    expect(validateMinutes(String(MAX_LIMIT_MINUTES))).toBe(1440)
   })
 
   it.each(['0', '1441', '-1', '1.5', '1e3', 'ten'])('rejects %s', (raw) => {
-    expect(validateMinutes(raw)).toEqual({ ok: false })
+    expect(validateMinutes(raw)).toBe('invalid')
   })
 })
 

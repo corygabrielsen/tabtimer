@@ -3,16 +3,13 @@ import {
   dayKey,
   dayOfKey,
   dayTotal,
-  defaultState,
   emptyBuckets,
   expiredDayKeys,
   normalizeDay,
   normalizePrefs,
-  normalizeSnooze,
   siteTotal,
   sumBuckets,
   RETENTION_DAYS,
-  SCHEMA,
 } from './schema'
 
 const buckets = (byHour: Record<number, number>) => {
@@ -92,24 +89,5 @@ describe('normalizePrefs', () => {
     expect(normalizePrefs({ scale: 0.1 }).scale).toBe(0.5)
     expect(normalizePrefs({ scale: 7 }).scale).toBe(1)
     expect(normalizePrefs({ scale: NaN }).scale).toBe(1)
-  })
-})
-
-describe('normalizeSnooze', () => {
-  it('is a finite epoch, else 0', () => {
-    expect(normalizeSnooze(1234)).toBe(1234)
-    expect(normalizeSnooze('1234')).toBe(0)
-    expect(normalizeSnooze(Infinity)).toBe(0)
-  })
-})
-
-describe('defaultState', () => {
-  it('marks the schema and holds no limits, default prefs and no snooze', () => {
-    expect(defaultState()).toEqual({
-      schema: SCHEMA,
-      limits: { global: null, perSite: {} },
-      prefs: { hidden: false, scale: 1 },
-      snoozeUntil: 0,
-    })
   })
 })
