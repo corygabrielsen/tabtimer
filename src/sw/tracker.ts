@@ -48,6 +48,7 @@ export function createTracker(deps: TrackerDeps) {
         site: attest.site,
         day: dayOf(tx.now),
         asOf: tx.now,
+        seq: tx.seq,
         today,
         globalToday,
         running: open !== null,
@@ -118,8 +119,9 @@ export function createTracker(deps: TrackerDeps) {
           return
         }
         const attest = outcome.state.tabs[String(tabId)]!
-        const reply = await deps.send(tabId, attest.doc, { type: 'state', state }).catch(() => undefined)
-        const presence = probes.has(tabId) ? parsePresence(reply) : null
+        const probe = probes.has(tabId)
+        const reply = await deps.send(tabId, attest.doc, { type: 'state', state, probe }).catch(() => undefined)
+        const presence = probe ? parsePresence(reply) : null
         if (presence) {
           await report(tabId, { ...attest, ...presence }, true)
         }

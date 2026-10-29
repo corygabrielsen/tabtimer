@@ -26,6 +26,20 @@ import {
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 
+// A state as the worker pushes it.
+const STATE: TabState = {
+  site: 'reddit.com',
+  day: '2026-06-10',
+  asOf: NOON.getTime(),
+  seq: 1,
+  today: 0,
+  globalToday: 0,
+  running: false,
+  blockAt: null,
+  limit: null,
+  prefs: { hidden: false, scale: 1 },
+}
+
 let browser: FakeChrome
 
 function started(): FocusTracker {
@@ -122,14 +136,30 @@ describe('presence and active time', () => {
   it('follows focus events, and samples focus again when shown', async () => {
     const model = started()
     await run(seconds(4))
-    window.dispatchEvent(new Event('blur'))
+    setPageState({ focused: false })
     await run(seconds(10))
     expect(today(model)).toBe(seconds(4))
     // Hidden, then shown in a window that has focus by then.
     setPageState({ hidden: true })
+    setPageState({ focused: true }, false)
     setPageState({ hidden: false })
     await run(seconds(3))
     expect(today(model)).toBe(seconds(7))
+  })
+
+  it('P2: keeps counting while focus is in one of the page’s frames', async () => {
+    const model = started()
+    await run(seconds(4))
+    // Focus moves into an iframe: the window blurs, the document keeps focus.
+    window.dispatchEvent(new Event('blur'))
+    await run(seconds(10))
+    expect(today(model)).toBe(seconds(14))
+    // Then leaves the browser from there: no event reaches the page.
+    setPageState({ focused: false }, false)
+    await run(seconds(10))
+    expect(today(model)).toBeLessThanOrEqual(seconds(15))
+    await close(model)
+    expect(storedToday()).toBeLessThanOrEqual(seconds(15))
   })
 
   it('adds this tab’s time to what is already logged today', async () => {
@@ -205,6 +235,70 @@ describe('reporting to the service worker', () => {
     expect(today(model)).toBe(seconds(5))
   })
 
+  it('P4: reports a change at once after a failed report, without waiting out the retry', async () => {
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'internal' }) as never)
+    setPageState({ hidden: true, focused: false }, false)
+    const model = trackTracker(new FocusTracker(undefined, { send }))
+    model.start()
+    await run(seconds(1))
+    send.mockImplementation(bus.send)
+    setPageState({ focused: true }, false)
+    setPageState({ hidden: false })
+    await flush()
+    expect(send).toHaveBeenCalledTimes(2)
+    await run(seconds(5))
+    expect(today(model)).toBe(seconds(5))
+  })
+
+  it('W2: a prerendered page reports once shown, and counts from then', async () => {
+    let prerendering = true
+    Object.defineProperty(document, 'prerendering', { configurable: true, get: () => prerendering })
+    // The worker refuses a prerendered page, as the router does.
+    const send = vi.fn<Bus['send']>((type, req) =>
+      prerendering ? (Promise.resolve({ ok: false, error: 'forbidden' }) as never) : bus.send(type, req)
+    )
+    setPageState({ hidden: true, focused: false }, false)
+    const model = trackTracker(new FocusTracker(undefined, { send }))
+    model.start()
+    await run(seconds(2))
+    expect(send).not.toHaveBeenCalled()
+    prerendering = false
+    setPageState({ hidden: false, focused: true }, false)
+    document.dispatchEvent(new Event('prerenderingchange'))
+    await run(seconds(5))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(today(model)).toBe(seconds(5))
+    delete (document as { prerendering?: boolean }).prerendering
+  })
+
+  it('P7: a push that isn’t a probe leaves a failed report to be retried', async () => {
+    let handler: ((state: TabState, probe: boolean) => unknown) | null = null
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
+    const model = trackTracker(new FocusTracker(undefined, { send }, pushes))
+    model.start()
+    await run(seconds(2))
+    // A checkpoint's push: its reply goes unread.
+    handler!({ ...STATE, seq: 1 }, false)
+    send.mockImplementation(bus.send)
+    await run(seconds(10))
+    expect(send).toHaveBeenCalledTimes(2)
+    await run(seconds(5))
+    expect(model.site).toBe('reddit.com')
+    expect(today(model)).toBeGreaterThanOrEqual(seconds(5))
+  })
+
+  it('P7: a probe’s reply is the report: not sent again', async () => {
+    let handler: ((state: TabState, probe: boolean) => unknown) | null = null
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
+    trackTracker(new FocusTracker(undefined, { send }, pushes)).start()
+    await run(seconds(2))
+    handler!({ ...STATE, seq: 1 }, true)
+    await run(seconds(30))
+    expect(send).toHaveBeenCalledTimes(1)
+  })
+
   it('leaves a hidden page unpolled, and reports what changed once shown', async () => {
     const reports = presenceReports()
     const video = document.createElement('video')
@@ -242,8 +336,8 @@ describe('reporting to the service worker', () => {
     expect(model.readTotals()).toEqual({ site: null, siteToday: 0, globalToday: 0 })
   })
 
-  it('takes pushed states, ignores one computed before the current one, and answers with its presence', async () => {
-    let handler: ((state: TabState) => unknown) | null = null
+  it('takes pushed states, ignores one built before the current one, and answers with its presence', async () => {
+    let handler: ((state: TabState, probe: boolean) => unknown) | null = null
     const pushes: Pushes = {
       onState: (fn) => {
         handler = fn
@@ -257,6 +351,7 @@ describe('reporting to the service worker', () => {
       site: 'reddit.com',
       day: '2026-06-10',
       asOf: NOON.getTime() + 5000,
+      seq: 100,
       today: minutes(9),
       globalToday: minutes(9),
       running: false,
@@ -264,12 +359,29 @@ describe('reporting to the service worker', () => {
       limit: null,
       prefs: { hidden: false, scale: 1 },
     }
-    expect(handler!(base)).toEqual({ visible: true, focused: true, media: false, blocked: false })
+    expect(handler!(base, false)).toEqual({ visible: true, focused: true, media: false, blocked: false })
     expect(today(model)).toBe(minutes(9))
-    handler!({ ...base, asOf: base.asOf - 1, today: minutes(1) })
+    handler!({ ...base, seq: 99, today: minutes(1) }, false)
     expect(today(model)).toBe(minutes(9))
     model.destroy()
     expect(handler).toBeNull()
+  })
+
+  it('P8: orders states by the worker’s sequence, not its clock', async () => {
+    let handler: ((state: TabState, probe: boolean) => unknown) | null = null
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const model = trackTracker(new FocusTracker(undefined, bus, pushes))
+    model.start()
+    await flush()
+    const at = NOON.getTime() + 5000
+    // Two transactions in the same millisecond, their pushes delivered in
+    // reverse: the later one stands.
+    handler!({ ...STATE, asOf: at, seq: 1001, today: minutes(2) }, false)
+    handler!({ ...STATE, asOf: at, seq: 1000, today: minutes(1) }, false)
+    expect(today(model)).toBe(minutes(2))
+    // The clock went back an hour: the worker's next state still applies.
+    handler!({ ...STATE, asOf: at - minutes(60), seq: 1002, today: minutes(3) }, false)
+    expect(today(model)).toBe(minutes(3))
   })
 })
 
@@ -378,14 +490,14 @@ describe('resets and days', () => {
 })
 
 describe('away from the computer (idle or locked)', () => {
-  // A media element in the page, playing (or not) as far as the tracker can
-  // tell.
-  function media(tag: 'audio' | 'video', playing: boolean) {
+  // A media element in the page (or in `parent`), playing (or not) as far
+  // as the tracker can tell.
+  function media(tag: 'audio' | 'video', playing: boolean, parent: ParentNode = document.body) {
     const el = document.createElement(tag)
     const state = { paused: !playing }
     Object.defineProperty(el, 'paused', { get: () => state.paused })
     Object.defineProperty(el, 'readyState', { get: () => 4 })
-    document.body.append(el)
+    parent.append(el)
     return {
       stop: () => {
         state.paused = true
@@ -393,6 +505,46 @@ describe('away from the computer (idle or locked)', () => {
       },
     }
   }
+
+  // A player element whose media goes in an open shadow root, one level
+  // down from another.
+  function shadowPlayer(): { player: HTMLElement; root: ShadowRoot } {
+    const player = document.createElement('div')
+    document.body.append(player)
+    const inner = document.createElement('div')
+    player.attachShadow({ mode: 'open' }).append(inner)
+    return { player, root: inner.attachShadow({ mode: 'open' }) }
+  }
+
+  it('P6: keeps counting idle time while media in an open shadow root plays', async () => {
+    const video = media('video', true, shadowPlayer().root)
+    const model = started()
+    await run(minutes(1))
+    browser.setIdleState('idle')
+    await run(minutes(2))
+    expect(today(model)).toBe(minutes(3))
+    // Its pause is heard at once, though the event stays in the shadow root.
+    const reports = presenceReports()
+    video.stop()
+    await flush()
+    expect(reports.at(-1)).toMatchObject({ media: false })
+    await run(minutes(2))
+    expect(today(model)).toBe(minutes(3))
+  })
+
+  it('P6: finds a player added later, and lets go of one removed', async () => {
+    const reports = presenceReports()
+    const model = started()
+    await run(seconds(1))
+    const { player, root } = shadowPlayer()
+    media('audio', true, root)
+    await run(seconds(5))
+    expect(reports.at(-1)).toMatchObject({ media: true })
+    player.remove()
+    await run(seconds(5))
+    expect(reports.at(-1)).toMatchObject({ media: false })
+    expect(today(model)).toBe(seconds(11))
+  })
 
   it('stops counting while the screen is locked, and resumes after', async () => {
     const model = started()

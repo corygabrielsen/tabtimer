@@ -17,14 +17,18 @@ export type Totals = { site: string | null; siteToday: number; globalToday: numb
 
 // The tab's single tick source: rendering and limit checks run off it.
 export const TICK_MS = 1000
-// After a report fails, wait this long before trying again.
+// After a report fails, wait this long before sending it again.
 const RETRY_MS = 10_000
+// Look for open shadow roots (and the media in them) every this many ticks
+// while the page is shown.
+const SCAN_TICKS = 5
 
 // The page's side of active time. The service worker decides which one tab
 // accrues (core/tracker.ts); this reports the page's presence (visible,
 // focused, playing media, blocked) whenever it changes, and keeps the
 // display ticking from the TabState the worker replies with or pushes.
-// Nothing here is counted: closing the page loses no time.
+// Presence is read from the document each time; events and ticks only say
+// when to look. Nothing here is counted: closing the page loses no time.
 export default class FocusTracker {
   private started = false
   private intervalId: ReturnType<typeof setInterval> | null = null
@@ -33,18 +37,19 @@ export default class FocusTracker {
   private unsubscribePush: (() => void) | null = null
   private state: TabState | null = null
   private blocked = false
-  // Window focus, as the focus and blur events tell it (sampled with
-  // document.hasFocus() on start, on being shown and on restore, when no
-  // event may fire).
-  private windowFocused = false
   // A snooze asked for and not yet reflected in a state from the worker.
   private snoozing = false
-  // The presence last reported (null: none, or it failed), and when a
-  // failed report may be retried.
+  // The presence last reported (null: none, or it failed). A failed one
+  // isn't sent again before `retry.at`; any other presence is.
   private lastReport: Presence | null = null
-  private retryAt = 0
-  // The page's video and audio elements (live: the DOM keeps them current).
+  private retry: { presence: Presence; at: number } | null = null
+  // A blur's look at focus, once focus has settled (see handleBlur).
+  private blurTimer: ReturnType<typeof setTimeout> | null = null
+  // The page's video and audio elements (live: the DOM keeps them current),
+  // and the open shadow roots last found, whose media they don't include.
   private media: HTMLCollectionOf<HTMLMediaElement>[] = []
+  private roots = new Set<ShadowRoot>()
+  private ticks = 0
   // Display-only stopwatches: when the page opened, this page's focus time
   // so far, and since when it has been running (null: not running).
   private sessionStart: number
@@ -66,19 +71,25 @@ export default class FocusTracker {
       throw new Error('FocusTracker already started')
     }
     this.started = true
-    this.windowFocused = document.hasFocus()
     this.media = [document.getElementsByTagName('video'), document.getElementsByTagName('audio')]
-    document.addEventListener('visibilitychange', this.handleVisibilityChange)
+    document.addEventListener('visibilitychange', this.handleChange)
+    // A prerendered page can't report (the worker refuses it) until shown.
+    document.addEventListener('prerenderingchange', this.handleChange)
     window.addEventListener('blur', this.handleBlur)
-    window.addEventListener('focus', this.handleFocus)
+    window.addEventListener('focus', this.handleChange)
     // Media starting or stopping decides whether idle time counts.
     for (const type of MEDIA_EVENTS) {
       document.addEventListener(type, this.handleChange, true)
     }
-    this.unsubscribePush = this.pushes.onState((state) => {
+    this.scan()
+    this.unsubscribePush = this.pushes.onState((state, probe) => {
       this.apply(state)
       const presence = this.presence()
-      this.lastReport = presence
+      // Only a probe's reply is taken as a report.
+      if (probe) {
+        this.lastReport = presence
+        this.retry = null
+      }
       return presence
     })
     // A tab can load hidden or unfocused, with no event for that initial
@@ -94,14 +105,20 @@ export default class FocusTracker {
       clearInterval(this.intervalId)
       this.intervalId = null
     }
+    if (this.blurTimer !== null) {
+      clearTimeout(this.blurTimer)
+      this.blurTimer = null
+    }
     this.tickListeners.clear()
     this.stateListeners.clear()
-    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    document.removeEventListener('visibilitychange', this.handleChange)
+    document.removeEventListener('prerenderingchange', this.handleChange)
     window.removeEventListener('blur', this.handleBlur)
-    window.removeEventListener('focus', this.handleFocus)
+    window.removeEventListener('focus', this.handleChange)
     for (const type of MEDIA_EVENTS) {
       document.removeEventListener(type, this.handleChange, true)
     }
+    this.watch(new Set())
     this.unsubscribePush?.()
     this.unsubscribePush = null
     if (this.started) {
@@ -110,10 +127,9 @@ export default class FocusTracker {
     }
   }
 
-  // Restored from the back/forward cache: report again (no event may fire
-  // for the restored focus), and catch up on the worker's state.
+  // Restored from the back/forward cache: report again, and catch up on
+  // the worker's state.
   resync(): void {
-    this.windowFocused = document.hasFocus()
     void this.report(true)
   }
 
@@ -142,8 +158,12 @@ export default class FocusTracker {
       }
       void this.report(true)
     } else if (!document.hidden || this.lastReport === null) {
-      // Catches what no event announces (media that stalled or ran out). A
-      // hidden page never accrues, so only a failed report is retried there.
+      // Catches what no event announces (media that stalled or ran out,
+      // focus leaving the browser from inside a frame). A hidden page never
+      // accrues, so only a failed report is retried there.
+      if (!document.hidden && ++this.ticks % SCAN_TICKS === 0) {
+        this.scan()
+      }
       void this.report()
     }
     for (const listener of this.tickListeners) {
@@ -151,41 +171,69 @@ export default class FocusTracker {
     }
   }
 
+  // Focus is the document's: kept while it is in one of the page's frames,
+  // gone while the window is in the background.
   private presence(): Presence {
     return {
       visible: !document.hidden,
-      focused: this.windowFocused,
-      media: this.media.some(anyPlaying),
+      focused: document.hasFocus(),
+      media: this.media.some(anyPlaying) || [...this.roots].some((root) => anyPlaying(mediaIn(root))),
       blocked: this.blocked,
     }
   }
 
+  // Find the page's open shadow roots: media events in one don't reach the
+  // document, so each is listened to on its own.
+  private scan(): void {
+    this.watch(new Set(openShadowRoots(document)))
+  }
+
+  private watch(roots: Set<ShadowRoot>): void {
+    for (const root of this.roots) {
+      if (!roots.has(root)) {
+        for (const type of MEDIA_EVENTS) {
+          root.removeEventListener(type, this.handleChange, true)
+        }
+      }
+    }
+    for (const root of roots) {
+      if (!this.roots.has(root)) {
+        for (const type of MEDIA_EVENTS) {
+          root.addEventListener(type, this.handleChange, true)
+        }
+      }
+    }
+    this.roots = roots
+  }
+
   // Tell the worker the page's presence, if it changed (or `force`), and
-  // apply the state it replies with.
+  // apply the state it replies with. A prerendered page waits to be shown.
   async report(force = false): Promise<void> {
-    if (!this.started) {
+    if (!this.started || prerendering()) {
       return
     }
     const presence = this.presence()
     const now = this.clock.now()
-    if (!force && (samePresence(presence, this.lastReport) || now < this.retryAt)) {
+    const retry = this.retry
+    const waiting = retry !== null && now < retry.at && samePresence(presence, retry.presence)
+    if (!force && (samePresence(presence, this.lastReport) || waiting)) {
       return
     }
     this.lastReport = presence
+    this.retry = null
     const response = await this.bus.send('presence', presence)
     if (response.ok) {
-      this.retryAt = 0
       this.apply(response.value)
     } else if (this.lastReport === presence) {
-      // Not heard: report again once the worker may be back.
+      // Not heard: send it again once the worker may be back.
       this.lastReport = null
-      this.retryAt = now + RETRY_MS
+      this.retry = { presence, at: now + RETRY_MS }
     }
   }
 
-  // Take a state from the worker, unless one computed later already came.
+  // Take a state from the worker, unless one it built later already came.
   private apply(state: TabState): void {
-    if (this.state && state.asOf < this.state.asOf) {
+    if (this.state && state.seq < this.state.seq) {
       return
     }
     if (state.running && this.focusFrom === null) {
@@ -279,31 +327,44 @@ export default class FocusTracker {
     void this.report()
   }
 
+  // The window blurs when focus leaves it, and also when focus moves into
+  // one of the page's frames: look now, and again once focus has settled.
   private handleBlur = () => {
-    this.windowFocused = false
     void this.report()
-  }
-
-  private handleFocus = () => {
-    this.windowFocused = true
-    void this.report()
-  }
-
-  private handleVisibilityChange = () => {
-    if (!document.hidden) {
-      // Focus may have moved while the tab was hidden.
-      this.windowFocused = document.hasFocus()
+    if (this.blurTimer === null) {
+      this.blurTimer = setTimeout(() => {
+        this.blurTimer = null
+        void this.report()
+      }, 0)
     }
-    void this.report()
   }
 }
 
 const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended'] as const
 
+// Whether the page is being prerendered, not yet shown (Chrome 108; not in
+// TypeScript's DOM types).
+const prerendering = () => (document as Document & { prerendering?: boolean }).prerendering === true
+
+// Every open shadow root under `root`, nested ones included.
+function openShadowRoots(root: Document | ShadowRoot): ShadowRoot[] {
+  const found: ShadowRoot[] = []
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const shadow = (node as Element).shadowRoot
+    if (shadow) {
+      found.push(shadow, ...openShadowRoots(shadow))
+    }
+  }
+  return found
+}
+
+const mediaIn = (root: ShadowRoot) => root.querySelectorAll<HTMLMediaElement>('video, audio')
+
 // Whether any of `media` is playing (muted or not): watching or listening
 // keeps idle time counting. Media in closed shadow roots or cross-origin
 // frames isn't seen. readyState 2 is HAVE_CURRENT_DATA.
-function anyPlaying(media: HTMLCollectionOf<HTMLMediaElement>): boolean {
+function anyPlaying(media: Iterable<HTMLMediaElement>): boolean {
   for (const el of media) {
     if (!el.paused && !el.ended && el.readyState >= 2) {
       return true

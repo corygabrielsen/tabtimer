@@ -25,6 +25,9 @@ export type TabState = {
   // The local day the totals are for.
   day: DayStamp
   asOf: number
+  // The worker transaction that built it: a later one has a higher seq
+  // (asOf can tie, or go back with the clock).
+  seq: number
   // This site's time today, and every tracked site's combined.
   today: number
   globalToday: number
@@ -56,9 +59,10 @@ export type Contract = {
 }
 
 // The service worker's message to a tracked page (chrome.tabs.sendMessage):
-// its new state. The page replies with its Presence, which is how the worker
-// asks a page to report again.
-export type StatePush = { type: 'state'; state: TabState }
+// its new state. The page replies with its Presence; with `probe`, the
+// worker takes that reply as a fresh report (how it asks a page to report
+// again), and otherwise ignores it.
+export type StatePush = { type: 'state'; state: TabState; probe: boolean }
 
 export type MessageType = keyof Contract
 
@@ -95,17 +99,17 @@ export function parsePresence(raw: unknown): Presence | null {
   return { visible, focused, media, blocked }
 }
 
-// A pushed TabState, checked field by field (content scripts trust only
-// this extension, but a malformed state must not break the page).
-export function parseStatePush(raw: unknown): TabState | null {
-  if (!isObject(raw) || raw.type !== 'state' || !isObject(raw.state)) {
+// A StatePush, its state checked field by field (content scripts trust
+// only this extension, but a malformed state must not break the page).
+export function parseStatePush(raw: unknown): StatePush | null {
+  if (!isObject(raw) || raw.type !== 'state' || !isObject(raw.state) || !isBool(raw.probe)) {
     return null
   }
   const s = raw.state
   if (typeof s.site !== 'string' || !isDayStamp(s.day)) {
     return null
   }
-  if (!isFiniteNumber(s.asOf) || !isFiniteNumber(s.today) || !isFiniteNumber(s.globalToday)) {
+  if (!isFiniteNumber(s.asOf) || !isFiniteNumber(s.seq) || !isFiniteNumber(s.today) || !isFiniteNumber(s.globalToday)) {
     return null
   }
   if (!isBool(s.running) || (s.blockAt !== null && !isFiniteNumber(s.blockAt))) {
@@ -123,10 +127,11 @@ export function parseStatePush(raw: unknown): TabState | null {
   if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
     return null
   }
-  return {
+  const state: TabState = {
     site: s.site,
     day: s.day,
     asOf: s.asOf,
+    seq: s.seq,
     today: s.today,
     globalToday: s.globalToday,
     running: s.running,
@@ -134,4 +139,5 @@ export function parseStatePush(raw: unknown): TabState | null {
     limit,
     prefs: { hidden: p.hidden, scale: p.scale },
   }
+  return { type: 'state', state, probe: raw.probe }
 }

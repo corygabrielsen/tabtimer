@@ -353,6 +353,7 @@ export class FakeChrome {
     create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, ...props })),
     onActivated: new FakeEvent<[{ tabId: number; windowId: number }]>(),
     onRemoved: new FakeEvent<[number]>(),
+    onAttached: new FakeEvent<[number, { newWindowId: number; newPosition: number }]>(),
     onUpdated: new FakeEvent<[number, { url?: string; status?: string; discarded?: boolean }, { url?: string }]>(),
   }
 

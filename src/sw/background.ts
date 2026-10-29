@@ -26,6 +26,9 @@ const dispatch = (event: Parameters<typeof tracker.dispatch>[0]) => void tracker
 
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => dispatch({ kind: 'activated', tabId, windowId }))
 chrome.tabs.onRemoved.addListener((tabId) => dispatch({ kind: 'removed', tabId }))
+chrome.tabs.onAttached.addListener((tabId, { newWindowId }) =>
+  dispatch({ kind: 'attached', tabId, windowId: newWindowId })
+)
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   // The URL is visible only on granted sites; a load whose URL can't be
   // seen went to a site that isn't tracked.

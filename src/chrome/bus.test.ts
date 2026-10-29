@@ -53,6 +53,7 @@ describe('state pushes', () => {
     site: 'reddit.com',
     day: '2026-06-10',
     asOf: 1,
+    seq: 1,
     today: 2,
     globalToday: 3,
     running: false,
@@ -65,13 +66,19 @@ describe('state pushes', () => {
   it('hands the page each state from the worker and replies with its presence', async () => {
     const handle = vi.fn(() => PRESENT)
     const stop = pushes.onState(handle)
-    await expect(sendState(4, '', { type: 'state', state })).resolves.toEqual(PRESENT)
-    expect(handle).toHaveBeenCalledWith(state)
-    expect(fakeChrome().tabs.sendMessage).toHaveBeenCalledWith(4, { type: 'state', state }, { frameId: 0 })
-    await sendState(4, 'doc-1', { type: 'state', state })
-    expect(fakeChrome().tabs.sendMessage).toHaveBeenLastCalledWith(4, { type: 'state', state }, { documentId: 'doc-1' })
+    const push = { type: 'state', state, probe: true } as const
+    await expect(sendState(4, '', push)).resolves.toEqual(PRESENT)
+    expect(handle).toHaveBeenCalledWith(state, true)
+    expect(fakeChrome().tabs.sendMessage).toHaveBeenCalledWith(4, push, { frameId: 0 })
+    await sendState(4, 'doc-1', { ...push, probe: false })
+    expect(handle).toHaveBeenLastCalledWith(state, false)
+    expect(fakeChrome().tabs.sendMessage).toHaveBeenLastCalledWith(
+      4,
+      { ...push, probe: false },
+      { documentId: 'doc-1' }
+    )
     stop()
-    await expect(sendState(4, '', { type: 'state', state })).rejects.toThrow()
+    await expect(sendState(4, '', push)).rejects.toThrow()
   })
 
   it('ignores other messages, other extensions and other tabs', () => {
@@ -84,15 +91,17 @@ describe('state pushes', () => {
         listener(message, sender, respond)
       }
     }
-    deliver({ type: 'state', state }, { id: 'someone-else' })
-    deliver({ type: 'state', state }, { id: browser.runtime.id, tab: { id: 2 } })
-    deliver({ type: 'state', state: { ...state, asOf: 'x' } }, { id: browser.runtime.id })
+    deliver({ type: 'state', state, probe: false }, { id: 'someone-else' })
+    deliver({ type: 'state', state, probe: false }, { id: browser.runtime.id, tab: { id: 2 } })
+    deliver({ type: 'state', state: { ...state, asOf: 'x' }, probe: false }, { id: browser.runtime.id })
     expect(handle).not.toHaveBeenCalled()
     expect(respond).not.toHaveBeenCalled()
   })
 
   it('fails to reach a tab whose page is gone', async () => {
     fakeChrome().closedTabs.add(4)
-    await expect(sendState(4, '', { type: 'state', state })).rejects.toThrow('Receiving end does not exist')
+    await expect(sendState(4, '', { type: 'state', state, probe: false })).rejects.toThrow(
+      'Receiving end does not exist'
+    )
   })
 })
