@@ -59,7 +59,7 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
     'div',
     { class: 'site-name' },
     h('strong', { title: label ?? host }, label ?? host),
-    label ? h('span', {}, host) : null
+    label ? h('span', { title: host }, host) : null
   )
   const today = h(
     'span',

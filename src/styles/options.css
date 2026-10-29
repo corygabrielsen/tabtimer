@@ -60,7 +60,7 @@ h1 {
 
 .section-body {
   min-width: 0;
-  max-width: 62ch;
+  max-width: 720px;
 }
 
 @media (max-width: 760px) {
@@ -130,13 +130,19 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Site rows: name | today | limit | stop. Shared track with .cols. */
+/* Site rows: name | today | limit | stop. Shared track with .cols. The site
+   is each row's key, so it takes all spare width; the rest stay compact. */
 .cols,
 .site-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 128px 150px 112px;
+  grid-template-columns: minmax(12rem, 1fr) 7.5rem 6.5rem max-content;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-4);
+}
+
+.cols > :nth-child(2),
+.cols > :nth-child(3) {
+  text-align: right;
 }
 
 .cols {
@@ -165,23 +171,20 @@ h1 {
 
 .site-name strong {
   display: block;
-  overflow: hidden;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .site-name span {
   display: block;
-  overflow: hidden;
   color: var(--ink-3);
   font-size: var(--t-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .site-today {
   color: var(--ink-2);
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -191,11 +194,23 @@ h1 {
 }
 
 .site-row .minutes {
-  justify-self: start;
+  position: relative;
+  justify-self: end;
+}
+
+/* Row "Saved" sits under the field so it never takes column width. */
+.site-row .saved {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .site-row .stop {
   justify-self: end;
+  padding: 0 var(--s-2);
+  margin-right: calc(-1 * var(--s-2));
 }
 
 .site-row .error {
@@ -208,7 +223,7 @@ h1 {
   }
   .site-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    row-gap: var(--s-1);
+    row-gap: var(--s-2);
     padding: var(--s-3) 0;
   }
   .site-today {
@@ -216,6 +231,10 @@ h1 {
   }
   .site-row .minutes {
     grid-column: 1;
+    justify-self: start;
+  }
+  .site-row .saved {
+    position: static;
   }
 }
 
