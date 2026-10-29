@@ -1,5 +1,5 @@
 import type Model from './Model'
-import { baseHost, readGlobalElapsedToday } from './storage'
+import { baseHost } from './storage'
 import {
   evaluateLimits,
   normalizeLimits,
@@ -182,7 +182,7 @@ export default class Blocker {
           .then((e) => e.today.elapsed)
           .catch(() => 0)
       : 0
-    const globalToday = hasGlobal ? await readGlobalElapsedToday().catch(() => 0) : 0
+    const globalToday = hasGlobal ? await this.model.readGlobalToday().catch(() => 0) : 0
     const reason = evaluateLimits(this.limits, this.siteHost, siteToday, globalToday)
     if (reason) {
       this.block(reason)

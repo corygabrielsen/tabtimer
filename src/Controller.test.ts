@@ -3,7 +3,7 @@
 //
 // End-to-end at the unit level: real Model, View, Blocker and Controller in
 // a page, with the real background writer behind the fake chrome.* — only the
-// clock advances; the Controller's own 1s loop drives everything.
+// clock advances; the Model's single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Blocker from './Blocker'
 import Controller from './Controller'
@@ -38,9 +38,6 @@ const blocked = () => document.getElementById('tabtimer-block')?.style.getProper
 const blockScreen = () => shadowOf('tabtimer-block')
 const pillText = () => shadowOf('tabtimer-root').querySelector('.pill')?.textContent
 const run = (ms: number) => vi.advanceTimersByTimeAsync(ms)
-// The Controller's interval is registered before the Model's timers, so each
-// second it samples just before they tick: on-screen state trails by ≤1s.
-const LAG = seconds(1)
 
 beforeEach(async () => {
   browser = fakeChrome()
@@ -62,7 +59,7 @@ describe('time limits end to end', () => {
     await openTab()
     await run(seconds(59))
     expect(blocked()).toBe(false)
-    await run(seconds(1) + LAG)
+    await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
   })
@@ -73,7 +70,7 @@ describe('time limits end to end', () => {
     await openTab()
     await run(seconds(9))
     expect(blocked()).toBe(false)
-    await run(seconds(1) + LAG)
+    await run(seconds(1))
     expect(blocked()).toBe(true)
   })
 
@@ -99,7 +96,7 @@ describe('time limits end to end', () => {
     await run(minutes(10))
     expect(blocked()).toBe(false)
     setPageState({ focused: true })
-    await run(seconds(30) + LAG)
+    await run(seconds(30))
     expect(blocked()).toBe(true)
   })
 
@@ -130,7 +127,7 @@ describe('time limits end to end', () => {
   it('gives a five-minute reprieve on snooze, then blocks again', async () => {
     limits({ perSite: { 'reddit.com': minutes(1) } })
     await openTab()
-    await run(minutes(1) + LAG)
+    await run(minutes(1))
     expect(blocked()).toBe(true)
 
     click(blockScreen().querySelector('.snooze'))
@@ -140,7 +137,7 @@ describe('time limits end to end', () => {
     expect(blocked()).toBe(false)
     // Time still accrued during the snooze.
     expect(pillText()).toMatch(/^00:05:5\d$/)
-    await run(seconds(3) + LAG)
+    await run(seconds(3))
     expect(blocked()).toBe(true)
   })
 
@@ -148,12 +145,42 @@ describe('time limits end to end', () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 58, 0))
     limits({ perSite: { 'reddit.com': minutes(1) } })
     await openTab()
-    await run(minutes(1) + LAG) // 23:59:01
+    await run(minutes(1)) // 23:59:00
     expect(blocked()).toBe(true)
-    await run(seconds(59)) // 00:00:00
+    await run(seconds(60)) // 00:00:00
     await run(seconds(2))
     expect(blocked()).toBe(false)
     expect(pillText()).toMatch(/^00:00:0[12]$/)
+  })
+})
+
+describe('per-tab cost', () => {
+  it('runs a single interval per tab', async () => {
+    await openTab()
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
+  it('reads totals from storage once, then follows storage.onChanged', async () => {
+    limits({ global: minutes(30), perSite: { 'reddit.com': minutes(30) } })
+    await openTab()
+    const get = vi.spyOn(browser.storage.local, 'get')
+    await run(minutes(1))
+    // No per-second storage.get (site total) or get(null) (global total):
+    // the only reads are the background writer's, one per report (~10s).
+    expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
+    expect(get).toHaveBeenCalledTimes(6)
+    // Another tab's writes still count: x.com logs 29 minutes.
+    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(29) })
+    await run(seconds(1))
+    expect(blocked()).toBe(true)
+    expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
+    // ...as does another reddit tab's.
+    limits({ global: null, perSite: { 'reddit.com': minutes(5) } })
+    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(5) })
+    await run(seconds(1))
+    expect(blocked()).toBe(true)
+    expect(blockScreen().querySelector('.host')?.textContent).toBe('reddit.com')
+    expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
   })
 })
 
@@ -173,7 +200,7 @@ describe('Controller', () => {
     const controller = await openTab()
     await run(seconds(15))
     controller.reset()
-    await run(LAG)
+    await flush()
     expect(pillText()).toMatch(/^00:00:0[01]$/)
   })
 

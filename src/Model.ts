@@ -1,5 +1,5 @@
 import Timer, { TimerState, TimerType } from './Timer'
-import { storage, baseKeyForHost, todayKeyForHost } from './storage'
+import { storage, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost } from './storage'
 import { sendMessage } from './messages'
 
 export type ElapsedEntry = {
@@ -13,10 +13,23 @@ export type ElapsedState = {
   today: ElapsedEntry
 }
 
+// The tab's single tick source: timers, reporting, rendering and limit checks
+// all run off this one interval.
+export const TICK_MS = 1000
+// Minimum spacing between routine reports to the background writer.
+const REPORT_INTERVAL_MS = 10_000
+
 export default class Model {
-  private countupTimer: Timer
-  private focusTimer: Timer
+  // The session timer is wall time on the page, so a long gap between ticks
+  // (a throttled background tab wakes about once a minute) still counts in
+  // full; only backward clock jumps are ignored.
+  private countupTimer = new Timer(TimerType.COUNTUP, Infinity)
+  // Focus time credits at most two ticks per tick, so a sleep/suspend gap
+  // or a forward clock jump doesn't count as focus.
+  private focusTimer = new Timer(TimerType.FOCUS, 2 * TICK_MS)
   private started: boolean = false
+  private intervalId: ReturnType<typeof setInterval> | null = null
+  private tickListeners = new Set<() => void>()
   // Local midnight that starts the day this tab is accounting to, and the
   // next one (when it rolls over).
   private day: Date
@@ -25,17 +38,24 @@ export default class Model {
   private previousStorageUpdateElapsedValue: number = 0
   // When we last attempted a report (throttle baseline); epoch so the very
   // first report fires immediately.
-  private previousStorageUpdateTime: Date = new Date(0)
+  private previousStorageUpdateTime: number = 0
   // True while a report is in flight, to prevent overlapping reports.
   private reporting: boolean = false
   private host: string
-  private resetTimeoutId: ReturnType<typeof setTimeout> | null = null
+
+  // Cached stored total for this site today, loaded once per day and then
+  // kept current from storage.onChanged (rather than read every second).
+  private storedToday = 0
+  private storedTodayLoad: Promise<void> | null = null
+  // Cached stored totals of every site today (the global total), loaded on
+  // first use and likewise kept current from storage.onChanged.
+  private globalToday = new Map<string, number>()
+  // Keys updated by onChanged since the global load started; the load's
+  // (older) snapshot must not overwrite them.
+  private globalTouched = new Set<string>()
+  private globalTodayLoad: Promise<void> | null = null
+
   constructor() {
-    // The session timer is wall time on the page, so a long gap between
-    // ticks (a throttled background tab wakes about once a minute) still
-    // counts in full; only backward clock jumps are ignored.
-    this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}), Infinity)
-    this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.reportElapsed)
     this.host = window.location.hostname
     this.day = startOfDay(new Date())
     this.resetTimersAtTime = this.getResetTime()
@@ -70,23 +90,52 @@ export default class Model {
       this.focusTimer.pause()
     }
 
-    // Listen for the visibilitychange event and handle it
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
-
-    // Listen for the blur event and handle it
     window.addEventListener('blur', this.handleBlur)
-
-    // Listen for the focus event and handle it
     window.addEventListener('focus', this.handleFocus)
-
-    // React when today's counter is reset elsewhere (popup or another tab).
+    // Keeps the cached totals current, and reacts when today's counter is
+    // reset elsewhere (popup or another tab).
     chrome.storage.onChanged.addListener(this.handleStorageChange)
 
     // Past days' keys are never read again; drop them so chrome.storage.local
     // doesn't grow without bound (one new key per tracked site per day).
     this.pruneOldKeys()
+    void this.loadStoredToday().catch(() => undefined)
 
-    this.scheduleRollover()
+    this.intervalId = setInterval(this.tick, TICK_MS)
+  }
+
+  // Stop ticking and detach every listener. The model can't be restarted.
+  destroy(): void {
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId)
+      this.intervalId = null
+    }
+    this.tickListeners.clear()
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
+    window.removeEventListener('blur', this.handleBlur)
+    window.removeEventListener('focus', this.handleFocus)
+    chrome.storage.onChanged.removeListener(this.handleStorageChange)
+  }
+
+  // Run `listener` after every tick (once the timers have advanced).
+  onTick(listener: () => void): () => void {
+    this.tickListeners.add(listener)
+    return () => this.tickListeners.delete(listener)
+  }
+
+  private tick = () => {
+    const now = Date.now()
+    this.countupTimer.tick(now)
+    this.focusTimer.tick(now)
+    // This tick's time is credited to the day the tab was accounting to; a
+    // tick that crosses midnight is the old day's final one.
+    if (!this.maybeRollover() && this.focusTimer.state === TimerState.RUNNING) {
+      this.maybeReport(now)
+    }
+    for (const listener of this.tickListeners) {
+      listener()
+    }
   }
 
   // The key this tab's focus time is credited to: the day it is accounting
@@ -95,22 +144,9 @@ export default class Model {
     return todayKeyForHost(this.host, this.day)
   }
 
-  private scheduleRollover(): void {
-    if (this.resetTimeoutId !== null) {
-      clearTimeout(this.resetTimeoutId)
-    }
-    this.resetTimeoutId = setTimeout(() => {
-      // Credit the focus time since the last tick first (its callback rolls
-      // the day over), so the old day keeps its final partial second.
-      this.focusTimer.tick()
-      this.maybeRollover()
-    }, this.resetTimersAtTime.getTime() - Date.now())
-  }
-
-  // Fallback rollover: the daily reset is normally driven by a setTimeout,
-  // but that can fire late or not at all (system sleep across midnight,
-  // clock changes, background-tab timer throttling). Re-check the boundary
-  // on the hot paths so the day still rolls over. Returns true if it reset.
+  // Checked every tick and on every read, so the day rolls over even when
+  // timers fire late (system sleep across midnight, clock changes,
+  // background-tab throttling). Returns true if it rolled over.
   private maybeRollover(): boolean {
     if (this.isResetTime()) {
       this.rollover()
@@ -125,34 +161,33 @@ export default class Model {
   // baselines restart. Time accrued but not yet reported still belongs to
   // the old day, so it is sent to the old day's key rather than dropped.
   private rollover(): void {
+    // Credit the time since the last tick to the old day first.
+    this.countupTimer.tick()
+    this.focusTimer.tick()
     const oldKey = this.getTodayKey()
     const unreported = this.elapsedFocusTime() - this.previousStorageUpdateElapsedValue
-    // Advance the boundary before resetting the timers: stopping the focus
-    // timer runs reportElapsed, which re-checks maybeRollover().
     this.day = startOfDay(new Date())
     this.resetTimersAtTime = this.getResetTime()
     if (unreported > 0) {
       void sendMessage({ type: 'addElapsed', key: oldKey, delta: unreported }).catch(() => undefined)
     }
     this.resetTimers()
-    this.scheduleRollover()
+    this.storedToday = 0
+    this.storedTodayLoad = null
+    this.globalToday.clear()
+    this.globalTouched.clear()
+    this.globalTodayLoad = null
   }
 
-  // Focus-timer tick callback: throttled to ~10s, reports accrued focus time
-  // to the background single-writer.
-  reportElapsed = (elapsed: number) => {
-    // If we crossed the reset boundary, rollover() has already restarted the
-    // timers; the `elapsed` argument is now stale, so bail.
-    if (this.maybeRollover()) {
+  // Throttled to ~10s: report accrued focus time to the background writer.
+  private maybeReport(now: number): void {
+    if (this.elapsedFocusTime() - this.previousStorageUpdateElapsedValue <= 0) {
       return
     }
-    if (elapsed - this.previousStorageUpdateElapsedValue <= 0) {
+    if (now - this.previousStorageUpdateTime < REPORT_INTERVAL_MS) {
       return
     }
-    if (Date.now() - this.previousStorageUpdateTime.getTime() < 10000) {
-      return
-    }
-    void this.flushElapsed(elapsed)
+    void this.flushElapsed(this.elapsedFocusTime())
   }
 
   // Report the focus time accrued since the last successful report to the
@@ -170,7 +205,7 @@ export default class Model {
     // Advance the throttle baseline at attempt time so a failing report
     // (e.g. extension context invalidated) is retried at most every 10s
     // rather than every tick.
-    this.previousStorageUpdateTime = new Date()
+    this.previousStorageUpdateTime = Date.now()
     const key = this.getTodayKey()
     return sendMessage({ type: 'addElapsed', key, delta: diff })
       .then((response) => {
@@ -210,20 +245,77 @@ export default class Model {
       })
   }
 
-  public readStorageElapsedToday(): Promise<number> {
-    return storage.get(this.getTodayKey(), 0, 'local')
+  // Load today's stored total into the cache (once; retried after a failure).
+  private loadStoredToday(): Promise<void> {
+    if (!this.storedTodayLoad) {
+      const key = this.getTodayKey()
+      const load = storage.get(key, 0, 'local').then(
+        (value) => {
+          // Ignore a stale result if the day rolled over or onChanged already
+          // delivered a newer value meanwhile.
+          if (this.storedTodayLoad === load) {
+            this.storedToday = value
+          }
+        },
+        (error: unknown) => {
+          if (this.storedTodayLoad === load) {
+            this.storedTodayLoad = null
+          }
+          throw error
+        }
+      )
+      this.storedTodayLoad = load
+    }
+    return this.storedTodayLoad
   }
 
-  private resetStorageValues(): Promise<void> {
-    const key = this.getTodayKey()
-    return sendMessage({ type: 'resetKey', key })
-      .then(() => undefined)
-      .catch(() => undefined)
+  // Load every site's stored total for today into the cache (once; retried
+  // after a failure).
+  private loadGlobalToday(): Promise<void> {
+    if (!this.globalTodayLoad) {
+      const day = this.day
+      const load = new Promise<void>((resolve, reject) => {
+        chrome.storage.local.get(null, (items: Record<string, unknown>) => {
+          const error = chrome.runtime.lastError
+          if (this.globalTodayLoad !== load) {
+            resolve() // superseded by a rollover
+            return
+          }
+          if (error) {
+            this.globalTodayLoad = null
+            reject(error)
+            return
+          }
+          for (const [key, value] of Object.entries(items)) {
+            if (isElapsedKeyForDay(key, day) && typeof value === 'number' && !this.globalTouched.has(key)) {
+              this.globalToday.set(key, value)
+            }
+          }
+          resolve()
+        })
+      })
+      this.globalTodayLoad = load
+    }
+    return this.globalTodayLoad
+  }
+
+  // Today's stored focus time summed across every tracked site (the global
+  // daily total). Excludes in-flight, not-yet-flushed deltas, so it can lag a
+  // live counter by up to ~10s — fine for a minute-scale limit.
+  readGlobalToday(): Promise<number> {
+    this.maybeRollover()
+    return this.loadGlobalToday().then(() => {
+      let total = 0
+      for (const value of this.globalToday.values()) {
+        total += value
+      }
+      return total
+    })
   }
 
   readElapsed(): Promise<ElapsedState> {
     this.maybeRollover()
-    return this.readStorageElapsedToday().then((storageResult) => {
+    return this.loadStoredToday().then(() => {
       const focusElapsed = this.elapsedFocusTime()
       let diff = focusElapsed - this.previousStorageUpdateElapsedValue
       if (diff < 0) {
@@ -239,7 +331,7 @@ export default class Model {
           state: this.focusTimer.state,
         },
         today: {
-          elapsed: storageResult + diff,
+          elapsed: this.storedToday + diff,
           state: this.focusTimer.state, // same as focus timer
         },
       }
@@ -260,7 +352,7 @@ export default class Model {
     this.previousStorageUpdateElapsedValue = 0
     // Drop the throttle baseline so the first post-reset write isn't
     // suppressed for up to 10s.
-    this.previousStorageUpdateTime = new Date(0)
+    this.previousStorageUpdateTime = 0
   }
 
   // Zero today's total: this tab's timers and the stored counter.
@@ -268,7 +360,8 @@ export default class Model {
     // Roll over first if due, so the reset applies to the current day.
     this.maybeRollover()
     this.resetTimers()
-    void this.resetStorageValues()
+    this.storedToday = 0
+    void sendMessage({ type: 'resetKey', key: this.getTodayKey() }).catch(() => undefined)
   }
 
   handleBlur = () => {
@@ -291,11 +384,20 @@ export default class Model {
     if (areaName !== 'local') {
       return
     }
+    for (const [key, change] of Object.entries(changes)) {
+      if (isElapsedKeyForDay(key, this.day)) {
+        this.globalToday.set(key, typeof change.newValue === 'number' ? change.newValue : 0)
+        this.globalTouched.add(key)
+      }
+    }
     const change = changes[this.getTodayKey()]
     if (!change) {
       return
     }
     const newValue = (change.newValue as number | undefined) ?? 0
+    // Authoritative and newer than any load in flight.
+    this.storedToday = newValue
+    this.storedTodayLoad = Promise.resolve()
     if (newValue === 0) {
       // Today's counter was reset elsewhere. Drop our in-memory accumulation
       // so the on-screen total reflects the reset and we don't immediately
