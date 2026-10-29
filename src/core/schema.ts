@@ -75,18 +75,20 @@ export function isKept(day: DayStamp, today: DayStamp): boolean {
 
 // The day:* keys among `keys` that fall outside the retention window ending
 // on the day containing `now` (malformed day:* keys go too). `last`: a later
-// day the clock showed before it went back; the days after today up to it
-// were written while the clock was ahead, and go too. Any other later day is
-// kept (the clock may be the one that is wrong).
+// day the clock showed before it went back; the days after tomorrow up to it
+// were written while the clock was ahead, and go too. Tomorrow is kept: a
+// time zone change moves the date by at most a day, and that usage is real.
+// Any other later day is kept (the clock may be the one that is wrong).
 export function expiredDayKeys(keys: string[], now: number, last: DayStamp | null = null): string[] {
   const today = dayOf(now)
   const oldest = oldestKept(today)
+  const tomorrow = addDays(today, 1)
   return keys.filter((key) => {
     if (!key.startsWith(DAY_KEY_PREFIX)) {
       return false
     }
     const day = dayOfKey(key)
-    return day === null || day < oldest || (last !== null && day > today && day <= last)
+    return day === null || day < oldest || (last !== null && day > tomorrow && day <= last)
   })
 }
 

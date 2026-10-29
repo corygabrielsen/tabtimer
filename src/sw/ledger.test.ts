@@ -119,14 +119,26 @@ describe('retention', () => {
     expect(Object.keys(data()).sort()).toEqual(['day:2026-06-09', 'day:2026-06-10', 'day:2026-06-11'])
   })
 
-  it('drops the days written while the clock was ahead once it goes back', async () => {
+  it('drops the days written while the clock was 3 days ahead once it is corrected', async () => {
     seedDays('2026-07-01')
-    now = at(2026, 5, 12, 9)
-    await addElapsed('a.com', [[now - 1000, now]])
+    for (const day of [11, 12, 13]) {
+      now = at(2026, 5, day, 9)
+      await addElapsed('a.com', [[now - 1000, now]])
+    }
     now = NOON
     await addElapsed('a.com', [[NOON - 1000, NOON]])
-    // Days never shown in this session stay: the clock may be the one that is wrong.
-    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-10', 'day:2026-07-01'])
+    // Tomorrow stays (a time zone change); days never shown in this session
+    // stay too: the clock may be the one that is wrong.
+    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-10', 'day:2026-06-11', 'day:2026-07-01'])
+  })
+
+  it('keeps the old zone’s day after travelling west across midnight', async () => {
+    now = at(2026, 5, 11, 0, 30)
+    await addElapsed('a.com', [[now - 20 * MIN, now]])
+    // Three hours west: back to 21:30 on the 10th.
+    now = at(2026, 5, 10, 21, 30)
+    await addElapsed('a.com', [[now - 1000, now]])
+    expect(data()['day:2026-06-11']).toEqual({ 'a.com': bucketsOf({ 0: 20 * MIN }) })
   })
 
   it('prunes on demand (install and startup)', async () => {
