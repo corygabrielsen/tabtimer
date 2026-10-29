@@ -1,9 +1,10 @@
 import { execSync } from 'node:child_process'
-import { defineConfig } from 'vite'
+import { build, defineConfig, type Plugin, type Rollup } from 'vite'
 import { crx } from '@crxjs/vite-plugin'
 import baseManifest from './manifest.json'
 import pkg from './package.json'
 import { E2E, E2E_HOST_PERMISSIONS, OUT_DIR } from './build.e2e'
+import contentConfig from './vite.content.config'
 
 // Non-release builds name the commit they came from, e.g. "1.1.0 (ff1e3e6)",
 // or "1.1.0 (ff1e3e6, modified)" with uncommitted changes to tracked files, so
@@ -21,9 +22,47 @@ function versionName(): string | undefined {
   }
 }
 
+// The content script (vite.content.config.ts), built alongside every build of
+// the extension: `vite build` and `--watch` emit it into the bundle, so
+// emptying the output can't lose it, and rebuild when its sources change; the
+// dev server keeps it built in the output directory.
+function contentScript(): Plugin {
+  const options = { ...contentConfig, configFile: false as const, logLevel: 'warn' as const }
+  let serve = false
+  let code = ''
+  return {
+    name: 'tabtimer-content-script',
+    configResolved(config) {
+      serve = config.command === 'serve'
+    },
+    async buildStart() {
+      if (serve) {
+        return
+      }
+      const [{ output }] = [await build({ ...options, build: { ...contentConfig.build, write: false } })].flat() as [
+        Rollup.RollupOutput,
+      ]
+      code = output[0].code
+      for (const id of output[0].moduleIds.filter((id) => !id.startsWith('\0'))) {
+        this.addWatchFile(id)
+      }
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'content.js', source: code })
+    },
+    async configureServer(server) {
+      const watcher = (await build({
+        ...options,
+        build: { ...contentConfig.build, watch: {} },
+      })) as Rollup.RollupWatcher
+      server.httpServer?.once('close', () => void watcher.close())
+    },
+  }
+}
+
 // The version lives in package.json; stamp it onto the manifest at build time
-// so they can't diverge. The content script isn't declared here — it's built
-// separately (vite.content.config.ts) and registered dynamically at runtime.
+// so they can't diverge. The content script isn't declared here: it's
+// registered dynamically at runtime.
 //
 // The e2e variant (TABTIMER_E2E=1) also requests the fixture hosts up front,
 // standing in for the user's runtime grant, and builds to its own directory.
@@ -37,7 +76,7 @@ const manifest = {
 }
 
 export default defineConfig({
-  plugins: [crx({ manifest })],
+  plugins: [crx({ manifest }), contentScript()],
   // Compiles the e2e test hook (src/sw/testHook.ts) in or out.
   define: { __TABTIMER_E2E__: JSON.stringify(E2E) },
   resolve: {

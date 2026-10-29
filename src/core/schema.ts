@@ -7,6 +7,7 @@
 //   limits       Limits (core/limits.ts), the snooze included
 //   prefs        Prefs
 //   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
+//   clock        ClockMark: the date pruning last trusted
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
@@ -18,6 +19,7 @@ export const SCHEMA = 3
 export const SCHEMA_KEY = 'schema'
 export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
+export const CLOCK_KEY = 'clock'
 export const DAY_KEY_PREFIX = 'day:'
 
 // Days of usage kept, today included: older day:* keys are pruned.
@@ -76,20 +78,58 @@ export function isKept(day: DayStamp, today: DayStamp): boolean {
 // The day:* keys among `keys` that fall outside the retention window ending
 // on the day containing `now` (malformed day:* keys go too). `last`: a later
 // day the clock showed before it went back; the days after tomorrow up to it
-// were written while the clock was ahead, and go too. Tomorrow is kept: a
-// time zone change moves the date by at most a day, and that usage is real.
-// Any other later day is kept (the clock may be the one that is wrong).
+// were written while the clock was ahead, and go too, as far as a window
+// ahead. Tomorrow is kept: a time zone change moves the date by at most a
+// day, and that usage is real. Any other later day is kept (the clock may be
+// the one that is wrong).
 export function expiredDayKeys(keys: string[], now: number, last: DayStamp | null = null): string[] {
   const today = dayOf(now)
   const oldest = oldestKept(today)
   const tomorrow = addDays(today, 1)
+  const ahead = addDays(today, RETENTION_DAYS)
   return keys.filter((key) => {
     if (!key.startsWith(DAY_KEY_PREFIX)) {
       return false
     }
     const day = dayOfKey(key)
-    return day === null || day < oldest || (last !== null && day > tomorrow && day <= last)
+    return day === null || day < oldest || (last !== null && day > tomorrow && day <= last && day <= ahead)
   })
+}
+
+// Pruning deletes for good, so it trusts the clock's date only when the date
+// moved plausibly from the last trusted one (`day`): back at most a day (a
+// time zone change) or on at most PLAUSIBLE_DAYS. Any other date is
+// `pending` from `since`, and trusted once the clock has run on from it for
+// HOLD_MS. A clock briefly wrong (an unset clock at boot, a resumed machine)
+// is put right before then.
+export type ClockMark = { day: DayStamp | null; pending: { day: DayStamp; since: number } | null }
+
+export const PLAUSIBLE_DAYS = 2
+export const HOLD_MS = 60 * 60_000
+
+export function normalizeClock(value: unknown): ClockMark {
+  const v = isObject(value) ? value : {}
+  const p = isObject(v.pending) ? v.pending : {}
+  return {
+    day: isDayStamp(v.day) ? v.day : null,
+    pending: isDayStamp(p.day) && isFiniteNumber(p.since) ? { day: p.day, since: p.since } : null,
+  }
+}
+
+// The mark after the clock shows `now`. The date is trusted when the result's
+// day is the day containing `now`.
+export function settleClock(mark: ClockMark, now: number): ClockMark {
+  const today = dayOf(now)
+  const { day, pending } = mark
+  if (day !== null && today >= addDays(day, -1) && today <= addDays(day, PLAUSIBLE_DAYS)) {
+    return day === today && pending === null ? mark : { day: today, pending: null }
+  }
+  // The clock ran on from the pending date (a time zone change aside).
+  const runOn = pending !== null && today >= addDays(pending.day, -1) && now >= pending.since
+  if (runOn && now - pending.since >= HOLD_MS) {
+    return { day: today, pending: null }
+  }
+  return runOn ? mark : { day, pending: { day: today, since: now } }
 }
 
 export function emptyBuckets(): HourBuckets {

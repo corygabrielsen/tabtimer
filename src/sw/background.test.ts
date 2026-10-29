@@ -29,15 +29,23 @@ describe('storage on install and startup', () => {
 
   it('keeps data in the current format and prunes expired days on startup', async () => {
     const today = new Date()
-    const old = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 45, 12)
     const pad = (n: number) => String(n).padStart(2, '0')
-    const oldKey = `day:${old.getFullYear()}-${pad(old.getMonth() + 1)}-${pad(old.getDate())}`
-    browser.storage.local.seed({ schema: SCHEMA, limits: { global: 60, perSite: {} }, [oldKey]: {} })
+    const stamp = (days: number) => {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days, 12)
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    }
+    browser.storage.local.seed({
+      schema: SCHEMA,
+      limits: { global: 60, perSite: {} },
+      clock: { day: stamp(-1), pending: null },
+      [`day:${stamp(-45)}`]: {},
+    })
     browser.runtime.onStartup.dispatch()
     await flush()
     expect(browser.storage.local.data).toEqual({
       schema: SCHEMA,
       limits: { global: 60, perSite: {} },
+      clock: { day: stamp(0), pending: null },
     })
   })
 })

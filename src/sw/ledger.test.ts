@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createLedger, WORKER_KEY, type Ledger } from './ledger'
 import { chromeStore } from '../chrome/store'
-import { normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
+import { normalizeDay, siteTotal, CLOCK_KEY, HOLD_MS, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
+import { addDays } from '../core/day'
 import { normalizeAway, type IdleState, type Span } from '../core/away'
 import { SNOOZE_MS } from '../core/limits'
 import { at, bucketsOf } from '../test/data'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const MIN = 60_000
+const HOUR = 60 * MIN
 const NOON = at(2026, 5, 10, 12)
 
 let browser: FakeChrome
@@ -71,6 +73,8 @@ describe('credit', () => {
 
   it('reads the session state once and each day once, and writes each area once, per transaction', async () => {
     browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': bucketsOf({ 11: 1000 }) } })
+    // Not the day's first transaction (that one checks the clock too).
+    browser.storage.session.seed({ [WORKER_KEY]: { day: '2026-06-10' } })
     const spies = (['local', 'session'] as const).flatMap((area) =>
       (['get', 'set'] as const).map((op) => vi.spyOn(browser.storage[area], op))
     )
@@ -95,17 +99,43 @@ describe('credit', () => {
     browser.storage.local.error = null
     await expect(addElapsed('a.com', [[NOON - 1000, NOON]])).resolves.toBe(1000)
   })
+
+  it('loses, never doubles, a span whose commit fails partway', async () => {
+    const OPEN = { tabId: 1, windowId: 1, doc: 'd', site: 'a.com', media: false }
+    // As the tracker does: credit since the open interval's mark, and move the mark on.
+    const checkpoint = () =>
+      ledger.transaction(async (tx) => {
+        const since = tx.tracker.open?.since ?? now - 1000
+        await tx.credit([{ site: 'a.com', start: since, end: now, media: false }])
+        tx.tracker = { ...tx.tracker, open: { ...OPEN, since: now, checkpoint: now } }
+      })
+    await checkpoint()
+    now += 1000
+    // The worker's state isn't saved (a quota, or the worker stopped mid-commit).
+    vi.spyOn(browser.storage.session, 'set').mockRejectedValueOnce(new Error('QUOTA_BYTES quota exceeded'))
+    await expect(checkpoint()).rejects.toThrow('QUOTA_BYTES')
+    await checkpoint()
+    // 1 s before the first checkpoint, then the next 1 s credited once.
+    expect(siteTotal(normalizeDay(data()['day:2026-06-10']), 'a.com')).toBe(2000)
+  })
 })
 
 describe('retention', () => {
   const seedDays = (...days: string[]) =>
     browser.storage.local.seed(Object.fromEntries(days.map((d) => [`day:${d}`, { 'a.com': bucketsOf({ 1: 1 }) }])))
+  const dayKeys = () =>
+    Object.keys(data())
+      .filter((key) => key.startsWith('day:'))
+      .sort()
+  // The 28 days of usage up to 9 June.
+  const history = Array.from({ length: 28 }, (_, i) => `day:${addDays('2026-06-09', -i)}`).sort()
+  const DAY = 24 * HOUR
 
   it('the first transaction of a new day prunes days older than 30, and only once that day', async () => {
     seedDays('2026-05-11', '2026-05-12', '2026-06-09')
     await addElapsed('a.com', [[NOON - 1000, NOON]])
     // 11 May is 30 days before 10 June: gone; 12 May is the oldest day kept.
-    expect(Object.keys(data()).sort()).toEqual(['day:2026-05-12', 'day:2026-06-09', 'day:2026-06-10'])
+    expect(dayKeys()).toEqual(['day:2026-05-12', 'day:2026-06-09', 'day:2026-06-10'])
 
     const getKeys = vi.spyOn(browser.storage.local, 'getKeys')
     seedDays('2026-01-01')
@@ -116,20 +146,31 @@ describe('retention', () => {
     now = at(2026, 5, 11, 9)
     await addElapsed('a.com', [[now - 1000, now]])
     // A day later, 12 May has expired too (as has the stray January day).
-    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-09', 'day:2026-06-10', 'day:2026-06-11'])
+    expect(dayKeys()).toEqual(['day:2026-06-09', 'day:2026-06-10', 'day:2026-06-11'])
   })
 
-  it('drops the days written while the clock was 3 days ahead once it is corrected', async () => {
+  it('drops the days written while the clock was 3 days ahead once it is corrected and holds', async () => {
     seedDays('2026-07-01')
+    browser.storage.local.seed({ [CLOCK_KEY]: { day: '2026-06-10', pending: null } })
     for (const day of [11, 12, 13]) {
       now = at(2026, 5, day, 9)
       await addElapsed('a.com', [[now - 1000, now]])
     }
     now = NOON
     await addElapsed('a.com', [[NOON - 1000, NOON]])
+    // Which clock was wrong? Nothing goes yet.
+    expect(dayKeys()).toEqual([
+      'day:2026-06-10',
+      'day:2026-06-11',
+      'day:2026-06-12',
+      'day:2026-06-13',
+      'day:2026-07-01',
+    ])
+    now = NOON + HOLD_MS
+    await addElapsed('a.com', [[now - 1000, now]])
     // Tomorrow stays (a time zone change); days never shown in this session
     // stay too: the clock may be the one that is wrong.
-    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-10', 'day:2026-06-11', 'day:2026-07-01'])
+    expect(dayKeys()).toEqual(['day:2026-06-10', 'day:2026-06-11', 'day:2026-07-01'])
   })
 
   it('keeps the old zone’s day after travelling west across midnight', async () => {
@@ -141,11 +182,35 @@ describe('retention', () => {
     expect(data()['day:2026-06-11']).toEqual({ 'a.com': bucketsOf({ 0: 20 * MIN }) })
   })
 
+  it('keeps all history through a clock briefly set far back or ahead', async () => {
+    seedDays(...history.map((key) => key.slice(4)))
+    for (const offset of [-400 * DAY, 365 * DAY, 40 * DAY, -3 * DAY]) {
+      now = NOON + offset
+      await addElapsed('a.com', [[now - 1000, now]])
+      await ledger.prune()
+      now = NOON
+      await addElapsed('a.com', [[now - 1000, now]])
+      expect(dayKeys().filter((key) => history.includes(key))).toEqual(history)
+    }
+  })
+
+  it('prunes for a far date once the clock has held it', async () => {
+    seedDays(...history.map((key) => key.slice(4)))
+    // Back from 40 days away.
+    now = NOON + 40 * DAY
+    await addElapsed('a.com', [[now - 1000, now]])
+    expect(dayKeys()).toHaveLength(29)
+    now += HOLD_MS
+    await addElapsed('a.com', [[now - 1000, now]])
+    expect(dayKeys()).toEqual([`day:${addDays('2026-06-10', 40)}`])
+  })
+
   it('prunes on demand (install and startup)', async () => {
     seedDays('2026-04-01', '2026-06-01')
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {} }, [CLOCK_KEY]: { day: '2026-06-09' } })
     await ledger.prune()
-    expect(Object.keys(data()).sort()).toEqual(['day:2026-06-01', LIMITS_KEY])
+    expect(data()).toMatchObject({ [CLOCK_KEY]: { day: '2026-06-10', pending: null } })
+    expect(Object.keys(data()).sort()).toEqual([CLOCK_KEY, 'day:2026-06-01', LIMITS_KEY])
   })
 })
 

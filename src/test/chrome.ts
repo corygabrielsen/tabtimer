@@ -27,6 +27,26 @@ export class FakeEvent<A extends unknown[], R = unknown> {
   }
 }
 
+// windows.onFocusChanged: each listener hears focus move to a window of a
+// type outside its filter (by default 'normal' and 'popup', as in Chrome) as
+// WINDOW_ID_NONE.
+type WindowType = 'normal' | 'popup' | 'panel' | 'app' | 'devtools'
+const DEFAULT_WINDOW_TYPES: WindowType[] = ['normal', 'popup']
+
+export class FakeFocusEvent extends FakeEvent<[number]> {
+  readonly filters = new Map<Listener<[number], unknown>, WindowType[]>()
+  override addListener = (listener: Listener<[number], unknown>, filter?: { windowTypes: WindowType[] }): void => {
+    this.listeners.add(listener)
+    this.filters.set(listener, filter?.windowTypes ?? DEFAULT_WINDOW_TYPES)
+  }
+  // Focus moves to window `windowId` of type `type`.
+  focus(windowId: number, type: WindowType): void {
+    for (const listener of this.listeners) {
+      void listener(windowId === -1 || this.filters.get(listener)?.includes(type) ? windowId : -1)
+    }
+  }
+}
+
 type StorageChanges = Record<string, chrome.storage.StorageChange>
 type AreaName = 'local' | 'sync' | 'managed' | 'session'
 type Callback<T> = (value: T) => void
@@ -388,7 +408,7 @@ export class FakeChrome {
 
   readonly windows = {
     WINDOW_ID_NONE: -1,
-    onFocusChanged: new FakeEvent<[number]>(),
+    onFocusChanged: new FakeFocusEvent(),
     update: vi.fn((...[windowId]: [number, { focused?: boolean }]) => Promise.resolve({ id: windowId })),
   }
 

@@ -1,8 +1,8 @@
 // Run after `pnpm build`: the e2e test hook (src/sw/testHook.ts) must be in
-// the e2e build (TABTIMER_E2E=1) and nowhere in the production build, and
-// neither build may run in Incognito.
+// the e2e build (TABTIMER_E2E=1) and nowhere in the production build, both
+// must have the content script, and neither may run in Incognito.
 //   node scripts/check-build.ts
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { E2E, OUT_DIR } from '../build.e2e.ts'
 
@@ -15,6 +15,10 @@ function files(dir: string): string[] {
   })
 }
 
+if (!existsSync(path.join(OUT_DIR, 'content.js'))) {
+  console.error(`${OUT_DIR}: the content script (content.js) is missing.`)
+  process.exit(1)
+}
 const hits = files(OUT_DIR).filter((file) => readFileSync(file).includes(MARKER))
 if (E2E && hits.length === 0) {
   console.error(`${OUT_DIR}: the e2e build is missing its test hook (${MARKER}).`)

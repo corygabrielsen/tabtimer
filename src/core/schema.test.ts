@@ -5,12 +5,16 @@ import {
   dayTotal,
   emptyBuckets,
   expiredDayKeys,
+  normalizeClock,
   normalizeDay,
   normalizePrefs,
+  settleClock,
   siteTotal,
   snapScale,
   sumBuckets,
+  HOLD_MS,
   RETENTION_DAYS,
+  type ClockMark,
 } from './schema'
 
 const buckets = (byHour: Record<number, number>) => {
@@ -57,6 +61,55 @@ describe('retention', () => {
     // Tomorrow is kept: a time zone change moves the date by at most a day.
     expect(expiredDayKeys(keys, now, '2026-07-01')).toEqual([])
     expect(expiredDayKeys(keys, now, '2026-06-29')).toEqual([])
+  })
+
+  it('expires days written ahead no further than a window ahead', () => {
+    const keys = ['day:2026-07-30', 'day:2026-07-31', 'day:2027-06-30']
+    expect(expiredDayKeys(keys, now, '2027-06-30')).toEqual(['day:2026-07-30'])
+  })
+})
+
+describe('the clock mark', () => {
+  const now = new Date(2026, 5, 30, 9).getTime()
+  const DAY = 24 * 60 * 60_000
+  const trusted = (mark: ClockMark) => settleClock(mark, now).day === '2026-06-30'
+  const mark = (day: string | null, pending: ClockMark['pending'] = null) => normalizeClock({ day, pending })
+
+  it('reads garbage as no mark', () => {
+    for (const value of [undefined, 5, { day: 'x', pending: { day: '2026-06-30' } }]) {
+      expect(normalizeClock(value)).toEqual({ day: null, pending: null })
+    }
+    expect(normalizeClock({ day: '2026-06-30', pending: { day: '2026-07-01', since: 5 } })).toEqual({
+      day: '2026-06-30',
+      pending: { day: '2026-07-01', since: 5 },
+    })
+  })
+
+  it('trusts the same date, a day back, or up to two days on, and is unchanged on the same date', () => {
+    const same = mark('2026-06-30')
+    expect(settleClock(same, now)).toBe(same)
+    for (const day of ['2026-06-28', '2026-07-01']) {
+      expect(trusted(mark(day))).toBe(true)
+    }
+    for (const day of ['2026-06-27', '2026-07-02']) {
+      expect(trusted(mark(day))).toBe(false)
+    }
+  })
+
+  it('holds any other date pending, trusting it once the clock has run on from it for an hour', () => {
+    const pending = settleClock(mark('2025-06-30'), now)
+    expect(pending).toEqual({ day: '2025-06-30', pending: { day: '2026-06-30', since: now } })
+    expect(settleClock(pending, now + HOLD_MS - 1)).toBe(pending)
+    expect(settleClock(pending, now + HOLD_MS)).toEqual({ day: '2026-06-30', pending: null })
+    expect(settleClock(pending, now + 3 * DAY).day).toBe('2026-07-03')
+    // A clock gone back since restarts the wait.
+    expect(settleClock(pending, now - 2 * DAY)).toEqual({
+      day: '2025-06-30',
+      pending: { day: '2026-06-28', since: now - 2 * DAY },
+    })
+    expect(settleClock(pending, now - 1).pending).toEqual({ day: '2026-06-30', since: now - 1 })
+    // With no mark at all, every date waits.
+    expect(settleClock(mark(null), now)).toEqual({ day: null, pending: { day: '2026-06-30', since: now } })
   })
 })
 
