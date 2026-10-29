@@ -2,7 +2,7 @@
   "name": "tabtimer",
   "private": true,
   "version": "1.4.0",
-  "description": "A chrome extension to help you watch how much time you've spent on a website as an overlay.",
+  "description": "Counts your active time on the sites you choose and blocks them when you hit your daily limit.",
   "type": "module",
   "author": "Cory Gabrielsen <corygabrielsen@gmail.com>",
   "license": "MIT",
