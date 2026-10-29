@@ -5,7 +5,8 @@
 // Requests are untrusted input: the service worker accepts only what
 // parseRequest returns. A content script never names the site it reports
 // for; the service worker derives it from the sender's URL.
-import type { DayStamp } from './day'
+import { isDayStamp, type DayStamp } from './day'
+import { isBool, isFiniteNumber, isObject, type Raw } from './guards'
 import type { BlockScope, LimitEdit, Limits } from './limits'
 import { MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
 import type { Site } from './site'
@@ -81,11 +82,6 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
 
 export const MAX_LIMIT_MS = 1440 * 60_000
 
-type Raw = Record<string, unknown>
-
-const isObject = (v: unknown): v is Raw => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-
 // A plausible lowercase hostname. The service worker additionally checks it
 // is a site in canonical form (that needs the public suffix list).
 function isSiteString(v: unknown): v is Site {
@@ -98,12 +94,7 @@ export function parsePresence(raw: unknown): Presence | null {
     return null
   }
   const { visible, focused, media, blocked } = raw
-  if (
-    typeof visible !== 'boolean' ||
-    typeof focused !== 'boolean' ||
-    typeof media !== 'boolean' ||
-    typeof blocked !== 'boolean'
-  ) {
+  if (!isBool(visible) || !isBool(focused) || !isBool(media) || !isBool(blocked)) {
     return null
   }
   return { visible, focused, media, blocked }
@@ -116,13 +107,13 @@ export function parseStatePush(raw: unknown): TabState | null {
     return null
   }
   const s = raw.state
-  if (typeof s.site !== 'string' || typeof s.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.day)) {
+  if (typeof s.site !== 'string' || !isDayStamp(s.day)) {
     return null
   }
   if (!isFiniteNumber(s.asOf) || !isFiniteNumber(s.today) || !isFiniteNumber(s.globalToday)) {
     return null
   }
-  if (typeof s.running !== 'boolean' || (s.blockAt !== null && !isFiniteNumber(s.blockAt))) {
+  if (!isBool(s.running) || (s.blockAt !== null && !isFiniteNumber(s.blockAt))) {
     return null
   }
   let limit: TabState['limit'] = null
@@ -135,7 +126,7 @@ export function parseStatePush(raw: unknown): TabState | null {
   }
   return {
     site: s.site,
-    day: s.day as DayStamp,
+    day: s.day,
     asOf: s.asOf,
     today: s.today,
     globalToday: s.globalToday,
@@ -155,7 +146,7 @@ function parseLimitMs(v: unknown): number | null | undefined {
 function parsePrefs(raw: Raw): Partial<Prefs> | null {
   const prefs: Partial<Prefs> = {}
   if ('hidden' in raw) {
-    if (typeof raw.hidden !== 'boolean') {
+    if (!isBool(raw.hidden)) {
       return null
     }
     prefs.hidden = raw.hidden

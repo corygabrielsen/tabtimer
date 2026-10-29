@@ -22,6 +22,8 @@
 //     on time lost if the browser crashes).
 import type { IdleState } from './away'
 import type { Site } from './site'
+import { isBool, isFiniteNumber } from './guards'
+import { parsePresence } from './messages'
 
 // The checkpoint alarm's period.
 export const CHECKPOINT_MS = 60_000
@@ -94,22 +96,17 @@ export function initialTracker(): TrackerState {
   return { tabs: {}, open: null }
 }
 
-const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
-
 function normalizeAttest(v: unknown): Attest | null {
   const a = v as Partial<Attest> | null
   if (!a || typeof a !== 'object' || typeof a.site !== 'string' || typeof a.doc !== 'string') {
     return null
   }
-  if (!isFiniteNumber(a.windowId) || !isFiniteNumber(a.at)) {
+  const presence = parsePresence(a)
+  if (!isFiniteNumber(a.windowId) || !isFiniteNumber(a.at) || !presence) {
     return null
   }
-  if (!isBool(a.visible) || !isBool(a.focused) || !isBool(a.media) || !isBool(a.blocked)) {
-    return null
-  }
-  const { site, windowId, doc, at, visible, focused, media, blocked } = a
-  return { site, windowId, doc, at, visible, focused, media, blocked }
+  const { site, windowId, doc, at } = a
+  return { site, windowId, doc, at, ...presence }
 }
 
 function normalizeOpen(v: unknown): Open | null {

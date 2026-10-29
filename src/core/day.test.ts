@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { dayBefore, dayOf, hourOf, nextHour, nextMidnight, splitByHour, startOfDay } from './day'
+import {
+  addDays,
+  dayOf,
+  daysBetween,
+  hourOf,
+  isDayStamp,
+  nextHour,
+  splitByHour,
+  startOfDay,
+  type DayStamp,
+} from './day'
 
 const at = (...args: [number, number, number, number?, number?, number?]) => new Date(...args).getTime()
 
@@ -15,29 +25,6 @@ describe('startOfDay', () => {
   it('is the local midnight starting the day', () => {
     expect(startOfDay(at(2026, 5, 10, 12, 34, 56))).toBe(at(2026, 5, 10))
     expect(startOfDay(at(2026, 5, 10))).toBe(at(2026, 5, 10))
-  })
-})
-
-describe('nextMidnight', () => {
-  it('is the next local midnight, across month and year ends', () => {
-    expect(nextMidnight(at(2026, 5, 10, 12))).toBe(at(2026, 5, 11))
-    expect(nextMidnight(at(2026, 0, 31, 23, 59))).toBe(at(2026, 1, 1))
-    expect(nextMidnight(at(2026, 11, 31, 8))).toBe(at(2027, 0, 1))
-  })
-
-  it('is strictly after a midnight itself', () => {
-    expect(nextMidnight(at(2026, 5, 10))).toBe(at(2026, 5, 11))
-  })
-
-  it('lands on a calendar midnight every day of the year (DST-safe)', () => {
-    let t = at(2026, 0, 1, 12)
-    for (let i = 0; i < 366; i++) {
-      const next = nextMidnight(t)
-      const d = new Date(next)
-      expect([d.getHours(), d.getMinutes(), d.getSeconds()]).toEqual([0, 0, 0])
-      expect(dayOf(next)).not.toBe(dayOf(t))
-      t = next + 12 * 3600_000
-    }
   })
 })
 
@@ -80,10 +67,23 @@ describe('hourOf and nextHour', () => {
   })
 })
 
-describe('dayBefore', () => {
-  it('steps back whole calendar days, across months and years', () => {
-    expect(dayBefore(at(2026, 5, 10, 8), 0)).toBe('2026-06-10')
-    expect(dayBefore(at(2026, 2, 1, 8), 1)).toBe('2026-02-28')
-    expect(dayBefore(at(2026, 0, 5, 23, 59), 29)).toBe('2025-12-07')
+describe('calendar arithmetic', () => {
+  const d = (s: string) => s as DayStamp
+
+  it('adds days across months and years', () => {
+    expect(addDays(d('2026-10-28'), 4)).toBe('2026-11-01')
+    expect(addDays(d('2026-01-01'), -1)).toBe('2025-12-31')
+    expect(addDays(d('2028-02-28'), 1)).toBe('2028-02-29')
+  })
+
+  it('counts days between stamps', () => {
+    expect(daysBetween(d('2026-10-01'), d('2026-10-28'))).toBe(27)
+    expect(daysBetween(d('2026-10-28'), d('2026-10-01'))).toBe(-27)
+  })
+
+  it('recognizes stamps', () => {
+    expect(isDayStamp('2026-10-28')).toBe(true)
+    expect(isDayStamp('2026-1-28')).toBe(false)
+    expect(isDayStamp(20261028)).toBe(false)
   })
 })

@@ -12,6 +12,7 @@
 // has been no input for IDLE_DETECTION_S. The period is therefore dated
 // back to the last input (now - IDLE_DETECTION_MS), and time already
 // credited since then is taken back (the debit returned by observe()).
+import { isBool, isFiniteNumber } from './guards'
 
 // A stretch of time, [start, end) in epoch ms.
 export type Span = [start: number, end: number]
@@ -61,8 +62,6 @@ export function initialAway(): AwayState {
   return { state: 'active', since: 0, periods: [], recent: [] }
 }
 
-const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-
 export function isIdleState(v: unknown): v is IdleState {
   return typeof v === 'string' && (IDLE_STATES as readonly string[]).includes(v)
 }
@@ -83,7 +82,7 @@ function normalizeCredit(v: unknown): Credit | null {
   if (!c || typeof c !== 'object' || typeof c.site !== 'string' || !isFiniteNumber(c.start)) {
     return null
   }
-  if (!isFiniteNumber(c.end) || c.end <= c.start || typeof c.media !== 'boolean') {
+  if (!isFiniteNumber(c.end) || c.end <= c.start || !isBool(c.media)) {
     return null
   }
   return { site: c.site, start: c.start, end: c.end, media: c.media }

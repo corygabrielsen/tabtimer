@@ -17,14 +17,6 @@ export function startOfDay(epochMs: number): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
 
-// The next local midnight after `epochMs`. Day overflow normalizes across
-// months, and rebuilding from y/m/d (rather than adding 24h) stays correct on
-// DST-transition days where a local day is 23h or 25h long.
-export function nextMidnight(epochMs: number): number {
-  const date = new Date(epochMs)
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1, 0, 0, 0).getTime()
-}
-
 // The local wall-clock hour (0-23) containing `epochMs`.
 export function hourOf(epochMs: number): number {
   return new Date(epochMs).getHours()
@@ -57,9 +49,27 @@ export function splitByHour(start: number, end: number): HourSlice[] {
   return slices
 }
 
-// The local calendar day `days` days before the day containing `epochMs`
-// (calendar arithmetic, so DST days of 23h or 25h don't shift it).
-export function dayBefore(epochMs: number, days: number): DayStamp {
-  const date = new Date(epochMs)
-  return dayOf(new Date(date.getFullYear(), date.getMonth(), date.getDate() - days, 12).getTime())
+// --- Calendar arithmetic on stamps ------------------------------------------
+// Done in UTC, where every day is 24 h, so a DST change never shifts a date.
+
+// Whether `v` is a yyyy-mm-dd stamp.
+export function isDayStamp(v: unknown): v is DayStamp {
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+}
+
+// `day`'s midnight in UTC.
+export function utcOf(day: DayStamp): number {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
+  return Date.UTC(y, m - 1, d)
+}
+
+// The day `n` days after `day` (negative: before).
+export function addDays(day: DayStamp, n: number): DayStamp {
+  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10) as DayStamp
+}
+
+// Whole days from `from` to `to` (negative if `to` is earlier).
+export function daysBetween(from: DayStamp, to: DayStamp): number {
+  return Math.round((utcOf(to) - utcOf(from)) / 86_400_000)
 }

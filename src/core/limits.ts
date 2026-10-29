@@ -1,5 +1,6 @@
 // Pure (no chrome, no DOM). Stored under LIMITS_KEY (core/schema.ts); only
 // the service worker writes it, through applyLimit.
+import { isFiniteNumber, isObject } from './guards'
 
 // Daily time limits (all values in milliseconds, matching the stored "today"
 // focus totals). null / absent means no limit.
@@ -65,12 +66,12 @@ export function blockAt(
   return { at: Math.max(now + first.left, snoozeUntil), scope: first.scope, limit: first.limit }
 }
 
-const isLimit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
+const isLimit = (v: unknown): v is number => isFiniteNumber(v) && v > 0
 
 export function normalizeLimits(value: unknown): Limits {
   const l = (value ?? {}) as Partial<Limits>
   const perSite: Record<string, number> = {}
-  if (l.perSite && typeof l.perSite === 'object') {
+  if (isObject(l.perSite)) {
     for (const [site, ms] of Object.entries(l.perSite)) {
       if (isLimit(ms)) {
         perSite[site] = ms

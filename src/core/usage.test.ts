@@ -1,15 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import type { DayStamp } from './day'
-import { emptyBuckets, LIMITS_KEY, RETENTION_DAYS } from './schema'
+import { addDays, daysBetween, type DayStamp } from './day'
+import { emptyBuckets, oldestKept, LIMITS_KEY, RETENTION_DAYS } from './schema'
 import {
-  addDays,
   barTotal,
   change,
   countedDays,
   dailyAverage,
   dayBars,
   dayLabel,
-  daysBetween,
   daysFrom,
   hasAnyUsage,
   historyOf,
@@ -17,7 +15,6 @@ import {
   hourLabel,
   maxOffset,
   niceScale,
-  oldestKept,
   periodOf,
   periodTotal,
   rangeLabel,
@@ -61,18 +58,7 @@ describe('historyOf', () => {
   })
 })
 
-describe('calendar arithmetic', () => {
-  it('adds days across months and years', () => {
-    expect(addDays(d('2026-10-28'), 4)).toBe('2026-11-01')
-    expect(addDays(d('2026-01-01'), -1)).toBe('2025-12-31')
-    expect(addDays(d('2028-02-28'), 1)).toBe('2028-02-29')
-  })
-
-  it('counts days between stamps', () => {
-    expect(daysBetween(d('2026-10-01'), d('2026-10-28'))).toBe(27)
-    expect(daysBetween(d('2026-10-28'), d('2026-10-01'))).toBe(-27)
-  })
-
+describe('weeks', () => {
   it('finds weekdays and week starts', () => {
     expect(weekdayOf(d('2026-10-28'))).toBe(3) // a Wednesday
     expect(weekStartOf(d('2026-10-28'), 0)).toBe('2026-10-25')

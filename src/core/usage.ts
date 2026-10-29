@@ -3,8 +3,8 @@
 //
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
-import type { DayStamp } from './day'
-import { dayOfKey, normalizeDay, RETENTION_DAYS, HOURS_PER_DAY, type DayUsage } from './schema'
+import { addDays, daysBetween, utcOf, type DayStamp } from './day'
+import { dayOfKey, normalizeDay, oldestKept, RETENTION_DAYS, HOURS_PER_DAY, type DayUsage } from './schema'
 
 // Stored days by date. Days absent from the map had no usage.
 export type History = Map<DayStamp, DayUsage>
@@ -31,28 +31,7 @@ export function historyOf(items: Record<string, unknown>): History {
   return history
 }
 
-// --- Calendar arithmetic on stamps ------------------------------------------
-// Done in UTC, where every day is 24 h, so a DST change never shifts a date.
-
-function utcOf(day: DayStamp): number {
-  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
-  return Date.UTC(y, m - 1, d)
-}
-
-function stampOfUtc(ms: number): DayStamp {
-  return new Date(ms).toISOString().slice(0, 10) as DayStamp
-}
-
-// The day `n` days after `day` (negative: before).
-export function addDays(day: DayStamp, n: number): DayStamp {
-  const [y, m, d] = day.split('-').map(Number) as [number, number, number]
-  return stampOfUtc(Date.UTC(y, m - 1, d + n))
-}
-
-// Whole days from `from` to `to` (negative if `to` is earlier).
-export function daysBetween(from: DayStamp, to: DayStamp): number {
-  return Math.round((utcOf(to) - utcOf(from)) / 86_400_000)
-}
+// --- Weeks -------------------------------------------------------------------
 
 // 0 = Sunday … 6 = Saturday.
 export function weekdayOf(day: DayStamp): number {
@@ -68,11 +47,6 @@ export function weekStartOf(day: DayStamp, firstDay: number): DayStamp {
 // `count` consecutive days starting at `start`.
 export function daysFrom(start: DayStamp, count: number): DayStamp[] {
   return Array.from({ length: count }, (_, i) => addDays(start, i))
-}
-
-// The oldest day still kept on `today` (core/schema.ts RETENTION_DAYS).
-export function oldestKept(today: DayStamp): DayStamp {
-  return addDays(today, -(RETENTION_DAYS - 1))
 }
 
 // --- Bars --------------------------------------------------------------------
