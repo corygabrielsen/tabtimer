@@ -148,12 +148,19 @@ test('leaves fullscreen when the limit is hit, and stays out of it', async ({ co
   await expect.poll(() => fullscreen(page)).toBe(false)
 
   // The page's own shortcut (a keypress is a user gesture) can't take it
-  // back into fullscreen while blocked.
+  // back into fullscreen while blocked. Whether Chromium grants that request
+  // for a moment is timing-dependent, so assert the attempt happened and that
+  // the page stays out of fullscreen with the block screen on top, not that
+  // the request succeeded.
   await page.keyboard.press('f')
   await expect
-    .poll(() => page.evaluate(() => (window as unknown as { fullscreenEntries: number }).fullscreenEntries))
-    .toBe(2)
-  await expect.poll(() => fullscreen(page)).toBe(false)
+    .poll(() => page.evaluate(() => (window as unknown as { fullscreenAttempts: number }).fullscreenAttempts))
+    .toBeGreaterThanOrEqual(2)
+  await expect(async () => {
+    expect(await fullscreen(page)).toBe(false)
+    await page.waitForTimeout(500)
+    expect(await fullscreen(page)).toBe(false)
+  }).toPass()
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   expect(await page.evaluate(() => document.elementFromPoint(5, 5)?.id)).toBe(BLOCK_ID)
 })

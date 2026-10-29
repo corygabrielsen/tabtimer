@@ -59,8 +59,8 @@ const SCROLL_PAGES: Record<string, string> = {
 
 // Every *.test host resolves to the fixture server. Any path serves a plain
 // page; /interactive adds focusable controls, looping audio, and a way into
-// fullscreen (the button, or the F key like a video player), counting entries
-// in window.fullscreenEntries. SCROLL_PAGES serve scrolling layouts.
+// fullscreen (the button, or the F key like a video player), counting requests
+// in window.fullscreenAttempts and entries in window.fullscreenEntries. SCROLL_PAGES serve scrolling layouts.
 function startServer(): Promise<Server> {
   const wav = silentWav()
   const server = createServer((req, res) => {
@@ -78,8 +78,12 @@ function startServer(): Promise<Server> {
           '<button id="fullscreen-button">fullscreen</button>' +
           `<script>
             window.fullscreenEntries = 0
+            window.fullscreenAttempts = 0
             window.pageClicks = 0
-            const enter = () => document.documentElement.requestFullscreen().catch(() => {})
+            const enter = () => {
+              window.fullscreenAttempts++
+              document.documentElement.requestFullscreen().catch(() => {})
+            }
             document.getElementById('fullscreen-button').addEventListener('click', enter)
             document.getElementById('page-button').addEventListener('click', () => window.pageClicks++)
             document.addEventListener('keydown', (e) => e.key === 'f' && enter())
