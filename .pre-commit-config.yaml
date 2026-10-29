@@ -5,6 +5,7 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        args: [--allow-multiple-documents] # pnpm 11+ lockfile
   - repo: local
     hooks:
       - id: typecheck

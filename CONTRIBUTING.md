@@ -4,7 +4,11 @@ Thanks for your interest in Tab Timer.
 
 ## Setup
 
+Requires pnpm 12 (pinned via `packageManager` in `package.json`). Node 25+
+no longer bundles Corepack, so install pnpm with npm:
+
 ```sh
+npm i -g pnpm@12      # once
 pnpm install          # Node >= 24 (see .nvmrc)
 pnpm dev              # Vite dev server
 pnpm build            # production build to dist/
