@@ -18,6 +18,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:e2e": "TABTIMER_E2E=1 pnpm run build && playwright test"
   },
   "engines": {
@@ -29,8 +30,10 @@
     "@playwright/test": "^1.64.1",
     "@types/chrome": "^0.3.6",
     "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "5.0.5",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.9.10",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.0",
