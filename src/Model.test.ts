@@ -218,13 +218,12 @@ describe('resets', () => {
     expect((await model.readElapsed()).focus.elapsed).toBe(seconds(10))
   })
 
-  // B8 (found by this suite): reset() zeroes the timers before advancing
-  // resetTimersAtTime; stopping the focus timer invokes reportElapsed →
-  // maybeRollover → isResetTime() is still true → reset() again, until the
-  // stack overflows. Any rollover detected *after* the boundary (the fallback
-  // path, or a midnight setTimeout that fires even 1ms late) crashes, and
-  // readElapsed() then throws synchronously on every call.
-  it.fails('B8: rolls over even if the midnight timer never fired (sleep across midnight)', async () => {
+  // B8: reset() used to zero the timers before advancing resetTimersAtTime;
+  // stopping the focus timer invoked reportElapsed → maybeRollover → reset()
+  // again until the stack overflowed, so any rollover noticed after the
+  // boundary (sleep across midnight, or a midnight timeout firing late)
+  // crashed and readElapsed() threw on every call.
+  it('B8: rolls over even if the midnight timer never fired (sleep across midnight)', async () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 0, 0))
     const model = started()
     await vi.advanceTimersByTimeAsync(minutes(1))
@@ -234,7 +233,7 @@ describe('resets', () => {
     expect(model.getTodayKey()).toBe(todayKeyForHost('reddit.com', new Date(2026, 5, 11)))
   })
 
-  it.fails('B8: a midnight timer that fires late still rolls the day over', async () => {
+  it('B8: a midnight timer that fires late still rolls the day over', async () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 30))
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(20))

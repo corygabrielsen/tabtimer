@@ -234,9 +234,13 @@ export default class Model {
   }
 
   reset(): void {
+    // Advance the boundary first. Resetting the timers stops the focus timer,
+    // whose tick callback (reportElapsed) re-checks maybeRollover(); with the
+    // old boundary still in place that re-entered reset() until the stack
+    // overflowed whenever the rollover was noticed after midnight.
+    this.resetTimersAtTime = this.getResetTime()
     this.resetTimers()
     void this.resetStorageValues()
-    this.resetTimersAtTime = this.getResetTime()
 
     if (this.resetTimeoutId !== null) {
       clearTimeout(this.resetTimeoutId)
