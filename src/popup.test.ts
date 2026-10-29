@@ -1,14 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { HIDDEN_KEY, todayKeyForHost } from './storage'
-import { LIMITS_KEY, BLOCK_SNOOZE_KEY } from './core/limits'
-import { originsForHost } from './sites'
+import { LIMITS_KEY, PREFS_KEY, SNOOZE_KEY } from './core/schema'
+import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { click, flush, loadPageBody } from './test/dom'
-import { startBackground } from './test/content'
+import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 
 let browser: FakeChrome
-const TODAY_KEY = todayKeyForHost('reddit.com')
 const MIN = 60_000
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
@@ -48,6 +46,7 @@ const storedLimits = () => browser.storage.local.data[LIMITS_KEY]
 
 beforeEach(async () => {
   browser = fakeChrome()
+  browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('popup.html') }
   await startBackground()
 })
 
@@ -95,7 +94,7 @@ describe('popup on a site not yet tracked', () => {
     await openPopup({ id: 7, url: 'https://old.reddit.com/r/all' })
     click($('enable-btn'))
     await flush()
-    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForHost('reddit.com') })
+    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForSite('reddit.com') })
     expect(browser.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js'] })
     expect(visibleSection()).toEqual(['tracked'])
   })
@@ -126,11 +125,11 @@ describe('popup on a site not yet tracked', () => {
 
 describe('popup on a tracked site', () => {
   beforeEach(() => {
-    browser.granted = new Set(originsForHost('reddit.com'))
+    browser.granted = new Set(originsForSite('reddit.com'))
   })
 
   it('shows the site and today’s total across tabs', async () => {
-    browser.storage.local.seed({ [TODAY_KEY]: 65_000 })
+    seedToday({ 'reddit.com': 65_000 })
     await openReddit()
     expect(visibleSection()).toEqual(['tracked'])
     expect($('site').textContent).toBe('reddit.com')
@@ -139,7 +138,7 @@ describe('popup on a tracked site', () => {
 
   it('updates live while open', async () => {
     await openReddit()
-    browser.storage.local.seed({ [TODAY_KEY]: 3_600_000 })
+    seedToday({ 'reddit.com': 3_600_000 })
     await flush()
     expect($('today').textContent).toBe('01:00:00')
   })
@@ -162,7 +161,7 @@ describe('popup on a tracked site', () => {
     it('under the site limit: meter and time left', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 * MIN } },
-        [TODAY_KEY]: 23 * MIN,
+        ...dayEntry({ 'reddit.com': 23 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('ok')
@@ -180,7 +179,7 @@ describe('popup on a tracked site', () => {
     it('over the site limit: limit reached, by how much', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
-        [TODAY_KEY]: 48 * MIN,
+        ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('over')
@@ -192,8 +191,7 @@ describe('popup on a tracked site', () => {
     it('over the all-sites cap only: names the cap', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 30 * MIN, perSite: {} },
-        [TODAY_KEY]: 10 * MIN,
-        [todayKeyForHost('x.com')]: 25 * MIN,
+        ...dayEntry({ 'reddit.com': 10 * MIN, 'x.com': 25 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('over')
@@ -204,8 +202,7 @@ describe('popup on a tracked site', () => {
     it('with only an all-sites cap: the meter follows the cap', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 180 * MIN, perSite: {} },
-        [TODAY_KEY]: 12 * MIN,
-        [todayKeyForHost('x.com')]: 48 * MIN,
+        ...dayEntry({ 'reddit.com': 12 * MIN, 'x.com': 48 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('ok')
@@ -216,8 +213,7 @@ describe('popup on a tracked site', () => {
     it('with both limits: the all-sites total gets its own line', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 180 * MIN, perSite: { 'reddit.com': 60 * MIN } },
-        [TODAY_KEY]: 20 * MIN,
-        [todayKeyForHost('x.com')]: 65 * MIN,
+        ...dayEntry({ 'reddit.com': 20 * MIN, 'x.com': 65 * MIN }),
       })
       await openReddit()
       expect($('global-line').hidden).toBe(false)
@@ -227,8 +223,8 @@ describe('popup on a tracked site', () => {
     it('snoozed: still over, says when blocking resumes', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
-        [TODAY_KEY]: 48 * MIN,
-        [BLOCK_SNOOZE_KEY]: Date.now() + 4 * MIN,
+        ...dayEntry({ 'reddit.com': 48 * MIN }),
+        [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
       expect(face()).toBe('snoozed')
@@ -237,7 +233,7 @@ describe('popup on a tracked site', () => {
     })
 
     it('follows limit changes made elsewhere', async () => {
-      browser.storage.local.seed({ [TODAY_KEY]: 20 * MIN })
+      seedToday({ 'reddit.com': 20 * MIN })
       await openReddit()
       expect(face()).toBe('open')
       browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 10 * MIN } } })
@@ -252,8 +248,8 @@ describe('popup on a tracked site', () => {
     try {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
-        [TODAY_KEY]: 48 * MIN,
-        [BLOCK_SNOOZE_KEY]: Date.now() + 4 * MIN,
+        ...dayEntry({ 'reddit.com': 48 * MIN }),
+        [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
       expect(text('summary')).toContain('Blocking resumes in 4 min.')
@@ -283,7 +279,7 @@ describe('popup on a tracked site', () => {
 
   describe('reset today', () => {
     beforeEach(() => {
-      browser.storage.local.seed({ [TODAY_KEY]: 65_000, [todayKeyForHost('x.com')]: 5 })
+      seedToday({ 'reddit.com': 65_000, 'x.com': 5 })
     })
 
     it('asks for a second click before resetting', async () => {
@@ -294,7 +290,7 @@ describe('popup on a tracked site', () => {
       await flush()
       expect(btn.textContent).toBe('Click again to reset')
       expect(btn.getAttribute('aria-label')).toBe("Confirm: reset today's time for reddit.com")
-      expect(browser.storage.local.data[TODAY_KEY]).toBe(65_000)
+      expect(storedToday('reddit.com')).toBe(65_000)
     })
 
     it('resets only this site on the second click', async () => {
@@ -303,8 +299,8 @@ describe('popup on a tracked site', () => {
       click($('reset-btn'))
       expect($('today').textContent).toBe('00:00:00') // optimistic
       await flush()
-      expect(browser.storage.local.data[TODAY_KEY]).toBe(0)
-      expect(browser.storage.local.data[todayKeyForHost('x.com')]).toBe(5)
+      expect(storedToday('reddit.com')).toBe(0)
+      expect(storedToday('x.com')).toBe(5)
       expect($('reset-btn').textContent).toBe('Reset today')
     })
 
@@ -315,7 +311,7 @@ describe('popup on a tracked site', () => {
       expect($('reset-btn').textContent).toBe('Reset today')
       click($('reset-btn'))
       await flush()
-      expect(browser.storage.local.data[TODAY_KEY]).toBe(65_000)
+      expect(storedToday('reddit.com')).toBe(65_000)
     })
 
     it('disarms by itself after a few seconds', async () => {
@@ -339,10 +335,10 @@ describe('popup on a tracked site', () => {
       expect(sw.getAttribute('aria-checked')).toBe('true')
       click(sw)
       await flush()
-      expect(browser.storage.local.data[HIDDEN_KEY]).toBe(true)
+      expect((browser.storage.local.data[PREFS_KEY] as { hidden: boolean }).hidden).toBe(true)
       expect(sw.getAttribute('aria-checked')).toBe('false')
       // Shown again from elsewhere (the overlay itself / another popup).
-      browser.storage.local.seed({ [HIDDEN_KEY]: false })
+      browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1 } })
       await flush()
       expect(sw.getAttribute('aria-checked')).toBe('true')
     })

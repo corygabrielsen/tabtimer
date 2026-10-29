@@ -1,4 +1,4 @@
-import { test, expect, read, seed, todayKey, LIMITS_KEY, OVERLAY_ID, BLOCK_ID } from './fixtures'
+import { test, expect, readToday, seed, LIMITS_KEY, OVERLAY_ID, BLOCK_ID } from './fixtures'
 
 // Time accounting in a real tab: how much focus time reaches storage across
 // re-injection and navigation.
@@ -6,7 +6,6 @@ import { test, expect, read, seed, todayKey, LIMITS_KEY, OVERLAY_ID, BLOCK_ID } 
 const SITE_A = 'site-a.test'
 
 test('B5: re-enabling a site without a reload counts focus time once', async ({ context, serviceWorker, site }) => {
-  const key = await todayKey(serviceWorker, SITE_A)
   const page = await context.newPage()
   const start = Date.now()
   await page.goto(site(SITE_A))
@@ -29,7 +28,7 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
   await page.waitForTimeout(500)
 
   // One tab, focused the whole time: at most its wall-clock lifetime.
-  const total = Number(await read(serviceWorker, key))
+  const total = await readToday(serviceWorker, SITE_A)
   expect(total).toBeGreaterThan(wall / 2)
   expect(total).toBeLessThanOrEqual(wall)
 })
@@ -39,8 +38,7 @@ test('B9: a page restored from the back/forward cache keeps tracking and blockin
   serviceWorker,
   site,
 }) => {
-  const key = await todayKey(serviceWorker, SITE_A)
-  const stored = async () => Number((await read(serviceWorker, key)) ?? 0)
+  const stored = () => readToday(serviceWorker, SITE_A)
   const page = await context.newPage()
   await page.goto(site(SITE_A, '/one'))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()

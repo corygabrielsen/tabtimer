@@ -1,15 +1,16 @@
 import type FocusTracker from './FocusTracker'
-import { baseHost, readLimits, readSnoozeUntil, snoozeBlocking } from '../storage'
+import { chromeStore } from '../chrome/store'
+import { bus as chromeBus } from '../chrome/bus'
 import {
+  DEFAULT_LIMITS,
   SNOOZE_MS,
   evaluateLimits,
   normalizeLimits,
-  LIMITS_KEY,
-  BLOCK_SNOOZE_KEY,
   type BlockReason,
   type Limits,
 } from '../core/limits'
-import { sendMessage } from '../messages'
+import { LIMITS_KEY, SNOOZE_KEY, normalizeSnooze } from '../core/schema'
+import type { Bus, Store, StoreChanges } from '../ports'
 import { formatTime } from '../format'
 import { t } from '../i18n'
 
@@ -137,8 +138,9 @@ export default class BlockScreen {
   private detailLine: HTMLDivElement
   private snoozeButton: HTMLButtonElement
   private manageButton: HTMLButtonElement
-  private siteHost: string
-  private limits: Limits = { global: null, perSite: {} }
+  private site = ''
+  private limits: Limits = DEFAULT_LIMITS
+  private unsubscribeStore: () => void
   private snoozeUntil = 0
   private blocked = false
   // Where focus was before blocking, restored on dismissal.
@@ -151,9 +153,11 @@ export default class BlockScreen {
   private frozenWindow: ScrollPosition | null = null
   private frozenElements = new Map<Element, ScrollPosition>()
 
-  constructor(private tracker: FocusTracker) {
-    this.siteHost = baseHost(window.location.hostname)
-
+  constructor(
+    private tracker: FocusTracker,
+    private bus: Bus = chromeBus,
+    private store: Store = chromeStore('local')
+  ) {
     document.getElementById(HOST_ID)?.remove()
     this.host = document.createElement('div')
     this.host.id = HOST_ID
@@ -197,7 +201,7 @@ export default class BlockScreen {
     this.snoozeButton.textContent = t('blockSnooze', String(Math.round(SNOOZE_MS / 60_000)))
     this.snoozeButton.addEventListener('click', () => {
       this.unblock()
-      void snoozeBlocking()
+      void this.bus.send('snooze', {})
     })
 
     this.manageButton = document.createElement('button')
@@ -205,7 +209,7 @@ export default class BlockScreen {
     this.manageButton.className = 'manage'
     this.manageButton.textContent = t('blockManage')
     this.manageButton.addEventListener('click', () => {
-      void sendMessage({ type: 'openOptions' }).catch(() => undefined)
+      void this.bus.send('openOptions', {})
     })
 
     box.append(title, this.hostLine, this.detailLine, this.snoozeButton, this.manageButton)
@@ -214,34 +218,35 @@ export default class BlockScreen {
     document.body.appendChild(this.host)
 
     void this.refresh()
-    chrome.storage.onChanged.addListener(this.handleStorageChange)
+    this.unsubscribeStore = this.store.onChanged(this.handleStorageChange)
   }
 
   // Re-read limits and snooze state, then re-evaluate.
   async refresh(): Promise<void> {
-    this.limits = await readLimits()
-    this.snoozeUntil = await readSnoozeUntil()
+    const [limits, snoozeUntil] = await Promise.all([
+      this.store.get(LIMITS_KEY).catch(() => undefined),
+      this.store.get(SNOOZE_KEY).catch(() => undefined),
+    ])
+    this.limits = normalizeLimits(limits)
+    this.snoozeUntil = normalizeSnooze(snoozeUntil)
     await this.tick()
   }
 
   // Called each second by the controller (visible tab only) and on pref change.
   async tick(): Promise<void> {
-    const siteLimit = this.limits.perSite[this.siteHost]
-    const hasSite = typeof siteLimit === 'number' && siteLimit > 0
-    const hasGlobal = typeof this.limits.global === 'number' && this.limits.global > 0
-    if ((!hasSite && !hasGlobal) || Date.now() < this.snoozeUntil) {
+    const hasAny = this.limits.global !== null || Object.keys(this.limits.perSite).length > 0
+    if (!hasAny || Date.now() < this.snoozeUntil) {
       this.unblock()
       return
     }
-
-    const siteToday = hasSite
-      ? await this.tracker
-          .readElapsed()
-          .then((e) => e.today.elapsed)
-          .catch(() => 0)
-      : 0
-    const globalToday = hasGlobal ? await this.tracker.readGlobalToday().catch(() => 0) : 0
-    const reason = evaluateLimits(this.limits, this.siteHost, siteToday, globalToday)
+    // The site and totals come from the service worker and storage; until
+    // they can be read there is nothing to compare against.
+    const totals = await this.tracker.readTotals().catch(() => null)
+    if (!totals) {
+      return
+    }
+    this.site = totals.site ?? ''
+    const reason = evaluateLimits(this.limits, this.site, totals.siteToday, totals.globalToday)
     if (reason) {
       this.block(reason)
     } else {
@@ -250,7 +255,7 @@ export default class BlockScreen {
   }
 
   private block(reason: BlockReason) {
-    this.hostLine.textContent = reason.scope === 'site' ? this.siteHost : t('blockAllSites')
+    this.hostLine.textContent = reason.scope === 'site' ? this.site : t('blockAllSites')
     this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
     if (this.blocked) {
       return
@@ -292,7 +297,7 @@ export default class BlockScreen {
       this.tracker.setBlocked(false)
       this.removePageListeners()
     }
-    chrome.storage.onChanged.removeListener(this.handleStorageChange)
+    this.unsubscribeStore()
     this.restoreScroll()
     this.host.remove()
     this.restoreFocus()
@@ -510,17 +515,14 @@ export default class BlockScreen {
     next.focus({ preventScroll: true })
   }
 
-  private handleStorageChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-    if (areaName !== 'local') {
-      return
-    }
+  private handleStorageChange = (changes: StoreChanges) => {
     let dirty = false
     if (changes[LIMITS_KEY]) {
       this.limits = normalizeLimits(changes[LIMITS_KEY].newValue)
       dirty = true
     }
-    if (changes[BLOCK_SNOOZE_KEY]) {
-      this.snoozeUntil = Number(changes[BLOCK_SNOOZE_KEY].newValue) || 0
+    if (changes[SNOOZE_KEY]) {
+      this.snoozeUntil = normalizeSnooze(changes[SNOOZE_KEY].newValue)
       dirty = true
     }
     if (dirty) {

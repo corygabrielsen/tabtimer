@@ -3,11 +3,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
-import { LIMITS_KEY, BLOCK_SNOOZE_KEY, SNOOZE_MS, type Limits } from '../core/limits'
-import { todayKeyForHost } from '../storage'
+import { SNOOZE_MS, type Limits } from '../core/limits'
+import { LIMITS_KEY, SNOOZE_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, text, trackShadowRoots } from '../test/dom'
-import { disposeTrackers, minutes, startBackground, trackTracker, useClock } from '../test/content'
+import { disposeTrackers, minutes, seedToday, startBackground, trackTracker, useClock } from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 
@@ -20,7 +20,7 @@ function limits(l: Partial<Limits>): void {
 }
 
 function logged(host: string, ms: number): void {
-  browser.storage.local.seed({ [todayKeyForHost(host)]: ms })
+  seedToday({ [host]: ms })
 }
 
 async function mount(): Promise<BlockScreen> {
@@ -119,7 +119,7 @@ describe('deciding to block', () => {
   it('does not count earlier days toward the global cap', async () => {
     limits({ global: minutes(60) })
     logged('reddit.com', minutes(10))
-    browser.storage.local.seed({ [todayKeyForHost('x.com', new Date(2026, 5, 9))]: minutes(500) })
+    seedToday({ 'x.com': minutes(500) }, new Date(2026, 5, 9, 12))
     await mount()
     expect(isBlocked()).toBe(false)
   })
@@ -205,7 +205,7 @@ describe('snooze', () => {
     click(snoozeButton())
     expect(isBlocked()).toBe(false)
     await flush()
-    expect(browser.storage.local.data[BLOCK_SNOOZE_KEY]).toBe(Date.now() + SNOOZE_MS)
+    expect(browser.storage.local.data[SNOOZE_KEY]).toBe(Date.now() + SNOOZE_MS)
 
     await vi.advanceTimersByTimeAsync(SNOOZE_MS - 1000)
     await blocker.tick()
@@ -219,13 +219,13 @@ describe('snooze', () => {
   it('applies a snooze taken in another tab', async () => {
     await mount()
     expect(isBlocked()).toBe(true)
-    browser.storage.local.seed({ [BLOCK_SNOOZE_KEY]: Date.now() + SNOOZE_MS })
+    browser.storage.local.seed({ [SNOOZE_KEY]: Date.now() + SNOOZE_MS })
     await flush()
     expect(isBlocked()).toBe(false)
   })
 
   it('honours a snooze already running when the page loads', async () => {
-    browser.storage.local.seed({ [BLOCK_SNOOZE_KEY]: Date.now() + 60_000 })
+    browser.storage.local.seed({ [SNOOZE_KEY]: Date.now() + 60_000 })
     await mount()
     expect(isBlocked()).toBe(false)
   })

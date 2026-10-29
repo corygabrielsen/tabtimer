@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.x.com/home"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { LIMITS_KEY } from '../core/limits'
-import { todayKeyForHost } from '../storage'
+import { LIMITS_KEY } from '../core/schema'
 import { fakeChrome } from '../test/chrome'
 import { flush, setPageState, trackShadowRoots } from '../test/dom'
-import { minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
+import { dayKeyOf, minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
 
 let shadowOf: (id: string) => ShadowRoot
 
@@ -142,7 +141,7 @@ describe('content script', () => {
     // While frozen, another tab logs time and a limit is set; a frozen page
     // gets no storage.onChanged for either.
     const data = fakeChrome().storage.local.data
-    data[todayKeyForHost('x.com')] = minutes(10)
+    data[dayKeyOf()] = { 'x.com': [minutes(10)] }
     data[LIMITS_KEY] = { global: null, perSite: { 'x.com': minutes(5) } }
 
     setPageState({ hidden: false })

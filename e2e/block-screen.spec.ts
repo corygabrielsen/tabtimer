@@ -3,7 +3,7 @@ import {
   test,
   expect,
   seed,
-  todayKey,
+  today,
   shadowAttribute,
   clickInShadow,
   LIMITS_KEY,
@@ -30,7 +30,7 @@ async function blockedPage(context: import('@playwright/test').BrowserContext, u
 }
 
 test('takes focus on the snooze button, and gives it back on dismissal', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
   const block = page.locator(`#${BLOCK_ID}`)
 
@@ -48,7 +48,7 @@ test('restores focus to the page control that had it', async ({ context, service
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
   await page.focus('#page-button')
 
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
 
@@ -58,7 +58,7 @@ test('restores focus to the page control that had it', async ({ context, service
 })
 
 test('is modal and traps Tab', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
 
   const focused: (string | undefined)[] = []
@@ -71,7 +71,7 @@ test('is modal and traps Tab', async ({ context, serviceWorker, site }) => {
 })
 
 test('keeps the page out of reach of clicks and assistive tech', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
 
   // A real click where the page's button is lands on the block screen.
@@ -97,7 +97,7 @@ test('keeps the page out of reach of clicks and assistive tech', async ({ contex
 })
 
 test('Escape does not dismiss it', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
   // Twice: Chromium lets a second, unactivated close request through.
   await page.keyboard.press('Escape')
@@ -109,7 +109,7 @@ test('Escape does not dismiss it', async ({ context, serviceWorker, site }) => {
 })
 
 test('pauses playing media and keeps it paused', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
   const page = await context.newPage()
   await page.goto(site(SITE_A, '/interactive'))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
@@ -134,7 +134,7 @@ test('pauses playing media and keeps it paused', async ({ context, serviceWorker
 })
 
 test('leaves fullscreen when the limit is hit, and stays out of it', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
   const page = await context.newPage()
   await page.goto(site(SITE_A, '/interactive'))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
@@ -207,7 +207,7 @@ for (const [layout, path] of [
   ['an inner app-shell element', '/scroll-inner'],
 ] as const) {
   test(`keeps a page that scrolls ${layout} from scrolling while blocked`, async ({ context, serviceWorker, site }) => {
-    await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+    await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
     const page = await context.newPage()
     await page.goto(site(SITE_A, path))
     await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
@@ -248,7 +248,7 @@ for (const [layout, path] of [
 }
 
 test('is fully opaque over a bright page, in light and dark', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { ...BLOCKING, [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/scroll-document'))
   expect(await page.evaluate((id) => getComputedStyle(document.getElementById(id)!).backgroundColor, BLOCK_ID)).toBe(
     'rgb(0, 0, 0)'

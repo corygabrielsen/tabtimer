@@ -1,6 +1,7 @@
 // Interfaces between the extension's logic and the browser. Pure code (src/core)
 // depends on none of them; the rest reaches chrome.* through these, with the
 // chrome-backed implementations in src/chrome.
+import type { Contract, MessageType, Response } from './core/messages'
 
 export type StoreChanges = Record<string, { oldValue?: unknown; newValue?: unknown }>
 
@@ -19,4 +20,10 @@ export interface Store {
 export interface Clock {
   // Epoch milliseconds.
   now(): number
+}
+
+// Request/response messaging to the service worker. Never rejects: a failure
+// is a Response with ok: false.
+export interface Bus {
+  send<K extends MessageType>(type: K, req: Contract[K]['req']): Promise<Response<K>>
 }

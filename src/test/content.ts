@@ -2,7 +2,9 @@
 // single-writer, and teardown for FocusTrackers.
 import { vi } from 'vitest'
 import FocusTracker from '../content/FocusTracker'
-import { todayKeyForHost } from '../storage'
+import { dayOf } from '../core/day'
+import { dayKey, emptyBuckets, normalizeDay, siteTotal } from '../core/schema'
+import { siteOf } from '../core/site'
 import { fakeChrome } from './chrome'
 import { resetPageState } from './dom'
 
@@ -33,8 +35,39 @@ export function disposeTrackers(): void {
   }
 }
 
-export function storedToday(host = window.location.hostname, date = new Date()): number {
-  return (fakeChrome().storage.local.data[todayKeyForHost(host, date)] as number | undefined) ?? 0
+// The stored day:* key for the local day containing `date`.
+export function dayKeyOf(date: Date = new Date()): string {
+  return dayKey(dayOf(date.getTime()))
+}
+
+// A site's stored time on the day of `date` (default: this page's site today).
+export function storedToday(site = siteOf(window.location.hostname), date = new Date()): number {
+  return siteTotal(normalizeDay(fakeChrome().storage.local.data[dayKeyOf(date)]), site)
+}
+
+// A day:* entry holding sites' time (each in the hour of `date`), for
+// seeding storage alongside other keys.
+export function dayEntry(sites: Record<string, number>, date = new Date()): Record<string, unknown> {
+  const usage: Record<string, number[]> = {}
+  for (const [site, ms] of Object.entries(sites)) {
+    usage[site] = emptyBuckets()
+    usage[site][date.getHours()] = ms
+  }
+  return { [dayKeyOf(date)]: usage }
+}
+
+// Store sites' time for the day of `date` (in that hour's bucket), keeping
+// other sites' time that day. Writes like the service worker would.
+export function seedToday(sites: Record<string, number>, date = new Date()): void {
+  const local = fakeChrome().storage.local
+  const key = dayKeyOf(date)
+  const usage = normalizeDay(local.data[key])
+  for (const [site, ms] of Object.entries(sites)) {
+    const buckets = emptyBuckets()
+    buckets[date.getHours()] = ms
+    usage[site] = buckets
+  }
+  local.seed({ [key]: usage })
 }
 
 export const minutes = (n: number) => n * 60_000

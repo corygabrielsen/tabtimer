@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { LIMITS_KEY } from './core/limits'
-import { HIDDEN_KEY, SCALE_KEY, todayKeyForHost } from './storage'
-import { SUGGESTED_SITES, originsForHost } from './sites'
+import { LIMITS_KEY, PREFS_KEY } from './core/schema'
+import { SUGGESTED_SITES, originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { click, flush, loadPageBody } from './test/dom'
+import { dayEntry, seedToday, startBackground } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
@@ -20,7 +20,7 @@ async function openOptions(): Promise<void> {
 }
 
 const grant = (...hosts: string[]) => {
-  browser.granted = new Set(hosts.flatMap(originsForHost))
+  browser.granted = new Set(hosts.flatMap(originsForSite))
 }
 
 // The Tracking table, one row per tracked site, keyed by host.
@@ -60,8 +60,12 @@ function submitAdd(value: string): Event {
 
 const storedLimits = () => browser.storage.local.data[LIMITS_KEY]
 
-beforeEach(() => {
+const prefs = () => browser.storage.local.data[PREFS_KEY] as { hidden: boolean; scale: number } | undefined
+
+beforeEach(async () => {
   browser = fakeChrome()
+  browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('options.html') }
+  await startBackground()
 })
 
 describe('tracked sites', () => {
@@ -102,8 +106,7 @@ describe('tracked sites', () => {
     grant('reddit.com', 'x.com')
     browser.storage.local.seed({
       [LIMITS_KEY]: { global: null, perSite: { 'x.com': 10 * MIN } },
-      [todayKeyForHost('reddit.com')]: 23 * MIN,
-      [todayKeyForHost('x.com')]: 12 * MIN,
+      ...dayEntry({ 'reddit.com': 23 * MIN, 'x.com': 12 * MIN }),
     })
     await openOptions()
     expect(todayCell('reddit.com')?.textContent).toBe('23 min')
@@ -116,7 +119,7 @@ describe('tracked sites', () => {
   it('updates today’s time live, and when a limit changes', async () => {
     grant('reddit.com')
     await openOptions()
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: 125 * MIN })
+    seedToday({ 'reddit.com': 125 * MIN })
     await flush()
     expect(todayCell('reddit.com')?.textContent).toBe('2 h 05 min')
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 * MIN } } })
@@ -130,7 +133,7 @@ describe('tracked sites', () => {
     expect(youtube?.getAttribute('aria-label')).toBe('Track YouTube (youtube.com)')
     click(youtube)
     await flush()
-    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForHost('youtube.com') })
+    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForSite('youtube.com') })
     expect(trackedHosts()).toEqual(['youtube.com'])
     expect(chip('youtube.com')).toBeUndefined()
     // YouTube was the last chip; focus lands on the new last one.
@@ -170,8 +173,8 @@ describe('tracked sites', () => {
     expect(trackedHosts()).toEqual(['alpha.org', 'beta.org'])
     click(stopButton('beta.org'))
     await flush()
-    expect(browser.permissions.remove).toHaveBeenCalledExactlyOnceWith({ origins: originsForHost('beta.org') })
-    expect(browser.granted).toEqual(new Set(originsForHost('alpha.org')))
+    expect(browser.permissions.remove).toHaveBeenCalledExactlyOnceWith({ origins: originsForSite('beta.org') })
+    expect(browser.granted).toEqual(new Set(originsForSite('alpha.org')))
     expect(trackedHosts()).toEqual(['alpha.org'])
   })
 
@@ -179,7 +182,7 @@ describe('tracked sites', () => {
     await openOptions()
     click($('enable-suggested'))
     await flush()
-    expect(browser.granted).toEqual(new Set(SUGGESTED_SITES.flatMap((s) => originsForHost(s.host))))
+    expect(browser.granted).toEqual(new Set(SUGGESTED_SITES.flatMap((s) => originsForSite(s.host))))
     expect(chips()).toEqual([])
     expect($('suggested-empty').hidden).toBe(false)
     expect($('enable-suggested').hidden).toBe(true)
@@ -192,7 +195,7 @@ describe('adding a site', () => {
     const submit = submitAdd('https://www.example.co/some/page')
     await flush()
     expect(submit.defaultPrevented).toBe(true)
-    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForHost('example.co') })
+    expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForSite('example.co') })
     expect(trackedHosts()).toEqual(['example.co'])
     expect($<HTMLInputElement>('add-input').value).toBe('')
     expect($('add-error').hidden).toBe(true)
@@ -389,14 +392,14 @@ describe('on-page timer', () => {
   const checkedSize = () => sizes().find((r) => r.checked)?.value
 
   it('reflects the stored preferences', async () => {
-    browser.storage.local.seed({ [HIDDEN_KEY]: true, [SCALE_KEY]: 0.75 })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 0.75 } })
     await openOptions()
     expect($('overlay-switch').getAttribute('aria-checked')).toBe('false')
     expect(checkedSize()).toBe('0.75')
   })
 
   it('defaults to shown at full size', async () => {
-    browser.storage.local.seed({ [SCALE_KEY]: 'garbage' })
+    browser.storage.local.seed({ [PREFS_KEY]: { scale: 'garbage' } })
     await openOptions()
     expect($('overlay-switch').getAttribute('aria-checked')).toBe('true')
     expect(checkedSize()).toBe('1')
@@ -406,12 +409,12 @@ describe('on-page timer', () => {
     await openOptions()
     click($('overlay-switch'))
     await flush()
-    expect(browser.storage.local.data[HIDDEN_KEY]).toBe(true)
+    expect(prefs()?.hidden).toBe(true)
     expect($('overlay-switch').getAttribute('aria-checked')).toBe('false')
     expect(text($('overlay-saved'))).toBe('Saved')
     click($('overlay-switch'))
     await flush()
-    expect(browser.storage.local.data[HIDDEN_KEY]).toBe(false)
+    expect(prefs()?.hidden).toBe(false)
   })
 
   it('sets the timer size', async () => {
@@ -420,12 +423,12 @@ describe('on-page timer', () => {
     small.checked = true
     small.dispatchEvent(new Event('change'))
     await flush()
-    expect(browser.storage.local.data[SCALE_KEY]).toBe(0.5)
+    expect(prefs()?.scale).toBe(0.5)
   })
 
   it('follows changes made from the overlay', async () => {
     await openOptions()
-    browser.storage.local.seed({ [HIDDEN_KEY]: true, [SCALE_KEY]: 0.5 })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 0.5 } })
     await flush()
     expect($('overlay-switch').getAttribute('aria-checked')).toBe('false')
     expect(checkedSize()).toBe('0.5')
@@ -444,7 +447,7 @@ describe('when browser APIs fail', () => {
     small.checked = true
     small.dispatchEvent(new Event('change'))
     await flush()
-    expect(browser.storage.local.data[HIDDEN_KEY]).toBeUndefined()
+    expect(prefs()).toBeUndefined()
   })
 
   it('treats failed permission requests as declined', async () => {

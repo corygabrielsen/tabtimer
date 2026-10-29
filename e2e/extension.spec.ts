@@ -3,7 +3,9 @@ import {
   expect,
   seed,
   read,
-  todayKey,
+  today,
+  readToday,
+  openPopup,
   shadowText,
   clickInShadow,
   LIMITS_KEY,
@@ -75,7 +77,7 @@ test('limits set from the options page: a preset chip and a custom value', async
 })
 
 test('tracked site shows the overlay and its time increases', async ({ context, serviceWorker, site }) => {
-  await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 65_000 })
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 65_000 }))
   const page = await context.newPage()
   await page.goto(site(SITE_A))
 
@@ -89,7 +91,7 @@ test('tracked site shows the overlay and its time increases', async ({ context, 
 test('per-site limit blocks and names the site', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 * MINUTE } },
-    [await todayKey(serviceWorker, SITE_A)]: 10 * MINUTE + 1_000,
+    ...(await today(serviceWorker, { [SITE_A]: 10 * MINUTE + 1_000 })),
   })
   const page = await context.newPage()
   await page.goto(site(SITE_A))
@@ -106,8 +108,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
   // Neither site alone reaches the 10-minute cap; together they exceed it.
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: 10 * MINUTE, perSite: {} },
-    [await todayKey(serviceWorker, SITE_A)]: 6 * MINUTE,
-    [await todayKey(serviceWorker, SITE_B)]: 5 * MINUTE,
+    ...(await today(serviceWorker, { [SITE_A]: 6 * MINUTE, [SITE_B]: 5 * MINUTE })),
   })
   for (const host of [SITE_A, SITE_B]) {
     const page = await context.newPage()
@@ -122,7 +123,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
 test('"5 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } },
-    [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE,
+    ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
   })
   const page = await context.newPage()
   await page.goto(site(SITE_A))
@@ -142,7 +143,7 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
 test('changing the limit lifts or restores the block live', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: MINUTE } },
-    [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE,
+    ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
   })
   const page = await context.newPage()
   await page.goto(site(SITE_A))
@@ -165,7 +166,7 @@ test('changing the limit lifts or restores the block live', async ({ context, se
 test('untracked site gets no overlay', async ({ context, serviceWorker, site }) => {
   // Same profile and limits that would block any tracked site.
   await seed(serviceWorker, { [LIMITS_KEY]: { global: MINUTE, perSite: {} } })
-  await seed(serviceWorker, { [await todayKey(serviceWorker, SITE_A)]: 2 * MINUTE })
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
 
   const untracked = await context.newPage()
   await untracked.goto(site(UNTRACKED))
@@ -189,8 +190,7 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   extensionId,
   site,
 }) => {
-  const key = await todayKey(serviceWorker, SITE_A)
-  await seed(serviceWorker, { [key]: 3 * MINUTE })
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 3 * MINUTE }))
   const page = await context.newPage()
   await page.goto(site(SITE_A))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
@@ -199,40 +199,24 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   // report (every 5 s) land: the stored total is what the limit compares.
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
   await page.waitForTimeout(6_000)
-  const today = Number(await read(serviceWorker, key))
-  expect(today).toBeGreaterThanOrEqual(3 * MINUTE)
+  const stored = await readToday(serviceWorker, SITE_A)
+  expect(stored).toBeGreaterThanOrEqual(3 * MINUTE)
   const block = page.locator(`#${BLOCK_ID}`)
 
   // One second under: no block. Exactly equal: blocked.
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: today + 1_000 } } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: stored + 1_000 } } })
   await page.waitForTimeout(500)
   await expect(block).toBeHidden()
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: today } } })
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: stored } } })
   await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
   await expect(block).toBeVisible()
 
-  // The popup acts on the active tab; opened as a page, point it at SITE_A.
-  const [tab] = await serviceWorker.evaluate((url) => chrome.tabs.query({ url }), `${site(SITE_A)}*`)
-  const popup = await context.newPage()
-  await popup.addInitScript(
-    ({ id, url }) => {
-      const query = chrome.tabs.query.bind(chrome.tabs)
-      chrome.tabs.query = ((info: chrome.tabs.QueryInfo, callback?: (tabs: chrome.tabs.Tab[]) => void) => {
-        if (info.active && callback) {
-          callback([{ id, url } as chrome.tabs.Tab])
-          return
-        }
-        return query(info, callback as never)
-      }) as typeof chrome.tabs.query
-    },
-    { id: tab!.id!, url: tab!.url! }
-  )
-  await popup.goto(`chrome-extension://${extensionId}/popup.html`)
+  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
 
   // Two clicks: arm, then confirm.
   await popup.getByRole('button', { name: `Reset today's time for ${SITE_A}` }).click()
   await popup.getByRole('button', { name: `Confirm: reset today's time for ${SITE_A}` }).click()
-  await expect.poll(() => read(serviceWorker, key)).toBe(0)
+  await expect.poll(() => readToday(serviceWorker, SITE_A)).toBe(0)
 
   // Back on the site: unblocked, and the overlay starts again from zero.
   await page.bringToFront()

@@ -1,7 +1,10 @@
 import type FocusTracker from './FocusTracker'
 import type { ElapsedState } from './FocusTracker'
 import { formatTime } from '../format'
-import { local, HIDDEN_KEY, SCALE_KEY } from '../storage'
+import { chromeStore } from '../chrome/store'
+import { bus as chromeBus } from '../chrome/bus'
+import { MAX_SCALE, MIN_SCALE, PREFS_KEY, normalizePrefs } from '../core/schema'
+import type { Bus, Store, StoreChanges } from '../ports'
 import { t } from '../i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
@@ -9,8 +12,6 @@ const MAX_Z_INDEX = 2147483647
 
 const HOST_ID = 'tabtimer-root'
 
-const MIN_SCALE = 0.5
-const MAX_SCALE = 1
 const SCALE_STEP = 0.25
 
 // Snap to a step and clamp to the allowed range; fall back to 1 on garbage.
@@ -158,7 +159,13 @@ export default class Overlay {
   private needsRebuild = true
   private outsideClickAttached = false
 
-  constructor(private tracker: FocusTracker) {
+  private unsubscribeStore: () => void
+
+  constructor(
+    private tracker: FocusTracker,
+    private bus: Bus = chromeBus,
+    private store: Store = chromeStore('local')
+  ) {
     // Drop a stale widget left by a previous instance (re-injection / SPA
     // remount) so we never stack duplicate hosts.
     document.getElementById(HOST_ID)?.remove()
@@ -178,11 +185,10 @@ export default class Overlay {
     document.body.appendChild(this.host)
 
     // Respect the saved hide/size preferences before the first paint.
-    Promise.all([
-      local.get<boolean>(HIDDEN_KEY).then((v) => v ?? false),
-      local.get<number>(SCALE_KEY).then((v) => v ?? 1),
-    ])
-      .then(([hidden, scale]) => {
+    this.store
+      .get(PREFS_KEY)
+      .then((value) => {
+        const { hidden, scale } = normalizePrefs(value)
         this.hidden = hidden
         this.scale = clampScale(scale)
         this.applyScale()
@@ -192,7 +198,7 @@ export default class Overlay {
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
-    chrome.storage.onChanged.addListener(this.handlePrefsChange)
+    this.unsubscribeStore = this.store.onChanged(this.handlePrefsChange)
   }
 
   private applyScale() {
@@ -208,7 +214,7 @@ export default class Overlay {
     }
     this.scale = next
     this.applyScale()
-    void local.set({ [SCALE_KEY]: next }).catch(() => {})
+    void this.bus.send('setPrefs', { scale: next })
   }
 
   private applyHostStyles() {
@@ -400,7 +406,7 @@ export default class Overlay {
     this.expanded = false
     this.detachOutsideClick()
     this.needsRebuild = true
-    void local.set({ [HIDDEN_KEY]: hidden }).catch(() => {})
+    void this.bus.send('setPrefs', { hidden })
     this.render()
   }
 
@@ -431,7 +437,7 @@ export default class Overlay {
   destroy() {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('focus', this.handleFocus)
-    chrome.storage.onChanged.removeListener(this.handlePrefsChange)
+    this.unsubscribeStore()
     this.detachOutsideClick()
     this.host.remove()
   }
@@ -451,30 +457,23 @@ export default class Overlay {
 
   // React when the hide/size preferences are changed elsewhere (popup, options,
   // or another tab's overlay).
-  private handlePrefsChange = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-    if (areaName !== 'local') {
+  private handlePrefsChange = (changes: StoreChanges) => {
+    const change = changes[PREFS_KEY]
+    if (!change) {
       return
     }
-
-    const hiddenChange = changes[HIDDEN_KEY]
-    if (hiddenChange) {
-      const hidden = Boolean(hiddenChange.newValue)
-      if (hidden !== this.hidden) {
-        this.hidden = hidden
-        this.expanded = false
-        this.detachOutsideClick()
-        this.needsRebuild = true
-        this.render()
-      }
+    const { hidden, scale } = normalizePrefs(change.newValue)
+    if (hidden !== this.hidden) {
+      this.hidden = hidden
+      this.expanded = false
+      this.detachOutsideClick()
+      this.needsRebuild = true
+      this.render()
     }
-
-    const scaleChange = changes[SCALE_KEY]
-    if (scaleChange) {
-      const scale = clampScale(Number(scaleChange.newValue))
-      if (scale !== this.scale) {
-        this.scale = scale
-        this.applyScale()
-      }
+    const clamped = clampScale(scale)
+    if (clamped !== this.scale) {
+      this.scale = clamped
+      this.applyScale()
     }
   }
 

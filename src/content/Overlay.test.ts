@@ -3,12 +3,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import Overlay from './Overlay'
 import FocusTracker from './FocusTracker'
-import { HIDDEN_KEY, SCALE_KEY, todayKeyForHost } from '../storage'
+import { PREFS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { disposeTrackers, minutes, seconds, startBackground, trackTracker, useClock } from '../test/content'
+import { disposeTrackers, minutes, seconds, seedToday, startBackground, trackTracker, useClock } from '../test/content'
 
 let browser: FakeChrome
+const prefs = () => browser.storage.local.data[PREFS_KEY] as { hidden: boolean; scale: number }
 let shadowOf: (id: string) => ShadowRoot
 const views: Overlay[] = []
 
@@ -52,7 +53,7 @@ afterEach(() => {
 
 describe('collapsed pill', () => {
   it('shows today’s total for this site, including other tabs', async () => {
-    browser.storage.local.seed({ [todayKeyForHost('youtube.com')]: minutes(62) + seconds(5) })
+    seedToday({ 'youtube.com': minutes(62) + seconds(5) })
     await mount()
     expect(pill()?.textContent).toBe('01:02:05')
     expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 01:02:05. Activate to expand.')
@@ -76,12 +77,12 @@ describe('collapsed pill', () => {
 
   it('refreshes when the tab becomes visible or focused again', async () => {
     await mount()
-    browser.storage.local.seed({ [todayKeyForHost('youtube.com')]: minutes(5) })
+    seedToday({ 'youtube.com': minutes(5) })
     setPageState({ hidden: true })
     setPageState({ hidden: false })
     await flush()
     expect(pill()?.textContent).toBe('00:05:00')
-    browser.storage.local.seed({ [todayKeyForHost('youtube.com')]: minutes(6) })
+    seedToday({ 'youtube.com': minutes(6) })
     setPageState({ focused: false })
     setPageState({ focused: true })
     await flush()
@@ -91,7 +92,7 @@ describe('collapsed pill', () => {
 
 describe('expanded panel', () => {
   it('lists today, focus and session with their times and definitions', async () => {
-    browser.storage.local.seed({ [todayKeyForHost('youtube.com')]: minutes(10) })
+    seedToday({ 'youtube.com': minutes(10) })
     const view = await mount()
     setPageState({ focused: false })
     await vi.advanceTimersByTimeAsync(seconds(4)) // session keeps counting
@@ -158,20 +159,20 @@ describe('size controls', () => {
     expect(larger().disabled).toBe(false)
     click(smaller()) // at the floor: no-op
     await flush()
-    expect(browser.storage.local.data[SCALE_KEY]).toBe(0.5)
+    expect(prefs().scale).toBe(0.5)
     click(larger())
     await flush()
-    expect(browser.storage.local.data[SCALE_KEY]).toBe(0.75)
+    expect(prefs().scale).toBe(0.75)
   })
 
   it('restores the saved size, snapping and clamping bad values', async () => {
-    browser.storage.local.seed({ [SCALE_KEY]: 0.8 })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 0.8 } })
     await mount()
     expect(transform()).toBe('translateX(-50%) scale(0.75)')
-    browser.storage.local.seed({ [SCALE_KEY]: 0.1 })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 0.1 } })
     await flush()
     expect(transform()).toBe('translateX(-50%) scale(0.5)')
-    browser.storage.local.seed({ [SCALE_KEY]: 'huge' })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 'huge' } })
     await flush()
     expect(transform()).toBe('translateX(-50%) scale(1)')
   })
@@ -185,7 +186,7 @@ describe('hiding', () => {
     click(button('.close', 'Hide Tab Timer on this page'))
     await flush()
     expect(root().querySelector('.widget')?.childElementCount).toBe(0)
-    expect(browser.storage.local.data[HIDDEN_KEY]).toBe(true)
+    expect(prefs().hidden).toBe(true)
     // An outside click no longer does anything once hidden.
     document.body.click()
     await flush()
@@ -193,7 +194,7 @@ describe('hiding', () => {
   })
 
   it('stays hidden on load when the preference is set', async () => {
-    browser.storage.local.seed({ [HIDDEN_KEY]: true })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 1 } })
     const view = await mount()
     await tickView(view, seconds(2))
     expect(pill()).toBeNull()
@@ -201,10 +202,10 @@ describe('hiding', () => {
 
   it('follows the preference when toggled from the popup', async () => {
     await mount()
-    browser.storage.local.seed({ [HIDDEN_KEY]: true })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 1 } })
     await flush()
     expect(pill()).toBeNull()
-    browser.storage.local.seed({ [HIDDEN_KEY]: false })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1 } })
     await flush()
     expect(pill()).not.toBeNull()
   })
@@ -232,7 +233,7 @@ describe('lifecycle', () => {
     const view = await mount()
     view.destroy()
     expect(document.getElementById('tabtimer-root')).toBeNull()
-    browser.storage.local.seed({ [HIDDEN_KEY]: true })
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 1 } })
     await flush()
     expect(document.getElementById('tabtimer-root')).toBeNull()
   })

@@ -10,8 +10,6 @@ export type Limits = {
 
 export const DEFAULT_LIMITS: Limits = { global: null, perSite: {} }
 
-export const LIMITS_KEY = 'tabtimer_limits'
-export const BLOCK_SNOOZE_KEY = 'tabtimer_block_snooze_until'
 export const SNOOZE_MS = 5 * 60 * 1000
 
 export type BlockScope = 'site' | 'global'
