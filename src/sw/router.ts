@@ -27,8 +27,8 @@ export type RouterDeps = {
 }
 
 // Where a request came from, and for a content script the site it runs on
-// and its tab.
-type Tab = { id: number; windowId: number; doc: string; departing: boolean }
+// and its tab (audible: the browser hears it).
+type Tab = { id: number; windowId: number; doc: string; departing: boolean; audible: boolean }
 type Context = { origin: Origin; url: string; site: Site | null; tab: Tab | null }
 
 type Handlers = { [K in MessageType]: (req: RequestOf<K>, ctx: Context) => Promise<Contract[K]['res']> }
@@ -65,7 +65,13 @@ function classify(sender: Sender, extensionUrl: string): Context | null {
       origin: 'content',
       url,
       site,
-      tab: { id: tab.id, windowId: tab.windowId ?? -1, doc: sender.documentId ?? '', departing: leaving },
+      tab: {
+        id: tab.id,
+        windowId: tab.windowId ?? -1,
+        doc: sender.documentId ?? '',
+        departing: leaving,
+        audible: tab.audible === true,
+      },
     }
   }
   return null

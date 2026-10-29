@@ -271,6 +271,12 @@ export class FakeChrome {
     sendMessage: (message: unknown, callback?: Callback<unknown>) => this.sendMessage(message, callback),
   }
 
+  // Content scripts reach closed shadow roots through chrome.dom; this one
+  // sees open ones only, unless a test says otherwise.
+  readonly dom = {
+    openOrClosedShadowRoot: vi.fn((el: HTMLElement): ShadowRoot | null => el.shadowRoot),
+  }
+
   readonly i18n = {
     getMessage: (key: string, substitutions?: string | string[]) => getMessage(key, substitutions),
     getUILanguage: () => 'en-US',
@@ -366,6 +372,7 @@ export class FakeChrome {
   }
 
   openTabs: FakeTab[] = []
+  mutedInfo = new Map<number, chrome.tabs.MutedInfo>()
 
   readonly tabs = {
     // Every open tab, or the active ones, or those a URL pattern covers. A
@@ -397,10 +404,25 @@ export class FakeChrome {
       this.sendToTab(tabId, message)
     ),
     create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, windowId: 1, ...props })),
+    // Each tab's mute, as tabs.get reports it; an unknown tab is unmuted.
+    get: vi.fn((tabId: number) =>
+      Promise.resolve({ id: tabId, mutedInfo: this.mutedInfo.get(tabId) ?? { muted: false } })
+    ),
+    update: vi.fn((tabId: number, props: { muted?: boolean }) => {
+      if (props.muted !== undefined) {
+        this.mutedInfo.set(
+          tabId,
+          props.muted ? { muted: true, reason: 'extension', extensionId: this.runtime.id } : { muted: false }
+        )
+      }
+      return Promise.resolve({ id: tabId })
+    }),
     onActivated: new FakeEvent<[{ tabId: number; windowId: number }]>(),
     onRemoved: new FakeEvent<[number]>(),
     onAttached: new FakeEvent<[number, { newWindowId: number; newPosition: number }]>(),
-    onUpdated: new FakeEvent<[number, { url?: string; status?: string; discarded?: boolean }, { url?: string }]>(),
+    onUpdated: new FakeEvent<
+      [number, { url?: string; status?: string; discarded?: boolean; audible?: boolean }, { url?: string }]
+    >(),
   }
 
   // Tabs whose content script is gone: messages to them fail.

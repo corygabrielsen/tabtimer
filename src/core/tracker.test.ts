@@ -27,7 +27,7 @@ const PAGES: Record<number, { site: string; windowId: number }> = {
 }
 
 function attest(tabId: number, report: Partial<Attest> = {}, doc = `doc-${tabId}`): Attest {
-  return { ...PAGES[tabId]!, doc, departing: false, at: 0, ...SHOWN, ...report }
+  return { ...PAGES[tabId]!, doc, departing: false, audible: false, at: 0, ...SHOWN, ...report }
 }
 
 const presence = (tabId: number, p: Partial<Attest> = {}, doc?: string): TrackerEvent => ({
@@ -576,5 +576,39 @@ describe('the bound on time lost to a crash', () => {
       expect(used - kept).toBeLessThan(CHECKPOINT_MS)
       expect(state.open?.since).toBe(T + 60 * CHECKPOINT_MS)
     }
+  })
+})
+
+describe('P2: a tab the browser hears', () => {
+  const MIN = 60 * S
+
+  it('counts idle time while the tab is audible, media the page sees or not', () => {
+    const { state, credits } = run([
+      [0, presence(1, { audible: true })],
+      [MIN, presence(1, { audible: true }), 'idle'],
+      [2 * MIN, { kind: 'checkpoint' }, 'idle'],
+    ])
+    expect(state.open).toMatchObject({ tabId: 1, media: true })
+    expect(credited(credits)).toEqual({ 'a.com': 2 * MIN })
+  })
+
+  it('keeps the browser’s word over a probe’s answer, and asks again when it changes', () => {
+    const first = run([[0, presence(1)]])
+    const heard = step(first.state, { kind: 'audible', tabId: 1, audible: true }, T + S, 'active')
+    expect(heard.probe).toEqual([1])
+    expect(heard.state.tabs['1']).toMatchObject({ audible: true, media: false })
+    // The same news again, or about a tab that never reported: nothing.
+    expect(step(heard.state, { kind: 'audible', tabId: 1, audible: true }, T + S, 'active').probe).toEqual([])
+    expect(step(heard.state, { kind: 'audible', tabId: 9, audible: true }, T + S, 'active').probe).toEqual([])
+    // The page's answer: its media piece starts.
+    const answered = step(heard.state, presence(1, { audible: true }), T + 2 * S, 'active')
+    expect(answered.state.open).toMatchObject({ media: true, since: T + 2 * S })
+    expect(credited(answered.credits)).toEqual({ 'a.com': 2 * S })
+  })
+
+  it('reads a stored report without the field as not heard', () => {
+    const old: Partial<Attest> = attest(1)
+    delete old.audible
+    expect(normalizeTracker({ tabs: { '1': old }, open: null }).tabs['1']).toMatchObject({ audible: false })
   })
 })

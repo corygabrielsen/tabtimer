@@ -36,3 +36,13 @@ export function mountShadowHost(id: string, styles: string): ShadowHost {
   attach()
   return { host, shadow, attach }
 }
+
+// An element's shadow root, closed ones too (chrome.dom, in content
+// scripts), or null.
+export function shadowRootOf(el: Element): ShadowRoot | null {
+  try {
+    return chrome.dom.openOrClosedShadowRoot(el as HTMLElement)
+  } catch {
+    return el.shadowRoot
+  }
+}

@@ -14,7 +14,7 @@ import {
 export type Sender = {
   id?: string
   url?: string
-  tab?: { id?: number; windowId?: number }
+  tab?: { id?: number; windowId?: number; audible?: boolean }
   // The sending document (Chrome 106+).
   documentId?: string
   frameId?: number

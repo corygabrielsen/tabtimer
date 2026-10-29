@@ -9,7 +9,7 @@
 //   - an interval opens only on a content script's positive report (a
 //     presence that is visible, focused and not blocked) while the user is
 //     at the computer (core/away.ts: not locked; not idle unless that page
-//     is playing media);
+//     is playing media, or the browser hears its tab);
 //   - browser events (tab switch, window focus, removal, navigation, idle,
 //     lock, blocking) only close the interval, or ask a page to report
 //     again (`probe`); a reset of the open site's time only moves the
@@ -49,8 +49,17 @@ export type Presence = { visible: boolean; focused: boolean; media: boolean; blo
 // it ('' if unknown). `departing`: that document is no longer the tab's
 // shown page (it is in the back/forward cache, or unloading), so its report
 // never accrues and never replaces another document's. `at`: when the
-// worker heard it (step() sets it).
-export type Attest = Presence & { site: Site; windowId: number; doc: string; departing: boolean; at: number }
+// worker heard it (step() sets it). `audible`: the browser hears the tab
+// (tab.audible), media or not the page can see (a detached element, a
+// cross-origin frame).
+export type Attest = Presence & {
+  site: Site
+  windowId: number
+  doc: string
+  departing: boolean
+  audible: boolean
+  at: number
+}
 
 // The interval accruing time: [since, now) is not yet credited, and
 // `checkpoint` is the last time the worker saw it alive.
@@ -86,6 +95,8 @@ export type TrackerEvent =
   | { kind: 'overLimit'; tabId: number }
   // The site's time today was zeroed.
   | { kind: 'reset'; site: Site }
+  // The browser started or stopped hearing the tab.
+  | { kind: 'audible'; tabId: number; audible: boolean }
 
 // Time to credit to a site: [start, end), with media playing or not.
 export type Accrual = { site: Site; start: number; end: number; media: boolean }
@@ -113,7 +124,7 @@ function normalizeAttest(v: unknown): Attest | null {
     return null
   }
   const { site, windowId, doc, departing, at } = a
-  return { site, windowId, doc, departing, at, ...presence }
+  return { site, windowId, doc, departing, audible: a.audible === true, at, ...presence }
 }
 
 function normalizeOpen(v: unknown): Open | null {
@@ -171,9 +182,14 @@ export function creditEnd(open: Open, now: number): number {
   return Math.max(open.since, suspended(open, now) ? open.checkpoint : now)
 }
 
+// Whether media plays in the tab: seen by the page, or heard by the browser.
+function playing(a: Attest): boolean {
+  return a.media || a.audible
+}
+
 // Whether a tab's report lets it accrue time.
 function live(a: Attest, idle: IdleState): boolean {
-  return !a.departing && canAccrue(a, idle)
+  return !a.departing && canAccrue({ ...a, media: playing(a) }, idle)
 }
 
 function accrual(open: Open, end: number): Accrual[] {
@@ -224,7 +240,7 @@ class Builder {
       windowId: a.windowId,
       doc: a.doc,
       site: a.site,
-      media: a.media,
+      media: playing(a),
       since: this.now,
       checkpoint: this.now,
     }
@@ -280,8 +296,8 @@ function presence(b: Builder, tabId: number, a: Attest, idle: IdleState): void {
     if (fresh) {
       // Alive. A change in media playing starts a new piece, credited as
       // the time accrued (core/away.ts treats the two differently).
-      if (open.media !== a.media) {
-        b.advance({ media: a.media })
+      if (open.media !== playing(a)) {
+        b.advance({ media: playing(a) })
       } else {
         b.open = { ...open, checkpoint: b.now }
       }
@@ -400,6 +416,16 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
         }
       }
       break
+    case 'audible': {
+      // The page reports again, and with this its media counts or not.
+      const key = String(e.tabId)
+      const attest = b.tabs[key]
+      if (attest && attest.audible !== e.audible) {
+        b.tabs[key] = { ...attest, audible: e.audible }
+        b.probe.add(e.tabId)
+      }
+      break
+    }
   }
   return b.done()
 }

@@ -58,11 +58,11 @@ try {
   tracker.onStop(() => instance.dispose())
 
   // A page entering the back/forward cache (persisted) is frozen, not
-  // destroyed, and may be shown again: keep everything alive and report it
-  // hidden. Otherwise the page is going away for good.
+  // destroyed, and may be shown again: keep everything alive, hold its
+  // state and report it hidden. Otherwise the page is going away for good.
   const handlePageHide = (event: PageTransitionEvent) => {
     if (event.persisted) {
-      void tracker.report()
+      tracker.suspend()
     } else {
       instance.dispose()
     }

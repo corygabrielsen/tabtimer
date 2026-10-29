@@ -151,7 +151,7 @@ describe('deciding to block', () => {
     seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(5))
     await mount()
-    expect(document.documentElement.style.getPropertyValue('overflow')).toBe('hidden')
+    expect(document.documentElement.style.getPropertyValue('overflow-y')).toBe('hidden')
     seedLimits({ perSite: {} })
     await flush()
     expect(isBlocked()).toBe(false)
@@ -515,8 +515,8 @@ describe('staying on the page', () => {
     fresh.style.setProperty('overflow', 'auto')
     document.body.replaceWith(fresh)
     blocker.tick()
-    expect(fresh.style.getPropertyValue('overflow')).toBe('hidden')
-    expect(fresh.style.getPropertyPriority('overflow')).toBe('important')
+    expect(fresh.style.getPropertyValue('overflow-y')).toBe('hidden')
+    expect(fresh.style.getPropertyPriority('overflow-y')).toBe('important')
     click(snoozeButton())
     expect(fresh.style.getPropertyValue('overflow')).toBe('auto')
     expect(fresh.style.getPropertyPriority('overflow')).toBe('')
@@ -671,7 +671,7 @@ describe('page scroll lock', () => {
   it('restores the page’s own inline overflow and its priority', async () => {
     style().setProperty('overflow', 'scroll', 'important')
     await mount()
-    expect(style().getPropertyValue('overflow')).toBe('hidden')
+    expect(style().getPropertyValue('overflow-y')).toBe('hidden')
     click(snoozeButton())
     expect(style().getPropertyValue('overflow')).toBe('scroll')
     expect(style().getPropertyPriority('overflow')).toBe('important')
@@ -716,8 +716,8 @@ describe('page scroll lock', () => {
     const body = document.body.style
     body.setProperty('overflow-y', 'auto', 'important')
     await mount()
-    expect(body.getPropertyValue('overflow')).toBe('hidden')
-    expect(body.getPropertyPriority('overflow')).toBe('important')
+    expect(body.getPropertyValue('overflow-y')).toBe('hidden')
+    expect(body.getPropertyPriority('overflow-y')).toBe('important')
     click(snoozeButton())
     expect(body.getPropertyValue('overflow-y')).toBe('auto')
     expect(body.getPropertyPriority('overflow-y')).toBe('important')
@@ -737,6 +737,14 @@ describe('page scroll lock', () => {
     click(snoozeButton())
     expect(style().getPropertyValue('overflow')).toBe('auto')
     expect(document.body.style.getPropertyValue('overflow')).toBe('clip')
+  })
+
+  it('P3: restores the axis the page left alone when it changed the other while blocked', async () => {
+    await mount()
+    style().overflowX = 'auto'
+    click(snoozeButton())
+    expect(style().getPropertyValue('overflow-x')).toBe('auto')
+    expect(style().getPropertyValue('overflow-y')).toBe('')
   })
 
   it('puts the window back where it was on dismissal', async () => {

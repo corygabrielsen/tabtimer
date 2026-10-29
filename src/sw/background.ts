@@ -8,6 +8,7 @@ import { grantedSites, injectOpenTabs, revokedSites, startTab, syncContentScript
 import { watchGrants } from './grants'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
+import { tabMuter } from './mute'
 import { createRouter } from './router'
 import { installTestHook, offsetClock } from './testHook'
 import { createTracker } from './tracker'
@@ -29,7 +30,13 @@ const ledger = createLedger(local, chromeStore('session'), testClock ?? systemCl
 
 // First: a grant or revoke is seen here before anything acts on it.
 const granted = watchGrants()
-const tracker = createTracker({ ledger, send: sendState, alarm: checkpointAlarm(), granted })
+const tracker = createTracker({
+  ledger,
+  send: sendState,
+  alarm: checkpointAlarm(),
+  granted,
+  mute: tabMuter(chrome.runtime.id),
+})
 
 // Every listener is registered synchronously at the top level, as MV3
 // requires: any of these events can be what starts the worker.
@@ -54,6 +61,9 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
     void granted()
       .then((origins) => startTab(tabId, url, origins))
       .catch(() => undefined)
+  }
+  if (change.audible !== undefined) {
+    dispatch({ kind: 'audible', tabId, audible: change.audible })
   }
 })
 // Every window type that can show a tracked page, an installed site's app

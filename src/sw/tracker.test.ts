@@ -17,7 +17,7 @@ const MIN = 60_000
 
 const SHOWN: Presence = { visible: true, focused: true, media: false, blocked: false }
 const HIDDEN: Presence = { ...SHOWN, visible: false }
-const PAGE = { site: 'a.com', windowId: 1, doc: 'doc-a', departing: false }
+const PAGE = { site: 'a.com', windowId: 1, doc: 'doc-a', departing: false, audible: false }
 
 let browser: FakeChrome
 let now: number
@@ -25,6 +25,7 @@ let sent: Array<[number, string, StatePush]>
 let replies: Map<number, unknown>
 let alarm: ReturnType<typeof vi.fn<TrackerDeps['alarm']>>
 let granted: string[]
+let mute: ReturnType<typeof vi.fn<TrackerDeps['mute']>>
 
 // A fresh worker on the same storage: what the browser starts after it
 // stopped the previous one.
@@ -38,6 +39,7 @@ function worker(alarmDep: TrackerDeps['alarm'] = alarm) {
     },
     alarm: alarmDep,
     granted: () => Promise.resolve(granted),
+    mute,
   })
 }
 
@@ -52,6 +54,7 @@ beforeEach(() => {
   replies = new Map()
   alarm = vi.fn(() => Promise.resolve())
   granted = ['*://*/*']
+  mute = vi.fn(() => Promise.resolve())
 })
 
 describe('presence', () => {
@@ -115,6 +118,7 @@ describe('presence', () => {
       send: () => Promise.resolve(undefined),
       alarm,
       granted: () => Promise.reject(new Error('gone')),
+      mute,
     })
     await expect(failing.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({ globalToday: 24_240 })
   })
@@ -123,7 +127,7 @@ describe('presence', () => {
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 5 * S
-    await tracker.presence(2, { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false, ...SHOWN })
+    await tracker.presence(2, { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false, audible: false, ...SHOWN })
     expect(sent.map(([tabId, doc, push]) => [tabId, doc, push.state.running])).toEqual([[1, 'doc-a', false]])
   })
 
@@ -240,7 +244,7 @@ describe('the checkpoint alarm under events in quick succession', () => {
   }
 
   const running = () => browser.alarmTimers.has(CHECKPOINT_ALARM)
-  const B = { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false }
+  const B = { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false, audible: false }
 
   async function settled<T>(work: Promise<T>): Promise<T> {
     await vi.advanceTimersByTimeAsync(50)
@@ -332,7 +336,15 @@ describe('probes', () => {
   it('asks the pages of a newly focused window, and opens for the one in use', async () => {
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
-    await tracker.presence(3, { site: 'c.com', windowId: 2, doc: 'doc-c', departing: false, ...SHOWN, focused: false })
+    await tracker.presence(3, {
+      site: 'c.com',
+      windowId: 2,
+      doc: 'doc-c',
+      departing: false,
+      audible: false,
+      ...SHOWN,
+      focused: false,
+    })
     replies.set(3, SHOWN)
     sent = []
     now += 5 * S
@@ -350,7 +362,7 @@ describe('probes', () => {
   it('P7: marks the pushes it reads the reply to as probes, and only those', async () => {
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
-    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, ...HIDDEN })
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, audible: false, ...HIDDEN })
     replies.set(2, SHOWN)
     sent = []
     await tracker.dispatch({ kind: 'activated', tabId: 2, windowId: 1 })
@@ -431,7 +443,7 @@ describe('limits', () => {
   it('refresh tells every page that reported its new state', async () => {
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
-    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, ...HIDDEN })
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, audible: false, ...HIDDEN })
     sent = []
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: NOON + 5 * MIN } })
     await tracker.refresh()
@@ -465,7 +477,11 @@ describe('background wiring', () => {
     await flush()
   }
 
-  async function report(presence: Presence, tab = { id: 1, windowId: 1 }, url = 'https://www.reddit.com/') {
+  async function report(
+    presence: Presence,
+    tab: { id: number; windowId: number; audible?: boolean } = { id: 1, windowId: 1 },
+    url = 'https://www.reddit.com/'
+  ) {
     browser.sender = { id: browser.runtime.id, url, tab, frameId: 0, documentLifecycle: 'active' }
     const response = await bus.send('presence', presence)
     await flush()
@@ -579,6 +595,42 @@ describe('background wiring', () => {
     await expect(report(HIDDEN)).resolves.toMatchObject({ ok: true })
   })
 
+  it('P2: mutes a blocked page’s tab, and undoes only its own mute', async () => {
+    await report({ ...SHOWN, blocked: true })
+    expect(browser.mutedInfo.get(1)).toMatchObject({ muted: true, reason: 'extension' })
+    await report(SHOWN)
+    expect(browser.mutedInfo.get(1)).toEqual({ muted: false })
+    // Muted by the user before the block, or during it: theirs stays.
+    browser.mutedInfo.set(1, { muted: true, reason: 'user' })
+    await report({ ...SHOWN, blocked: true })
+    await report(SHOWN)
+    expect(browser.mutedInfo.get(1)).toEqual({ muted: true, reason: 'user' })
+    browser.mutedInfo.set(1, { muted: false })
+    await report({ ...SHOWN, blocked: true })
+    browser.mutedInfo.set(1, { muted: true, reason: 'user' })
+    await report(SHOWN)
+    expect(browser.mutedInfo.get(1)).toEqual({ muted: true, reason: 'user' })
+    // Navigating away from a blocked page unmutes its tab.
+    browser.mutedInfo.set(1, { muted: false })
+    await report({ ...SHOWN, blocked: true })
+    browser.tabs.onUpdated.dispatch(1, { url: 'https://x.com/' }, { url: 'https://x.com/' })
+    await flush()
+    expect(browser.mutedInfo.get(1)).toEqual({ muted: false })
+  })
+
+  it('P2: counts idle time while the browser hears the tab, and asks the page again when that changes', async () => {
+    await report(SHOWN, { id: 1, windowId: 1, audible: true })
+    browser.setIdleState('idle')
+    await flush()
+    expect(tracked()).toMatchObject({ tabId: 1, media: true })
+    browser.tabs.sendMessage.mockClear()
+    browser.tabs.onUpdated.dispatch(1, { audible: false }, {})
+    await flush()
+    expect(browser.tabs.sendMessage).toHaveBeenCalledWith(1, expect.objectContaining({ probe: true }), { frameId: 0 })
+    await report(SHOWN, { id: 1, windowId: 1, audible: false })
+    expect(tracked()).toBeNull()
+  })
+
   it('creates the checkpoint alarm once, and clears it once', async () => {
     await report(SHOWN)
     await report({ ...SHOWN, media: true })
@@ -586,5 +638,85 @@ describe('background wiring', () => {
     await report(HIDDEN)
     await report(HIDDEN)
     expect(browser.alarms.clear).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('replies', () => {
+  it('W4: answers a report it drops with the page’s own state', async () => {
+    const tracker = worker()
+    // The tab is unknown (navigated, or removed): a departing report from
+    // its cached page still gets a whole state.
+    await expect(tracker.presence(7, { ...PAGE, ...HIDDEN, departing: true })).resolves.toMatchObject({
+      site: 'a.com',
+      running: false,
+      seq: 1,
+    })
+    // The page that replaced it on another site isn't the reporter's.
+    await tracker.presence(1, { ...PAGE, doc: 'new', site: 'b.com', ...SHOWN })
+    await expect(tracker.presence(1, { ...PAGE, ...HIDDEN, departing: true })).resolves.toMatchObject({
+      site: 'a.com',
+      running: false,
+    })
+  })
+
+  it('W5: answers a page without waiting on telling the other tabs', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    // Tab 1's renderer hangs: its push is never answered.
+    const hung = vi.fn(() => new Promise<unknown>(() => {}))
+    const t2 = createTracker({
+      ledger: createLedger(chromeStore('local'), chromeStore('session'), { now: () => now }),
+      send: hung,
+      alarm,
+      granted: () => Promise.resolve(granted),
+      mute,
+    })
+    now += 5 * S
+    const reply = await Promise.race([
+      t2.presence(2, { ...PAGE, site: 'b.com', windowId: 2, doc: 'doc-b', ...SHOWN }),
+      new Promise((resolve) => setTimeout(() => resolve('waited'), 50)),
+    ])
+    expect(reply).toMatchObject({ site: 'b.com', running: true })
+    expect(hung).toHaveBeenCalledWith(1, 'doc-a', expect.objectContaining({ type: 'state' }))
+  })
+})
+
+describe('P2: muting while blocked', () => {
+  it('mutes a tab once its page reports blocked, and unmutes once it doesn’t or is gone', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    expect(mute).not.toHaveBeenCalled()
+    await tracker.presence(1, { ...PAGE, ...SHOWN, blocked: true })
+    await tracker.presence(1, { ...PAGE, ...HIDDEN, blocked: true })
+    expect(mute.mock.calls).toEqual([[1, true]])
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    expect(mute.mock.calls).toEqual([
+      [1, true],
+      [1, false],
+    ])
+    await tracker.presence(1, { ...PAGE, ...SHOWN, blocked: true })
+    await tracker.dispatch({ kind: 'removed', tabId: 1 })
+    expect(mute.mock.calls.at(-1)).toEqual([1, false])
+  })
+
+  it('keeps going when muting fails', async () => {
+    mute.mockRejectedValue(new Error('no tab'))
+    const tracker = worker()
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN, blocked: true })).resolves.toMatchObject({ running: false })
+  })
+})
+
+describe('P2: a tab the browser hears', () => {
+  it('asks the page again when the tab starts or stops being heard', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    replies.set(1, SHOWN)
+    sent = []
+    await tracker.dispatch({ kind: 'audible', tabId: 1, audible: true })
+    expect(sent.map(([, , push]) => push.probe)).toContain(true)
+    expect(open()).toMatchObject({ media: true })
+    sent = []
+    await tracker.dispatch({ kind: 'audible', tabId: 1, audible: true })
+    expect(sent).toEqual([])
   })
 })

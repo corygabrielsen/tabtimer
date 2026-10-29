@@ -56,6 +56,7 @@ beforeEach(() => {
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
     granted,
+    mute: () => Promise.resolve(),
   })
   handle = createRouter({ ledger, tracker, granted, extensionId: ID, extensionUrl: EXT, open })
   browser.grant(['*://*/*'])
@@ -139,8 +140,18 @@ describe('sender policy', () => {
   it('lets a departing page’s last report close nothing of the page that replaced it', async () => {
     await handle(presence, content(undefined, { documentId: 'new' }))
     const late = content(undefined, { frameId: 4, documentId: 'old', documentLifecycle: 'pending_deletion' })
-    await expect(handle(hidden, late)).resolves.toMatchObject({ ok: true, value: { running: true } })
+    // The old page is told its own state: the new page's interval isn't its.
+    await expect(handle(hidden, late)).resolves.toMatchObject({ ok: true, value: { running: false } })
     expect(browser.storage.session.data.worker).toMatchObject({ tracker: { open: { doc: 'new' } } })
+  })
+
+  it('P2: takes whether the browser hears the tab from the sender, not the payload', async () => {
+    await handle({ ...presence, audible: true }, content())
+    expect(browser.storage.session.data.worker).toMatchObject({ tracker: { tabs: { '7': { audible: false } } } })
+    await handle(presence, content(undefined, { tab: { id: 7, windowId: 1, audible: true } }))
+    expect(browser.storage.session.data.worker).toMatchObject({
+      tracker: { tabs: { '7': { audible: true } }, open: { media: true } },
+    })
   })
 
   it('identifies the tab, its window and its document', async () => {

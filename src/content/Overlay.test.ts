@@ -154,6 +154,40 @@ describe('expanded panel', () => {
   })
 })
 
+describe('P4: keyboard focus', () => {
+  it('moves with the panel: to the selected row on expand, back to the pill on a choice or Escape', async () => {
+    await mount()
+    pill()!.focus()
+    click(pill())
+    await flush()
+    expect(root().activeElement).toBe(rows()[0])
+    rows()[2]!.focus()
+    click(rows()[2])
+    await flush()
+    expect(root().activeElement).toBe(pill())
+    click(pill())
+    await flush()
+    expect(root().activeElement).toBe(rows()[2])
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flush()
+    expect(root().activeElement).toBe(pill())
+  })
+
+  it('stays where it is when the panel closes from outside', async () => {
+    await mount()
+    const input = document.createElement('input')
+    document.body.append(input)
+    click(pill())
+    await flush()
+    input.focus()
+    document.body.click()
+    await flush()
+    expect(rows()).toHaveLength(0)
+    expect(document.activeElement).toBe(input)
+    input.remove()
+  })
+})
+
 describe('size controls', () => {
   it('shrinks in steps down to half size, persisting the choice', async () => {
     await mount()
