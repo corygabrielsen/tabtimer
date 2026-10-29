@@ -1,7 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createLedger, PRUNED_DAY_KEY, type Ledger } from './ledger'
 import { chromeStore } from '../chrome/store'
-import { emptyBuckets, LIMITS_KEY, PREFS_KEY, SCHEMA, SNOOZE_KEY } from '../core/schema'
+import {
+  emptyBuckets,
+  normalizeDay,
+  siteTotal,
+  IDLE_STATE_KEY,
+  LIMITS_KEY,
+  PREFS_KEY,
+  SCHEMA,
+  SNOOZE_KEY,
+} from '../core/schema'
+import { normalizeAway, AWAY_KEY } from '../core/away'
 import { SNOOZE_MS } from '../core/limits'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
@@ -190,5 +200,87 @@ describe('snooze and prefs', () => {
     await expect(ledger.setPrefs({ scale: 0.75 })).resolves.toEqual({ hidden: false, scale: 0.75 })
     await expect(ledger.setPrefs({ hidden: true })).resolves.toEqual({ hidden: true, scale: 0.75 })
     expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75 })
+  })
+})
+
+describe('time away from the computer', () => {
+  const away = () => normalizeAway(browser.storage.session.data[AWAY_KEY])
+  const day = (stamp = '2026-06-10') => data()[`day:${stamp}`]
+
+  it('mirrors the idle state for content scripts and records it for the worker', async () => {
+    await ledger.setIdleState('locked')
+    expect(data()[IDLE_STATE_KEY]).toBe('locked')
+    expect(away()).toMatchObject({ state: 'locked', periods: [{ kind: 'locked', start: NOON, end: null }] })
+  })
+
+  it('credits nothing while locked, media or not, and counts again on return', async () => {
+    await ledger.setIdleState('locked')
+    now = NOON + 2 * MIN
+    await expect(ledger.addElapsed('a.com', [[NOON - MIN, now]], true)).resolves.toBe(MIN)
+    await ledger.setIdleState('active')
+    now = NOON + 3 * MIN
+    await expect(ledger.addElapsed('a.com', [[NOON + 2 * MIN, now]])).resolves.toBe(2 * MIN)
+  })
+
+  it('takes back time credited since the last input when idle is reported', async () => {
+    // Reports every 10 s, the last input 5 minutes before idle fires.
+    for (let t = NOON - 10 * MIN; t < NOON; t += 10_000) {
+      now = t + 10_000
+      await ledger.addElapsed('a.com', [[t, now]])
+    }
+    expect(siteTotal(normalizeDay(day()), 'a.com')).toBe(10 * MIN)
+    await ledger.setIdleState('idle')
+    expect(day()).toEqual({ 'a.com': buckets({ 11: 5 * MIN }) })
+    // Late reports from inside the idle period are trimmed too.
+    now = NOON + 10_000
+    await expect(ledger.addElapsed('a.com', [[NOON - 20_000, now]])).resolves.toBe(5 * MIN)
+  })
+
+  it('keeps idle time a page reports with media playing, but not other pages’ time', async () => {
+    now = NOON - MIN
+    await ledger.addElapsed('video.com', [[NOON - 2 * MIN, now]], true)
+    await ledger.addElapsed('news.com', [[NOON - 2 * MIN, now]], false)
+    now = NOON
+    await ledger.setIdleState('idle')
+    now = NOON + MIN
+    await ledger.addElapsed('video.com', [[NOON, now]], true)
+    await ledger.addElapsed('news.com', [[NOON, now]], false)
+    expect(day()).toEqual({ 'video.com': buckets({ 11: MIN, 12: MIN }), 'news.com': buckets({}) })
+    // A lock pauses even media.
+    await ledger.setIdleState('locked')
+    now = NOON + 2 * MIN
+    await ledger.addElapsed('video.com', [[NOON + MIN, now]], true)
+    expect(siteTotal(normalizeDay(day()), 'video.com')).toBe(2 * MIN)
+  })
+
+  it('takes back time across an hour boundary and midnight, from each day’s own key', async () => {
+    const midnight = at(2026, 5, 11)
+    now = midnight + 3 * MIN
+    await ledger.addElapsed('a.com', [[midnight - 4 * MIN, now]])
+    await ledger.setIdleState('idle')
+    // Idle since 23:58 on the 10th: two minutes back before midnight, three after.
+    expect(day('2026-06-10')).toEqual({ 'a.com': buckets({ 23: 2 * MIN }) })
+    expect(day('2026-06-11')).toEqual({ 'a.com': buckets({}) })
+  })
+
+  it('never takes back below zero, nor time reset since it was credited', async () => {
+    now = NOON
+    await ledger.addElapsed('a.com', [[NOON - MIN, NOON]])
+    await ledger.addElapsed('b.com', [[NOON - MIN, NOON]])
+    await ledger.resetToday('a.com')
+    await ledger.addElapsed('a.com', [[NOON - 1000, NOON]])
+    browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': buckets({ 11: 500 }) } })
+    await ledger.setIdleState('idle')
+    expect(day()).toEqual({ 'a.com': buckets({ 11: 0 }) })
+    expect(away().recent).toEqual([])
+  })
+
+  it('survives a service worker restart: a new ledger reads the periods back', async () => {
+    await ledger.setIdleState('locked')
+    const restarted = createLedger(chromeStore('local'), chromeStore('session'), { now: () => now })
+    now = NOON + MIN
+    await expect(restarted.addElapsed('a.com', [[NOON - MIN, now]])).resolves.toBe(MIN)
+    await restarted.setIdleState('active')
+    expect(away().periods).toEqual([{ kind: 'locked', start: NOON, end: NOON + MIN }])
   })
 })

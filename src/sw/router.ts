@@ -63,7 +63,7 @@ export function createRouter(deps: RouterDeps): Handler {
   // Content-only handlers can rely on ctx.site: classify set it.
   const handlers: Handlers = {
     hello: async (_req, ctx) => ({ site: ctx.site! }),
-    addElapsed: async (req, ctx) => ({ total: await ledger.addElapsed(ctx.site!, req.spans) }),
+    addElapsed: async (req, ctx) => ({ total: await ledger.addElapsed(ctx.site!, req.spans, req.media) }),
     resetToday: (req) => ledger.resetToday(canonical(req.site)),
     setLimit: (req) =>
       ledger.setLimit(

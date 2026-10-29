@@ -23,7 +23,15 @@ describe('parseRequest', () => {
     [{ type: 'openOptions' }, { type: 'openOptions' }],
     [
       { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]] },
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]] },
+      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
+    ],
+    [
+      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: true },
+      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: true },
+    ],
+    [
+      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
+      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
     ],
     [
       { type: 'resetToday', site: 'reddit.com' },
@@ -71,6 +79,9 @@ describe('parseRequest', () => {
       spans: Array.from({ length: MAX_SPANS + 1 }, (_, i) => [NOW - 1000 * (i + 1), NOW - 1000 * i]),
     },
     { type: 'addElapsed', delta: 1000 },
+    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: 'yes' },
+    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: 1 },
+    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: null },
     { type: 'resetToday' },
     { type: 'resetToday', site: '' },
     { type: 'resetToday', site: 'Reddit.com' },
@@ -95,6 +106,7 @@ describe('parseRequest', () => {
     expect(parse({ type: 'addElapsed', spans: [[NOW - 1000, NOW]], site: 'other.com', key: 'limits' })).toEqual({
       type: 'addElapsed',
       spans: [[NOW - 1000, NOW]],
+      media: false,
     })
     expect(parse({ type: 'hello', site: 'other.com' })).toEqual({ type: 'hello' })
     expect(parse({ type: 'setPrefs', hidden: false, limits: {} })).toEqual({ type: 'setPrefs', hidden: false })

@@ -2,16 +2,28 @@ import { chromeStore } from '../chrome/store'
 import { serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { syncContentScripts } from './contentScripts'
+import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
 import { createRouter } from './router'
+import { installTestHook } from './testHook'
 
 const ledger = createLedger(chromeStore('local'), chromeStore('session'), systemClock)
+
+// Time away from the computer (idle or locked) isn't counted. The state is
+// read again on every worker start; changes arrive as events.
+watchIdle(ledger)
+void syncIdle(ledger).catch(() => undefined)
+if (__TABTIMER_E2E__) {
+  installTestHook(ledger)
+}
 
 // Storage first (a different schema is cleared, expired days pruned), then
 // the content script registration for the granted sites.
 async function boot(): Promise<void> {
   await ledger.ensureSchema().catch(() => false)
   await ledger.prune().catch(() => undefined)
+  // A cleared store lost the mirrored idle state.
+  await syncIdle(ledger).catch(() => undefined)
   await syncContentScripts()
 }
 

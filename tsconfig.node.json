@@ -4,11 +4,15 @@
   // chrome types stay for the code e2e tests evaluate in the service worker.
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["node", "chrome"]
+    "types": ["node", "chrome"],
+    // scripts/*.ts run directly under Node (type stripping), which needs the
+    // .ts extension in relative imports.
+    "allowImportingTsExtensions": true
   },
   "include": [
     "e2e/**/*",
     "build.e2e.ts",
+    "scripts/**/*.ts",
     "playwright.config.ts",
     "vite.config.ts",
     "vite.content.config.ts",

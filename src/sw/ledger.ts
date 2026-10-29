@@ -5,6 +5,7 @@
 // different senders (two tabs reporting time, the popup and the options page
 // editing limits) can't interleave and lose an update. The queue is the only
 // in-memory state, and it is empty whenever the worker is idle.
+import { creditable, normalizeAway, observe, remember, AWAY_KEY, type IdleState } from '../core/away'
 import { dayOf, splitByHour } from '../core/day'
 import { applyLimit, normalizeLimits, SNOOZE_MS, type LimitEdit, type Limits } from '../core/limits'
 import {
@@ -15,6 +16,7 @@ import {
   normalizeDay,
   normalizePrefs,
   siteTotal,
+  IDLE_STATE_KEY,
   LIMITS_KEY,
   PREFS_KEY,
   SCHEMA,
@@ -42,6 +44,26 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     return result
   }
 
+  // Add (sign 1) or take back (sign -1, never below zero) `spans` of `site`'s
+  // time in the day usages in `days`, loading each day on first use.
+  async function apply(days: Map<string, DayUsage>, site: Site, spans: Span[], sign: 1 | -1): Promise<void> {
+    for (const [start, end] of spans) {
+      for (const { day, hour, ms } of splitByHour(start, end)) {
+        const key = dayKey(day)
+        let usage = days.get(key)
+        if (!usage) {
+          usage = normalizeDay(await local.get(key))
+          days.set(key, usage)
+        }
+        if (sign === -1 && !usage[site]) {
+          continue // reset since: nothing to take back
+        }
+        const buckets = (usage[site] ??= emptyBuckets())
+        buckets[hour] = Math.max(0, (buckets[hour] ?? 0) + sign * ms)
+      }
+    }
+  }
+
   // Drop day:* keys outside the retention window.
   async function pruneNow(now: number): Promise<void> {
     const stale = expiredDayKeys(Object.keys(await local.getAll()), now)
@@ -67,30 +89,40 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     prune: (): Promise<void> => enqueue(() => pruneNow(clock.now())),
 
     // Credit spans of active time to `site`, split into local days and
-    // hours. Returns the site's total for today.
-    addElapsed: (site: Site, spans: Span[]): Promise<number> =>
+    // hours, less any time away from the computer that pauses them
+    // (core/away.ts; `media`: the page is playing audio or video). Returns
+    // the site's total for today.
+    addElapsed: (site: Site, spans: Span[], media = false): Promise<number> =>
       enqueue(async () => {
         const now = clock.now()
+        const away = normalizeAway(await session.get(AWAY_KEY))
+        const credited = creditable(spans, away.periods, media)
         const days = new Map<string, DayUsage>()
-        for (const [start, end] of spans) {
-          for (const { day, hour, ms } of splitByHour(start, end)) {
-            const key = dayKey(day)
-            let usage = days.get(key)
-            if (!usage) {
-              usage = normalizeDay(await local.get(key))
-              days.set(key, usage)
-            }
-            const buckets = (usage[site] ??= emptyBuckets())
-            buckets[hour] = (buckets[hour] ?? 0) + ms
-          }
-        }
+        await apply(days, site, credited, 1)
         await local.set(Object.fromEntries(days))
+        await session.set({ [AWAY_KEY]: remember(away, site, credited, media, now) })
         // The first write of a new day prunes the days that just expired.
         if ((await session.get(PRUNED_DAY_KEY)) !== dayOf(now)) {
           await pruneNow(now)
         }
         const today = dayKey(dayOf(now))
         return siteTotal(days.get(today) ?? normalizeDay(await local.get(today)), site)
+      }),
+
+    // Record a change of chrome.idle state (repeats are harmless): take back
+    // time credited since a back-dated idle start, and mirror the state to
+    // storage.local for content scripts.
+    setIdleState: (next: IdleState): Promise<void> =>
+      enqueue(async () => {
+        const { state, debit } = observe(normalizeAway(await session.get(AWAY_KEY)), next, clock.now())
+        const days = new Map<string, DayUsage>()
+        for (const c of debit) {
+          await apply(days, c.site, [[c.start, c.end]], -1)
+        }
+        // The period is recorded before content scripts hear of it, so the
+        // time they flush in response is already trimmed.
+        await session.set({ [AWAY_KEY]: state })
+        await local.set({ ...Object.fromEntries(days), [IDLE_STATE_KEY]: next })
       }),
 
     // Zero one site's time for today.
@@ -101,6 +133,11 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         if (site in usage) {
           delete usage[site]
           await local.set({ [key]: usage })
+        }
+        // Time already reset can't be taken back again by a later idle.
+        const away = normalizeAway(await session.get(AWAY_KEY))
+        if (away.recent.some((c) => c.site === site)) {
+          await session.set({ [AWAY_KEY]: { ...away, recent: away.recent.filter((c) => c.site !== site) } })
         }
         return null
       }),

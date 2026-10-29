@@ -164,6 +164,16 @@ describe('handlers', () => {
     expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5 })
   })
 
+  it('report time with the page’s media flag: idle time counts only with media playing', async () => {
+    browser.storage.session.seed({
+      away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
+    })
+    await expect(handle(report, content())).resolves.toEqual({ ok: true, value: { total: 0 } })
+    await expect(handle({ ...report, media: false }, content())).resolves.toEqual({ ok: true, value: { total: 0 } })
+    await expect(handle({ ...report, media: true }, content())).resolves.toEqual({ ok: true, value: { total: 3000 } })
+    await expect(handle({ ...report, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
+  })
+
   it('open the options page', async () => {
     await expect(handle({ type: 'openOptions' }, content())).resolves.toEqual({ ok: true, value: null })
     expect(openOptions).toHaveBeenCalledOnce()

@@ -5,6 +5,8 @@ import { defineConfig } from 'vitest/config'
 // `// @vitest-environment happy-dom` docblock. Every test gets a fresh in-memory
 // chrome.* fake from src/test/setup.ts.
 export default defineConfig({
+  // As in the production build; the e2e test hook is unit-tested directly.
+  define: { __TABTIMER_E2E__: 'false' },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

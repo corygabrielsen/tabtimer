@@ -38,6 +38,8 @@ const manifest = {
 
 export default defineConfig({
   plugins: [crx({ manifest })],
+  // Compiles the e2e test hook (src/sw/testHook.ts) in or out.
+  define: { __TABTIMER_E2E__: JSON.stringify(E2E) },
   resolve: {
     // tldts's own minified build of the Public Suffix List (~46 KB gzipped).
     // Its unminified ES modules bundle to more than twice that.

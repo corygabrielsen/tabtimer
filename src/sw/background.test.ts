@@ -26,6 +26,7 @@ describe('storage on install and startup', () => {
       limits: { global: null, perSite: {} },
       prefs: { hidden: false, scale: 1 },
       snoozeUntil: 0,
+      idleState: 'active',
     })
   })
 
@@ -37,7 +38,26 @@ describe('storage on install and startup', () => {
     browser.storage.local.seed({ schema: SCHEMA, limits: { global: 60_000, perSite: {} }, [oldKey]: {} })
     browser.runtime.onStartup.dispatch()
     await flush()
-    expect(browser.storage.local.data).toEqual({ schema: SCHEMA, limits: { global: 60_000, perSite: {} } })
+    expect(browser.storage.local.data).toEqual({
+      schema: SCHEMA,
+      limits: { global: 60_000, perSite: {} },
+      idleState: 'active',
+    })
+  })
+})
+
+describe('idle', () => {
+  it('watches chrome.idle over five minutes and records the state at every start', async () => {
+    await flush()
+    browser.idleState = 'locked'
+    vi.resetModules()
+    await import('./background')
+    await flush()
+    expect(browser.idle.setDetectionInterval).toHaveBeenCalledWith(300)
+    expect(browser.storage.local.data.idleState).toBe('locked')
+    browser.setIdleState('active')
+    await flush()
+    expect(browser.storage.local.data.idleState).toBe('active')
   })
 })
 
