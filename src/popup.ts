@@ -1,10 +1,19 @@
-import { chromeStore } from './chrome/store'
+import { chromeStore, loadThenPatch } from './chrome/store'
 import { bus } from './chrome/bus'
+import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { hourLabel } from './core/usage'
-import { originsForSite, siteOf } from './core/site'
-import { blockAt, limitsFor, msToMinutes, normalizeLimits, siteLimitOf, type Limits } from './core/limits'
+import { originsForSite, siteOfUrl } from './core/site'
+import {
+  blockAt,
+  limitsFor,
+  msToMinutes,
+  normalizeLimits,
+  siteLimitOf,
+  DEFAULT_LIMITS,
+  type Limits,
+} from './core/limits'
 import {
   dayKey,
   dayTotal,
@@ -12,15 +21,15 @@ import {
   normalizeDay,
   normalizePrefs,
   siteTotal,
-  DAY_KEY_PREFIX,
   LIMITS_KEY,
   PREFS_KEY,
+  type DayUsage,
 } from './core/schema'
 import { localizeDom, t } from './i18n'
-import { byId, formatDuration, setDocumentLang, uiLocale } from './ui'
+import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
-type ActiveTab = { id: number; hostname: string; protocol: string }
+type ActiveTab = { id: number; url: string }
 type View = 'tracked' | 'enable' | 'untracked' | 'loading'
 const VIEWS: View[] = ['tracked', 'enable', 'untracked', 'loading']
 
@@ -40,12 +49,15 @@ function showView(view: View) {
 // Hosts extensions can never run on, even with a grant.
 const RESTRICTED_HOSTS = new Set(['chromewebstore.google.com', 'chrome.google.com', 'microsoftedge.microsoft.com'])
 
-function isTrackable(tab: ActiveTab): boolean {
-  return (
-    (tab.protocol === 'http:' || tab.protocol === 'https:') &&
-    tab.hostname.includes('.') &&
-    !RESTRICTED_HOSTS.has(tab.hostname)
-  )
+// The tab's site, or null where tracking can't run (not http(s), a host
+// without a dot, or a restricted host).
+function trackableSite(tab: ActiveTab): string | null {
+  const site = siteOfUrl(tab.url)
+  if (site === null) {
+    return null
+  }
+  const { hostname } = new URL(tab.url)
+  return hostname.includes('.') && !RESTRICTED_HOSTS.has(hostname) ? site : null
 }
 
 // activeTab grants access to the current tab while the popup is open, so we can
@@ -54,16 +66,7 @@ function activeTab(): Promise<ActiveTab | null> {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const tab = tabs[0]
-      if (!tab?.id || !tab.url) {
-        resolve(null)
-        return
-      }
-      try {
-        const url = new URL(tab.url)
-        resolve({ id: tab.id, hostname: url.hostname, protocol: url.protocol })
-      } catch {
-        resolve(null)
-      }
+      resolve(tab?.id && tab.url ? { id: tab.id, url: tab.url } : null)
     })
   })
 }
@@ -77,8 +80,18 @@ const STRIP_FLOOR_MS = 10 * 60_000
 // The hours the timeline names: midnight, 6, noon and 18.
 const STRIP_MARKS = [0, 6, 12, 18]
 
+const at = (hour: number) => `${(hour / 24) * 100}%`
+
+// Where now falls on the strip.
+const nowMark = h('i', { class: 'now' })
+
+function moveNow() {
+  const now = new Date()
+  nowMark.style.left = at(now.getHours() + now.getMinutes() / 60)
+}
+
 // Today's time on this site as a timeline: 24 thin bars, faint marks every
-// six hours with their names below, and where now falls.
+// six hours with their names below, and the now mark.
 function renderStrip(base: string, hours: number[]) {
   const strip = byId('strip')
   const axis = byId('strip-axis')
@@ -87,38 +100,22 @@ function renderStrip(base: string, hours: number[]) {
   }
   const top = Math.max(STRIP_FLOOR_MS, ...hours)
   strip.setAttribute('aria-label', t('popupStripAria', base))
-  const at = (hour: number) => `${(hour / 24) * 100}%`
-  const marks = STRIP_MARKS.map((hour) => {
-    const mark = document.createElement('i')
-    mark.className = 'mark'
-    mark.style.left = at(hour)
-    return mark
-  })
-  const now = new Date()
-  const nowMark = document.createElement('i')
-  nowMark.className = 'now'
-  nowMark.style.left = at(now.getHours() + now.getMinutes() / 60)
+  const placed = <E extends HTMLElement>(el: E, hour: number) => {
+    el.style.left = at(hour)
+    return el
+  }
+  moveNow()
   strip.replaceChildren(
-    ...marks,
+    ...STRIP_MARKS.map((hour) => placed(h('i', { class: 'mark' }), hour)),
     ...hours.map((ms) => {
-      const bar = document.createElement('span')
+      const bar = h('span', { 'data-on': ms > 0 })
       bar.style.setProperty('--v', String(ms / top))
-      if (ms > 0) {
-        bar.dataset.on = ''
-      }
       return bar
     }),
     nowMark
   )
   const locale = uiLocale()
-  axis.replaceChildren(
-    ...STRIP_MARKS.map((hour) => {
-      const label = document.createElement('span')
-      label.textContent = hourLabel(hour, locale)
-      label.style.left = at(hour)
-      return label
-    })
-  )
+  axis.replaceChildren(...STRIP_MARKS.map((hour) => placed(h('span', {}, hourLabel(hour, locale)), hour)))
 }
 
 function faceFor(base: string, s: Snapshot) {
@@ -150,7 +147,6 @@ function renderFace(base: string, s: Snapshot) {
   const globalLine = byId('global-line')
 
   hero?.setAttribute('data-state', face.state)
-  renderStrip(base, s.hours)
   if (today) {
     today.textContent = formatTime(s.siteToday)
   }
@@ -227,26 +223,18 @@ function renderTracked(base: string) {
     siteEl.title = base
   }
 
-  const snapshot = async (): Promise<Snapshot> => {
-    const read = (key: string) => local.get(key).catch(() => undefined)
-    const [day, limits] = await Promise.all([
-      read(dayKey(dayOf(Date.now()))).then(normalizeDay),
-      read(LIMITS_KEY).then(normalizeLimits),
-    ])
-    return {
-      siteToday: siteTotal(day, base),
-      globalToday: dayTotal(day),
-      limits,
-      hours: day[base] ?? emptyBuckets(),
-    }
-  }
-
+  // Today's usage and the limits: read once, then patched from each change.
+  let day: DayUsage = {}
+  let limits: Limits = DEFAULT_LIMITS
+  let hidden = false
   let last: Snapshot | null = null
-  const refresh = async () => {
-    last = await snapshot()
+  const draw = () => {
+    last = { siteToday: siteTotal(day, base), globalToday: dayTotal(day), limits, hours: day[base] ?? emptyBuckets() }
+    renderStrip(base, last.hours)
     renderFace(base, last)
-    syncLimitField(last.limits)
+    syncLimitField(limits)
   }
+  const todayKey = () => dayKey(dayOf(Date.now()))
 
   // --- daily limit for this site: preset chips, or a custom whole-minutes value ---
   let picker: LimitPicker | null = null
@@ -270,17 +258,9 @@ function renderTracked(base: string) {
 
   // --- overlay switch ---
   const toggleBtn = byId('toggle-btn')
-  const readHidden = () =>
-    local
-      .get(PREFS_KEY)
-      .then((v) => normalizePrefs(v).hidden)
-      .catch(() => false)
-  const renderToggle = async () => {
-    toggleBtn?.setAttribute('aria-checked', String(!(await readHidden())))
-  }
-  toggleBtn?.addEventListener('click', async () => {
-    await bus.send('setPrefs', { hidden: !(await readHidden()) })
-    await renderToggle()
+  const renderToggle = () => toggleBtn?.setAttribute('aria-checked', String(!hidden))
+  toggleBtn?.addEventListener('click', () => {
+    void bus.send('setPrefs', { hidden: !hidden })
   })
 
   // --- reset: arm, then confirm (today's time can't be recovered) ---
@@ -313,26 +293,43 @@ function renderTracked(base: string) {
     setArmed(false)
   })
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local') {
-      return
-    }
-    if (changes[PREFS_KEY]) {
-      void renderToggle()
-    }
-    const relevant = Object.keys(changes).some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))
-    if (relevant) {
-      void refresh()
-    }
-  })
-  // Keep the snooze countdown and summary current while the popup is open.
+  // Keep the now mark, the snooze countdown and the summary current while the
+  // popup is open.
   window.setInterval(() => {
     if (last) {
+      moveNow()
       renderFace(base, last)
     }
   }, 15000)
 
-  void Promise.all([refresh(), renderToggle()]).then(() => showView('tracked'))
+  const read = (key: string) => local.get(key).catch(() => undefined)
+  const load = async () => {
+    const [d, l, p] = await Promise.all([read(todayKey()), read(LIMITS_KEY), read(PREFS_KEY)])
+    day = normalizeDay(d)
+    limits = normalizeLimits(l)
+    hidden = normalizePrefs(p).hidden
+  }
+  const patch = (changes: StoreChanges) => {
+    if (PREFS_KEY in changes) {
+      hidden = normalizePrefs(changes[PREFS_KEY]!.newValue).hidden
+      renderToggle()
+    }
+    const key = todayKey()
+    if (key in changes) {
+      day = normalizeDay(changes[key]!.newValue)
+    }
+    if (LIMITS_KEY in changes) {
+      limits = normalizeLimits(changes[LIMITS_KEY]!.newValue)
+    }
+    if (key in changes || LIMITS_KEY in changes) {
+      draw()
+    }
+  }
+  void loadThenPatch(local, load, patch).then(() => {
+    draw()
+    renderToggle()
+    showView('tracked')
+  })
 }
 
 function renderEnable(tab: ActiveTab, base: string) {
@@ -365,12 +362,12 @@ async function init() {
   byId('manage-btn')?.addEventListener('click', () => chrome.runtime.openOptionsPage())
 
   const tab = await activeTab()
-  if (!tab || !isTrackable(tab)) {
+  const base = tab && trackableSite(tab)
+  if (!tab || !base) {
     showView('untracked')
     return
   }
 
-  const base = siteOf(tab.hostname)
   const granted = await chrome.permissions.contains({ origins: originsForSite(base) }).catch(() => false)
 
   if (granted) {

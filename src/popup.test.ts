@@ -275,6 +275,36 @@ describe('popup on a tracked site', () => {
     })
   })
 
+  it('moves the now mark while open, without redrawing the strip', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['setInterval', 'Date'] })
+    try {
+      await openReddit()
+      const bar = $('strip').querySelector('span')
+      vi.advanceTimersByTime(60 * MIN)
+      expect($('strip').querySelector<HTMLElement>('.now')?.style.left).toBe(`${(16 / 24) * 100}%`)
+      expect($('strip').querySelector('span')).toBe(bar)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps a write that lands while it is loading', async () => {
+    seedToday({ 'reddit.com': 65_000 })
+    browser.storage.local.writeDuringNextRead(dayEntry({ 'reddit.com': 3_600_000 }))
+    await openReddit()
+    expect($('today').textContent).toBe('01:00:00')
+  })
+
+  it('ignores another day’s usage', async () => {
+    seedToday({ 'reddit.com': 65_000 })
+    await openReddit()
+    const bar = $('strip').querySelector('span')
+    browser.storage.local.set(dayEntry({ 'reddit.com': 3_600_000 }, new Date(Date.now() - 86_400_000)))
+    await flush()
+    expect($('today').textContent).toBe('00:01:05')
+    expect($('strip').querySelector('span')).toBe(bar)
+  })
+
   it('keeps the snooze countdown current while open', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
     try {

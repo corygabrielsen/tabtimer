@@ -50,6 +50,11 @@ export class FakeStorageArea {
   ): Promise<Record<string, unknown>> => {
     // Snapshot at call time; delivered later (models read/write interleaving).
     const snapshot = this.read(keys)
+    const racing = this.racing
+    if (racing) {
+      this.racing = null
+      this.write(racing)
+    }
     return this.complete(this.error, () => snapshot, callback)
   }
 
@@ -121,6 +126,13 @@ export class FakeStorageArea {
       })
     })
   }
+
+  // Write `items` just after the next read takes its snapshot: a write that
+  // lands while that read is in flight.
+  writeDuringNextRead(items: Record<string, unknown>): void {
+    this.racing = items
+  }
+  private racing: Record<string, unknown> | null = null
 
   // Direct, synchronous seeding for tests (still notifies listeners, like a
   // write from another extension context would).

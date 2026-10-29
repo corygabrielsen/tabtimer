@@ -513,4 +513,21 @@ describe('this week', () => {
     await flush()
     expect(text($('week-total'))).toBe('30 min')
   })
+
+  it('keeps a write that lands while it is loading', async () => {
+    browser.storage.local.seed(dayEntry({ 'reddit.com': 10 * MIN }, at(28)))
+    browser.storage.local.writeDuringNextRead(dayEntry({ 'reddit.com': 30 * MIN }, at(28)))
+    await openOptions()
+    expect(text($('week-total'))).toBe('30 min')
+  })
+
+  it('leaves the week alone when a day outside it changes', async () => {
+    browser.storage.local.seed(dayEntry({ 'reddit.com': 10 * MIN }, at(28)))
+    await openOptions()
+    const bars = $('week-bars').firstElementChild
+    browser.storage.local.set(dayEntry({ 'reddit.com': 30 * MIN }, at(24)))
+    await flush()
+    expect($('week-bars').firstElementChild).toBe(bars)
+    expect(text($('week-total'))).toBe('10 min')
+  })
 })

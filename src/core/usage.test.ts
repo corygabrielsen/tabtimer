@@ -15,6 +15,7 @@ import {
   hourLabel,
   maxOffset,
   niceScale,
+  patchHistory,
   periodOf,
   periodTotal,
   rangeLabel,
@@ -53,6 +54,20 @@ describe('historyOf', () => {
       'day:2026-10-28': { 'a.com': [MIN] },
       'day:nope': {},
     })
+    expect([...h.keys()]).toEqual(['2026-10-28'])
+    expect(h.get(d('2026-10-28'))?.['a.com']).toHaveLength(24)
+  })
+})
+
+describe('patchHistory', () => {
+  it('applies day:* changes, a removed key as a pruned day, and names the days', () => {
+    const h = history({ '2026-10-01': day({ 'a.com': { 9: 1 } }) })
+    const days = patchHistory(h, {
+      [LIMITS_KEY]: { newValue: { global: null } },
+      'day:2026-10-01': {},
+      'day:2026-10-28': { newValue: { 'a.com': [MIN] } },
+    })
+    expect(days).toEqual(['2026-10-01', '2026-10-28'])
     expect([...h.keys()]).toEqual(['2026-10-28'])
     expect(h.get(d('2026-10-28'))?.['a.com']).toHaveLength(24)
   })

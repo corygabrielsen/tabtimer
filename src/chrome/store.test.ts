@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chromeStore } from './store'
+import { chromeStore, loadThenPatch } from './store'
 import { fakeChrome, installChrome } from '../test/chrome'
 import { flush } from '../test/dom'
 
@@ -54,5 +54,42 @@ describe('chromeStore', () => {
     const store = chromeStore('local')
     installChrome().storage.local.seed({ fresh: true })
     await expect(store.get('fresh')).resolves.toBe(true)
+  })
+})
+
+describe('loadThenPatch', () => {
+  it('applies changes made during the load after it, in order, then each as it comes', async () => {
+    const store = chromeStore('local')
+    const log: string[] = []
+    let finish!: () => void
+    const load = () =>
+      new Promise<void>((resolve) => {
+        finish = () => {
+          log.push('loaded')
+          resolve()
+        }
+      })
+    const done = loadThenPatch(store, load, (changes) => log.push(Object.keys(changes).join()))
+    fakeChrome().storage.local.seed({ a: 1 })
+    fakeChrome().storage.local.seed({ b: 1 })
+    await flush()
+    expect(log).toEqual([])
+    finish()
+    await done
+    expect(log).toEqual(['loaded', 'a', 'b'])
+    fakeChrome().storage.local.seed({ c: 1 })
+    expect(log).toEqual(['loaded', 'a', 'b', 'c'])
+  })
+
+  it('applies them even when the load fails', async () => {
+    const applied: unknown[] = []
+    const done = loadThenPatch(
+      chromeStore('local'),
+      () => Promise.reject(new Error('broken')),
+      (changes) => applied.push(changes)
+    )
+    fakeChrome().storage.local.seed({ a: 1 })
+    await expect(done).rejects.toThrow('broken')
+    expect(applied).toEqual([{ a: { newValue: 1 } }])
   })
 })

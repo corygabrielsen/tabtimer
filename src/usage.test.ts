@@ -72,6 +72,14 @@ describe('with nothing recorded', () => {
   })
 })
 
+describe('while loading', () => {
+  it('keeps a write that lands while the page reads storage', async () => {
+    browser.storage.local.writeDuringNextRead(day('2026-10-28', { 'reddit.com': { 9: 60 } }))
+    await open()
+    expect(text('total')).toBe('1 h')
+  })
+})
+
 describe('day view', () => {
   beforeEach(() => open())
 
@@ -234,6 +242,22 @@ describe('week view', () => {
     browser.storage.local.set({ prefs: { hidden: true, scale: 1 } })
     await flush()
     expect($('chart').firstElementChild).toBe(before)
+  })
+
+  it('keeps a day outside the period without drawing, and drops a pruned one', async () => {
+    const before = $('chart').firstElementChild
+    browser.storage.local.set({ ...day('2026-10-02', { 'reddit.com': { 20: 300 } }) })
+    await flush()
+    expect($('chart').firstElementChild).toBe(before)
+    void browser.storage.local.remove(['day:2026-10-21'])
+    await flush()
+    expect(text('change')).toBe('')
+    expect($('change').hidden).toBe(true)
+    for (let i = 0; i < 4; i++) {
+      click($('prev'))
+    }
+    expect(text('period-label')).toBe('Sep 27 – Oct 3')
+    expect(text('total')).toBe('5 h')
   })
 
   it('shows a drop from the period before', async () => {

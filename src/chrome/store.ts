@@ -32,3 +32,26 @@ export function chromeStore(area: StorageAreaName): Store {
     },
   }
 }
+
+// Load a page's state with `load`, then keep it current with `apply` for
+// every change. The listener is in place before the read starts: changes
+// that arrive while it is in flight are applied after it, in order, so a
+// write racing the read is never lost (one the read already saw is applied
+// again, which sets the same value).
+export async function loadThenPatch(
+  store: Store,
+  load: () => Promise<void>,
+  apply: (changes: StoreChanges) => void
+): Promise<void> {
+  let queued: StoreChanges[] | null = []
+  store.onChanged((changes) => (queued ? queued.push(changes) : apply(changes)))
+  try {
+    await load()
+  } finally {
+    const pending = queued
+    queued = null
+    for (const changes of pending) {
+      apply(changes)
+    }
+  }
+}

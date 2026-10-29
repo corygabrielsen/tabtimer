@@ -31,6 +31,24 @@ export function historyOf(items: Record<string, unknown>): History {
   return history
 }
 
+// Applies storage `changes` to `history` (a removed key is a pruned day) and
+// returns the days that changed.
+export function patchHistory(history: History, changes: Record<string, { newValue?: unknown }>): DayStamp[] {
+  const days: DayStamp[] = []
+  for (const [key, { newValue }] of Object.entries(changes)) {
+    const day = dayOfKey(key)
+    if (day !== null) {
+      if (newValue === undefined) {
+        history.delete(day)
+      } else {
+        history.set(day, normalizeDay(newValue))
+      }
+      days.push(day)
+    }
+  }
+  return days
+}
+
 // --- Weeks -------------------------------------------------------------------
 
 // 0 = Sunday … 6 = Saturday.
