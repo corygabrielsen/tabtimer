@@ -4,6 +4,18 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-10-28
+
+### Fixed
+
+- The page behind the block screen can no longer be scrolled: not with the
+  mouse wheel or trackpad, touch, the keyboard (Space, Page Up/Down, Home/End,
+  arrow keys), or middle-click autoscroll, including on sites that scroll the
+  page body or an inner panel instead of the whole page. Once it goes away,
+  the page is back where you left it and scrolls normally.
+- The block screen is now fully opaque: nothing of the page shows through it,
+  in light or dark mode.
+
 ## [1.2.1] - 2026-10-28
 
 ### Fixed
@@ -100,6 +112,7 @@ All notable changes to Tab Timer. The format follows
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.2.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.0...v1.1.1

@@ -32,14 +32,18 @@ const STYLES = `
     border: 0;
   }
   .screen:not([open]) { display: none; }
-  .screen::backdrop { background: transparent; }
+  .screen,
+  .screen::backdrop {
+    background: #000;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
   .screen {
     position: fixed;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.96);
     color: #f5f5f5;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-variant-numeric: tabular-nums;
@@ -104,6 +108,22 @@ const STYLES = `
 
 const OVERFLOW_PROPS = ['overflow', 'overflow-x', 'overflow-y'] as const
 type SavedStyle = { value: string; priority: string }
+type ScrollPosition = { left: number; top: number }
+
+// Keys that scroll the page (or the nearest scroller) by default.
+const SCROLL_KEYS = new Set([
+  ' ',
+  'PageUp',
+  'PageDown',
+  'Home',
+  'End',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+])
+// Capture phase, and not passive, so preventDefault holds for wheel/touch.
+const ACTIVE_CAPTURE: AddEventListenerOptions = { capture: true, passive: false }
 
 // The block screen is a modal <dialog> inside a closed shadow root. While it
 // is open (showModal), the browser puts it in the top layer and makes the rest
@@ -126,8 +146,13 @@ export default class Blocker {
   private blocked = false
   // Where focus was before blocking, restored on dismissal.
   private previousFocus: Element | null = null
-  // The page's own inline overflow, saved only while this instance overrides it.
-  private savedOverflow: Map<string, SavedStyle> | null = null
+  // The page's own inline overflow on <html> and <body>, saved only while this
+  // instance overrides it.
+  private savedOverflow: Map<HTMLElement, Map<string, SavedStyle>> | null = null
+  // Scroll offsets frozen while blocked: the window's, and every element that
+  // was scrolled away from the origin when blocking began.
+  private frozenWindow: ScrollPosition | null = null
+  private frozenElements = new Map<Element, ScrollPosition>()
 
   constructor(private model: Model) {
     this.siteHost = baseHost(window.location.hostname)
@@ -140,6 +165,8 @@ export default class Blocker {
     s.setProperty('inset', '0', 'important')
     s.setProperty('z-index', String(MAX_Z_INDEX), 'important')
     s.setProperty('display', 'none', 'important')
+    // Opaque even before (or without) the modal dialog painting over it.
+    s.setProperty('background', '#000', 'important')
 
     this.shadow = this.host.attachShadow({ mode: 'closed' })
     const style = document.createElement('style')
@@ -242,6 +269,11 @@ export default class Blocker {
     document.addEventListener('focusin', this.handleFocusIn, true)
     document.addEventListener('play', this.handlePlay, true)
     document.addEventListener('fullscreenchange', this.handleFullscreenChange)
+    window.addEventListener('wheel', this.handleWheel, ACTIVE_CAPTURE)
+    window.addEventListener('touchmove', this.preventDefault, ACTIVE_CAPTURE)
+    window.addEventListener('mousedown', this.handleMouseDown, true)
+    window.addEventListener('keydown', this.handleScrollKey, true)
+    window.addEventListener('scroll', this.handleScroll, true)
   }
 
   private unblock() {
@@ -273,6 +305,11 @@ export default class Blocker {
     document.removeEventListener('focusin', this.handleFocusIn, true)
     document.removeEventListener('play', this.handlePlay, true)
     document.removeEventListener('fullscreenchange', this.handleFullscreenChange)
+    window.removeEventListener('wheel', this.handleWheel, ACTIVE_CAPTURE)
+    window.removeEventListener('touchmove', this.preventDefault, ACTIVE_CAPTURE)
+    window.removeEventListener('mousedown', this.handleMouseDown, true)
+    window.removeEventListener('keydown', this.handleScrollKey, true)
+    window.removeEventListener('scroll', this.handleScroll, true)
   }
 
   // showModal: top layer, inert page, focus inside. Chromium allows it from a
@@ -298,35 +335,118 @@ export default class Blocker {
     }
   }
 
-  // Save the page's inline overflow (values and priorities) before overriding
-  // it, so dismissal restores exactly what the page had.
+  // Hide overflow on <html> and <body>: hiding it on <html> alone stops the
+  // body's overflow propagating to the viewport, which turns a body set to
+  // scroll into a scroller of its own. The page's inline values and
+  // priorities are saved first, so dismissal restores exactly what it had.
   private lockScroll() {
-    const style = document.documentElement.style
-    this.savedOverflow ??= new Map(
-      OVERFLOW_PROPS.map((p) => [p, { value: style.getPropertyValue(p), priority: style.getPropertyPriority(p) }])
-    )
-    style.setProperty('overflow', 'hidden', 'important')
+    this.freezeScrollPositions()
+    if (this.savedOverflow) {
+      return
+    }
+    this.savedOverflow = new Map()
+    for (const el of new Set([document.documentElement, document.body])) {
+      if (!el) {
+        continue
+      }
+      const style = el.style
+      this.savedOverflow.set(
+        el,
+        new Map(
+          OVERFLOW_PROPS.map((p) => [p, { value: style.getPropertyValue(p), priority: style.getPropertyPriority(p) }])
+        )
+      )
+      style.setProperty('overflow', 'hidden', 'important')
+    }
   }
 
   private restoreScroll() {
+    const frozen = this.frozenWindow
+    this.frozenWindow = null
+    this.frozenElements.clear()
     const saved = this.savedOverflow
     if (!saved) {
       return
     }
     this.savedOverflow = null
-    const style = document.documentElement.style
-    for (const p of OVERFLOW_PROPS) {
-      style.removeProperty(p)
+    for (const [el, props] of saved) {
+      restoreOverflow(el.style, props)
     }
-    // The shorthand only reads back when both longhands agree; restore it as
-    // one, otherwise each longhand on its own.
-    const props = saved.get('overflow')?.value ? (['overflow'] as const) : (['overflow-x', 'overflow-y'] as const)
-    for (const p of props) {
-      const { value, priority } = saved.get(p)!
-      if (value) {
-        style.setProperty(p, value, priority)
+    // Hiding overflow can shrink the viewport's scroll range (a body sized to
+    // the viewport) and clamp its offset; go back to where the page was.
+    if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
+      window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
+    }
+  }
+
+  // Record where everything is scrolled to. Anything not recorded was at the
+  // origin.
+  private freezeScrollPositions() {
+    this.frozenWindow = { left: window.scrollX, top: window.scrollY }
+    this.frozenElements.clear()
+    for (const el of document.querySelectorAll('*')) {
+      if (el.scrollLeft !== 0 || el.scrollTop !== 0) {
+        this.frozenElements.set(el, { left: el.scrollLeft, top: el.scrollTop })
       }
     }
+  }
+
+  // Backstop for whatever the input handlers miss (a page script, an input
+  // path they don't cover): put anything that scrolls while blocked back.
+  private handleScroll = (e: Event) => {
+    const target = e.target
+    if (target === document || target === document.scrollingElement) {
+      const frozen = this.frozenWindow
+      if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
+        window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
+      }
+      return
+    }
+    if (!(target instanceof Element)) {
+      return
+    }
+    const frozen = this.frozenElements.get(target) ?? { left: 0, top: 0 }
+    if (target.scrollLeft !== frozen.left || target.scrollTop !== frozen.top) {
+      target.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
+    }
+  }
+
+  private preventDefault = (e: Event) => {
+    e.preventDefault()
+  }
+
+  // Ctrl+wheel (and trackpad pinch) zooms rather than scrolls; leave it be.
+  private handleWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey) {
+      e.preventDefault()
+    }
+  }
+
+  // Middle-click starts autoscroll.
+  private handleMouseDown = (e: MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault()
+    }
+  }
+
+  // Scroll keys scroll the page behind the block screen; Space on one of its
+  // buttons presses it instead, so that one goes through. Alt/Meta with
+  // Left/Right is history navigation, not scrolling.
+  private handleScrollKey = (e: KeyboardEvent) => {
+    if (!SCROLL_KEYS.has(e.key)) {
+      return
+    }
+    if (
+      e.key === ' ' &&
+      e.composedPath().includes(this.host) &&
+      this.shadow.activeElement instanceof HTMLButtonElement
+    ) {
+      return
+    }
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (e.altKey || e.metaKey)) {
+      return
+    }
+    e.preventDefault()
   }
 
   // A fullscreen element shares the top layer and would cover the dialog;
@@ -408,6 +528,26 @@ export default class Blocker {
     }
     if (dirty) {
       void this.tick()
+    }
+  }
+}
+
+// Put back an element's saved inline overflow, unless the page set its own
+// while blocked (the override is no longer ours to undo).
+function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedStyle>) {
+  if (style.getPropertyValue('overflow') !== 'hidden' || style.getPropertyPriority('overflow') !== 'important') {
+    return
+  }
+  for (const p of OVERFLOW_PROPS) {
+    style.removeProperty(p)
+  }
+  // The shorthand only reads back when both longhands agree; restore it as
+  // one, otherwise each longhand on its own.
+  const props = saved.get('overflow')?.value ? (['overflow'] as const) : (['overflow-x', 'overflow-y'] as const)
+  for (const p of props) {
+    const { value, priority } = saved.get(p)!
+    if (value) {
+      style.setProperty(p, value, priority)
     }
   }
 }
