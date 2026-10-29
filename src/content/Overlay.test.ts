@@ -245,6 +245,63 @@ describe('hiding', () => {
   })
 })
 
+describe('placement', () => {
+  // happy-dom has no popover API; record the calls.
+  let shown: Element[]
+  beforeEach(() => {
+    shown = []
+    Object.defineProperty(HTMLElement.prototype, 'showPopover', {
+      configurable: true,
+      value(this: HTMLElement) {
+        shown.push(this)
+      },
+    })
+  })
+  afterEach(() => {
+    delete (HTMLElement.prototype as { showPopover?: unknown }).showPopover
+  })
+
+  const host = () => document.getElementById('tabtimer-root')!
+
+  it('is a manual popover on <html>, in the top layer, where page transforms can’t move it', async () => {
+    await mount()
+    expect(host().parentNode).toBe(document.documentElement)
+    expect(host().getAttribute('popover')).toBe('manual')
+    expect(shown).toEqual([host()])
+    // The browser's popover box undone.
+    for (const prop of ['margin', 'padding', 'border', 'overflow', 'background']) {
+      expect(host().style.getPropertyPriority(prop)).toBe('important')
+    }
+    expect(host().style.getPropertyValue('top')).toMatch(/^0(px)?$/)
+    expect(host().style.getPropertyValue('left')).toBe('50%')
+  })
+
+  it('outlives the page replacing <body>, and puts itself back if removed', async () => {
+    const view = await mount()
+    document.body.replaceWith(document.createElement('body'))
+    expect(host().isConnected).toBe(true)
+
+    const el = host()
+    el.remove()
+    view.render()
+    expect(el.parentNode).toBe(document.documentElement)
+    expect(shown).toEqual([el, el])
+    view.render()
+    expect(shown).toHaveLength(2)
+  })
+
+  it('stays a fixed element where showPopover throws', async () => {
+    Object.defineProperty(HTMLElement.prototype, 'showPopover', {
+      configurable: true,
+      value() {
+        throw new DOMException('already showing', 'InvalidStateError')
+      },
+    })
+    await mount()
+    expect(host().style.getPropertyValue('position')).toBe('fixed')
+  })
+})
+
 describe('lifecycle', () => {
   it('replaces a stale overlay instead of stacking duplicates', async () => {
     await mount()

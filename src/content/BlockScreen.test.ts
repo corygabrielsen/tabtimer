@@ -444,6 +444,159 @@ describe('media behind the block screen', () => {
     await mount()
     expect(() => document.body.dispatchEvent(new Event('play'))).not.toThrow()
   })
+
+  it('pauses media inside the page’s shadow roots, and keeps it paused', async () => {
+    const outer = page('div').attachShadow({ mode: 'open' })
+    const inner = outer.appendChild(document.createElement('div')).attachShadow({ mode: 'open' })
+    const video = playing(inner.appendChild(document.createElement('video')))
+    const blocker = await mount()
+    expect(video.pause).toHaveBeenCalledOnce()
+    // play doesn't leave the shadow root; the root's own listener sees it.
+    video.dispatchEvent(new Event('play'))
+    expect(video.pause).toHaveBeenCalledTimes(2)
+
+    // A player added while blocked is paused on the next tick.
+    const late = playing(outer.appendChild(document.createElement('audio')))
+    blocker.tick()
+    expect(late.pause).toHaveBeenCalledOnce()
+
+    click(snoozeButton())
+    video.dispatchEvent(new Event('play'))
+    expect(video.pause).toHaveBeenCalledTimes(2)
+  })
+
+  it('pauses media in a same-origin frame', async () => {
+    // happy-dom loads no frames; give this one a document of its own.
+    const doc = document.implementation.createHTMLDocument()
+    // (A <frame>: an <iframe> would log happy-dom's refusal to load it.)
+    const frame = document.createElement('frame')
+    document.body.append(frame)
+    pageElements.push(frame)
+    Object.defineProperty(frame, 'contentDocument', { value: doc })
+    const audio = playing(doc.body.appendChild(doc.createElement('audio')))
+    await mount()
+    expect(audio.pause).toHaveBeenCalledOnce()
+    audio.dispatchEvent(new Event('play'))
+    expect(audio.pause).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('staying on the page', () => {
+  beforeEach(() => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    logged('reddit.com', minutes(2))
+  })
+
+  it('mounts outside <body>, so a page replacing it keeps the block screen', async () => {
+    await mount()
+    expect(host().parentNode).toBe(document.documentElement)
+    document.body.replaceWith(document.createElement('body'))
+    expect(host().isConnected).toBe(true)
+    expect(isBlocked()).toBe(true)
+  })
+
+  it('puts itself back, on top, when the page removes it', async () => {
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    const blocker = await mount()
+    host().remove()
+    blocker.tick()
+    expect(document.getElementById('tabtimer-block')?.parentNode).toBe(document.documentElement)
+    expect(showModal).toHaveBeenCalledTimes(2)
+    expect(screen().activeElement).toBe(snoozeButton())
+    // Nothing else changed: no further raise.
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(2)
+  })
+
+  it('locks scrolling on a <body> the page swaps in while blocked', async () => {
+    const blocker = await mount()
+    const fresh = document.createElement('body')
+    fresh.style.setProperty('overflow', 'auto')
+    document.body.replaceWith(fresh)
+    blocker.tick()
+    expect(fresh.style.getPropertyValue('overflow')).toBe('hidden')
+    expect(fresh.style.getPropertyPriority('overflow')).toBe('important')
+    click(snoozeButton())
+    expect(fresh.style.getPropertyValue('overflow')).toBe('auto')
+    expect(fresh.style.getPropertyPriority('overflow')).toBe('')
+  })
+})
+
+describe('staying on top', () => {
+  // happy-dom has no top layer: stand in for :modal / :popover-open.
+  let topLayer: Element[]
+
+  beforeEach(() => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    logged('reddit.com', minutes(2))
+    topLayer = []
+    const matches = Element.prototype.matches
+    vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
+      return selector === ':modal, :popover-open' ? topLayer.includes(this) : matches.call(this, selector)
+    })
+    const query = document.querySelectorAll.bind(document)
+    vi.spyOn(document, 'querySelectorAll').mockImplementation((selector: string) =>
+      selector === ':modal, :popover-open' ? (topLayer as never) : query(selector)
+    )
+  })
+
+  it('raises itself above a page dialog or popover opened over it', async () => {
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    const blocker = await mount()
+    expect(showModal).toHaveBeenCalledTimes(1)
+
+    // Found on the next tick (it may sit in a shadow root, where toggle events
+    // don't reach the document).
+    topLayer.push(page('dialog'))
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(2)
+    expect(screen().activeElement).toBe(snoozeButton())
+    // Now below the block screen: left alone.
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(2)
+
+    // A popover's toggle event raises it at once.
+    const popover = page('div')
+    topLayer.push(popover)
+    popover.dispatchEvent(new Event('toggle'))
+    expect(showModal).toHaveBeenCalledTimes(3)
+    popover.dispatchEvent(new Event('toggle'))
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(3)
+  })
+
+  it('leaves alone what was open before it blocked, and what closes', async () => {
+    const open = page('div')
+    topLayer.push(open)
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    const blocker = await mount()
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(1)
+    topLayer.splice(0)
+    open.dispatchEvent(new Event('toggle'))
+    blocker.tick()
+    expect(showModal).toHaveBeenCalledTimes(1)
+  })
+
+  it('raises itself when a page dialog takes focus it can’t take back', async () => {
+    const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
+    await mount()
+    const dialogButton = page('button')
+    // The page's modal dialog makes the block screen inert.
+    const focus = vi.spyOn(snoozeButton()!, 'focus').mockImplementation(() => undefined)
+    dialogButton.focus()
+    // Raised once the page's script is done.
+    expect(showModal).toHaveBeenCalledTimes(1)
+    await flush()
+    expect(showModal).toHaveBeenCalledTimes(2)
+    focus.mockRestore()
+
+    // Focus it can take back: no raise.
+    page('button').focus()
+    await flush()
+    expect(showModal).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(host())
+  })
 })
 
 describe('fullscreen', () => {

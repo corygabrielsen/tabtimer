@@ -122,17 +122,20 @@ const STYLES = `
 const OVERFLOW_PROPS = ['overflow', 'overflow-x', 'overflow-y'] as const
 type SavedStyle = { value: string; priority: string }
 type ScrollPosition = { left: number; top: number }
+type Scope = Document | ShadowRoot
 
 // The block screen is a modal <dialog> inside a closed shadow root. While it
 // is open (showModal), the browser puts it in the top layer and makes the rest
 // of the page inert: no clicks, no Tab stops, hidden from assistive tech. The
 // handlers below cover what showModal leaves open: Escape (a close request),
-// fullscreen (a later top-layer element would cover the dialog), media that
-// keeps playing behind it, and focus leaving it (Tab past the last button, or
-// browsers without a modal top layer).
+// later top-layer elements (fullscreen, or a page dialog or popover opened
+// above it), media that keeps playing behind it, focus leaving it (Tab past
+// the last button, or browsers without a modal top layer), and the page
+// taking the host or <body> away.
 export default class BlockScreen {
   private host: HTMLDivElement
   private shadow: ShadowRoot
+  private attach: () => boolean
   private dialog: HTMLDialogElement
   private hostLine: HTMLDivElement
   private detailLine: HTMLDivElement
@@ -148,14 +151,20 @@ export default class BlockScreen {
   private savedOverflow: Map<HTMLElement, Map<string, SavedStyle>> | null = null
   // The window's scroll offset when blocking began, restored on dismissal.
   private savedWindow: ScrollPosition | null = null
+  // The page's top-layer elements known to be below the dialog.
+  private below = new Set<Element>()
+  // Where the play listener is held while blocked: the document and the
+  // shadow roots and frames found in it.
+  private playScopes = new Set<Scope>()
 
   constructor(
     private tracker: Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'onState'>,
     private bus: Bus = chromeBus
   ) {
-    const { host, shadow } = mountShadowHost(HOST_ID, STYLES)
+    const { host, shadow, attach } = mountShadowHost(HOST_ID, STYLES)
     this.host = host
     this.shadow = shadow
+    this.attach = attach
     const s = host.style
     s.setProperty('inset', '0', 'important')
     s.setProperty('display', 'none', 'important')
@@ -220,17 +229,33 @@ export default class BlockScreen {
     this.hostLine.textContent = reason.scope === 'site' ? (this.tracker.site ?? '') : t('blockAllSites')
     this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
     if (this.blocked) {
+      this.hold()
       return
     }
     this.blocked = true
     this.tracker.setBlocked(true)
     this.previousFocus = document.activeElement
+    this.savedWindow = { left: window.scrollX, top: window.scrollY }
     this.host.style.setProperty('display', 'block', 'important')
+    this.attach()
     this.lockScroll()
     this.exitFullscreen()
-    this.showDialog()
-    this.pauseMedia()
+    this.raise()
+    this.pauseMedia(reachableScopes(this.host))
     this.listen(true)
+  }
+
+  // Each tick while blocked, take back what the page changed since the last:
+  // the host put back (and the dialog with it, as removal took it out of the
+  // top layer), the dialog raised above a page dialog or popover opened over
+  // it, a replaced <body> locked, and media found since paused.
+  private hold() {
+    const scopes = reachableScopes(this.host)
+    if (this.attach() || this.covered(scopes)) {
+      this.raise()
+    }
+    this.lockScroll()
+    this.pauseMedia(scopes)
   }
 
   private unblock() {
@@ -260,6 +285,11 @@ export default class BlockScreen {
     this.blocked = false
     this.tracker.setBlocked(false)
     this.listen(false)
+    for (const scope of this.playScopes) {
+      scope.removeEventListener('play', this.handlePlay, true)
+    }
+    this.playScopes.clear()
+    this.below.clear()
     return true
   }
 
@@ -267,7 +297,7 @@ export default class BlockScreen {
   private listen(on: boolean) {
     const listeners: Array<[EventTarget, string, (e: never) => void, boolean]> = [
       [document, 'focusin', this.handleFocusIn, true],
-      [document, 'play', this.handlePlay, true],
+      [document, 'toggle', this.handleToggle, true],
       [document, 'fullscreenchange', this.handleFullscreenChange, false],
     ]
     for (const [target, type, listener, options] of listeners) {
@@ -294,6 +324,23 @@ export default class BlockScreen {
     this.snoozeButton.focus({ preventScroll: true })
   }
 
+  // Show the dialog again, now the newest entry in the top layer: above, and
+  // making inert, whatever the page put there.
+  private raise() {
+    this.dialog.close()
+    this.showDialog()
+    this.below = new Set(topLayer(reachableScopes(this.host)))
+  }
+
+  // Whether a page element entered the top layer, above the dialog, since
+  // the last look.
+  private covered(scopes: Scope[]): boolean {
+    const open = topLayer(scopes)
+    const above = open.some((el) => !this.below.has(el))
+    this.below = new Set(open)
+    return above
+  }
+
   private restoreFocus() {
     const previous = this.previousFocus
     this.previousFocus = null
@@ -306,14 +353,11 @@ export default class BlockScreen {
   // body's overflow propagating to the viewport, which turns a body set to
   // scroll into a scroller of its own. The page's inline values and
   // priorities are saved first, so dismissal restores exactly what it had.
+  // A <body> (or <html>) the page swaps in while blocked is locked too.
   private lockScroll() {
-    this.savedWindow = { left: window.scrollX, top: window.scrollY }
-    if (this.savedOverflow) {
-      return
-    }
-    this.savedOverflow = new Map()
-    for (const el of new Set([document.documentElement, document.body])) {
-      if (!el) {
+    this.savedOverflow ??= new Map()
+    for (const el of [document.documentElement, document.body]) {
+      if (!el || this.savedOverflow.has(el)) {
         continue
       }
       const style = el.style
@@ -351,19 +395,37 @@ export default class BlockScreen {
     }
   }
 
-  // Pause media already playing; handlePlay keeps it paused. Nothing is
+  // Pause media already playing, wherever the content script can reach it;
+  // handlePlay keeps it paused. play doesn't cross a shadow root, so each
+  // root and frame found gets its own listener. A cross-origin frame (a video
+  // embed) is out of reach: its media plays on behind the dialog. Nothing is
   // resumed on dismissal.
-  private pauseMedia() {
-    document.querySelectorAll<HTMLMediaElement>('video, audio').forEach((media) => {
-      if (!media.paused) {
-        media.pause()
+  private pauseMedia(scopes: Scope[]) {
+    for (const scope of scopes) {
+      scope.querySelectorAll<HTMLMediaElement>('video, audio').forEach((media) => {
+        if (!media.paused) {
+          media.pause()
+        }
+      })
+      if (!this.playScopes.has(scope)) {
+        this.playScopes.add(scope)
+        scope.addEventListener('play', this.handlePlay, true)
       }
-    })
+    }
   }
 
+  // A frame's media is of the frame's window, so no instanceof check.
   private handlePlay = (e: Event) => {
-    if (e.target instanceof HTMLMediaElement) {
-      e.target.pause()
+    const media = e.target as Partial<HTMLMediaElement> | null
+    media?.pause?.()
+  }
+
+  // A page popover (or, in newer browsers, dialog) just opened above the
+  // dialog.
+  private handleToggle = (e: Event) => {
+    const el = e.target as Element
+    if (!this.below.has(el) && isTopLayer(el)) {
+      this.raise()
     }
   }
 
@@ -371,10 +433,24 @@ export default class BlockScreen {
     this.exitFullscreen()
   }
 
-  // Focus landing anywhere on the page goes back to the block screen.
+  // Focus landing anywhere on the page goes back to the block screen. If it
+  // can't (a page dialog opened over it made it inert), raise the dialog,
+  // once the page's script has run.
   private handleFocusIn = (e: FocusEvent) => {
-    if (!e.composedPath().includes(this.host)) {
+    if (e.composedPath().includes(this.host)) {
+      return
+    }
+    // Focus in the closed shadow root reads as the host.
+    const refocus = () => {
       this.snoozeButton.focus({ preventScroll: true })
+      return document.activeElement === this.host
+    }
+    if (!refocus()) {
+      queueMicrotask(() => {
+        if (this.blocked && !refocus()) {
+          this.raise()
+        }
+      })
     }
   }
 
@@ -408,6 +484,53 @@ export default class BlockScreen {
     const next = current === -1 ? this.snoozeButton : order[(current + step) % order.length]!
     next.focus({ preventScroll: true })
   }
+}
+
+// The document and everything in it the content script can reach: shadow
+// roots (open ones, and closed ones through chrome.dom) other than `skip`'s,
+// and same-origin frames' documents, recursively.
+function reachableScopes(skip: Element): Scope[] {
+  const scopes: Scope[] = []
+  const visit = (root: Scope) => {
+    scopes.push(root)
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
+    for (let el = walker.nextNode() as Element | null; el; el = walker.nextNode() as Element | null) {
+      if (el === skip) {
+        continue
+      }
+      const shadow = shadowRootOf(el)
+      if (shadow) {
+        visit(shadow)
+      }
+      const frame = el.localName === 'iframe' || el.localName === 'frame'
+      const inner = frame ? (el as HTMLIFrameElement).contentDocument : null
+      if (inner) {
+        visit(inner)
+      }
+    }
+  }
+  visit(document)
+  return scopes
+}
+
+function shadowRootOf(el: Element): ShadowRoot | null {
+  try {
+    return chrome.dom.openOrClosedShadowRoot(el as HTMLElement)
+  } catch {
+    return el.shadowRoot
+  }
+}
+
+// The page's open modal dialogs and popovers in `scopes`. A frame's own top
+// layer sits inside the frame, below the dialog.
+function topLayer(scopes: Scope[]): Element[] {
+  return scopes
+    .filter((scope) => (scope.ownerDocument ?? scope) === document)
+    .flatMap((scope) => [...scope.querySelectorAll(':modal, :popover-open')])
+}
+
+function isTopLayer(el: Element): boolean {
+  return el.matches(':modal, :popover-open')
 }
 
 // Scroll the window back to `position`, if it moved.
