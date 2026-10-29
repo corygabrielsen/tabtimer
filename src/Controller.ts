@@ -3,7 +3,7 @@ import type View from './View'
 import type Blocker from './Blocker'
 
 export default class Controller {
-  private intervalId: number
+  private intervalId: ReturnType<typeof setInterval>
 
   constructor(
     private model: Model,

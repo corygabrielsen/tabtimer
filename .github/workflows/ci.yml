@@ -44,8 +44,8 @@ jobs:
 
       - uses: ./.github/actions/setup
 
-      - name: Unit tests
-        run: pnpm run test
+      - name: Unit tests with coverage thresholds
+        run: pnpm run test:coverage
 
   build:
     name: Build Extension

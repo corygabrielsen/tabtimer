@@ -26,7 +26,7 @@ export default class Model {
   // True while a report is in flight, to prevent overlapping reports.
   private reporting: boolean = false
   private host: string
-  private resetTimeoutId: number | null = null
+  private resetTimeoutId: ReturnType<typeof setTimeout> | null = null
   constructor() {
     this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}))
     this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.reportElapsed)

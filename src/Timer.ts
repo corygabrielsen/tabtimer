@@ -13,7 +13,7 @@ type TickCallback = (elapsed: number) => void
 
 // Timer class encapsulates the timer logic
 export default class Timer {
-  private timerId: number | null = null
+  private timerId: ReturnType<typeof setInterval> | null = null
   private startTime: number | null = null
   private pauseTime: number | null = null
   private elapsedPause: number = 0
