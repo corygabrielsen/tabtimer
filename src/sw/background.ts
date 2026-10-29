@@ -4,7 +4,7 @@ import { systemClock } from '../chrome/clock'
 import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { trackableSiteOfUrl } from '../core/site'
 import { checkpointAlarm, CHECKPOINT_ALARM } from './checkpoint'
-import { syncContentScripts } from './contentScripts'
+import { grantedSites, injectOpenTabs, revokedSites, syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
 import { createRouter } from './router'
@@ -86,8 +86,13 @@ chrome.runtime.onInstalled.addListener((details) => {
   }
 })
 chrome.runtime.onStartup.addListener(() => void boot())
-chrome.permissions.onAdded.addListener(() => void syncContentScripts())
-chrome.permissions.onRemoved.addListener(() => void syncContentScripts())
+// Grants from our pages or Chrome's own site access controls alike: the open
+// tabs follow the registration.
+chrome.permissions.onAdded.addListener(({ origins }) => void grantedSites(origins ?? []))
+chrome.permissions.onRemoved.addListener(() => void revokedSites())
+// A new extension context (installed, updated, reloaded or enabled) finds
+// open tabs running the previous one's orphaned script, or none.
+void injectOpenTabs()
 
 // Every message goes through the router; it registers the one onMessage
 // listener synchronously, at the top level, as MV3 requires.

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { bus, pushes, sendState, serveRouter } from './bus'
+import { bus, pushes, sendState, sendStop, serveRouter } from './bus'
 import type { TabState } from '../core/messages'
 import { fakeChrome } from '../test/chrome'
 
@@ -21,6 +21,12 @@ describe('bus.send', () => {
       throw new Error('Extension context invalidated.')
     })
     await expect(bus.send('snooze', {})).resolves.toEqual({ ok: false, error: 'unreachable' })
+  })
+
+  it('is alive until the page outlives its extension', () => {
+    expect(bus.alive()).toBe(true)
+    fakeChrome().orphan()
+    expect(bus.alive()).toBe(false)
   })
 
   it('is internal when the reply is not a response', async () => {
@@ -103,5 +109,24 @@ describe('state pushes', () => {
     await expect(sendState(4, '', { type: 'state', state, probe: false })).rejects.toThrow(
       'Receiving end does not exist'
     )
+  })
+})
+
+describe('stop pushes', () => {
+  it('tells the page to stop, from this extension’s worker only', async () => {
+    const handle = vi.fn()
+    const unsubscribe = pushes.onStop(handle)
+    const browser = fakeChrome()
+    for (const listener of browser.runtime.onMessage.listeners) {
+      listener({ type: 'stop' }, { id: 'someone-else' }, vi.fn())
+      listener({ type: 'stop' }, { id: browser.runtime.id, tab: { id: 2 } }, vi.fn())
+      listener({ type: 'state' }, { id: browser.runtime.id }, vi.fn())
+    }
+    expect(handle).not.toHaveBeenCalled()
+    await expect(sendStop(4)).resolves.toBeUndefined()
+    expect(handle).toHaveBeenCalledOnce()
+    expect(browser.tabs.sendMessage).toHaveBeenCalledWith(4, { type: 'stop' }, { frameId: 0 })
+    unsubscribe()
+    await expect(sendStop(4)).rejects.toThrow()
   })
 })

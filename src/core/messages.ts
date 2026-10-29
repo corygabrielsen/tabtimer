@@ -89,6 +89,10 @@ export type Contract = {
 // again), and otherwise ignores it.
 export type StatePush = { type: 'state'; state: TabState; probe: boolean }
 
+// The service worker's message to a page whose site is no longer tracked
+// (its grant was revoked): stop counting and remove the page's UI.
+export type StopPush = { type: 'stop' }
+
 export type MessageType = keyof Contract
 
 export type RequestOf<K extends MessageType> = { type: K } & Contract[K]['req']
@@ -123,6 +127,10 @@ export function parsePresence(raw: unknown): Presence | null {
     return null
   }
   return { visible, focused, media, blocked }
+}
+
+export function isStopPush(raw: unknown): raw is StopPush {
+  return isObject(raw) && raw.type === 'stop'
 }
 
 // A StatePush, its state checked field by field (content scripts trust

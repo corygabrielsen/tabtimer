@@ -183,3 +183,81 @@ describe('content-script registration', () => {
     expect(registered()).toBeUndefined()
   })
 })
+
+describe('open tabs follow the grants', () => {
+  const registered = () => browser.registered.get('tabtimer-content')
+  const injected = () => browser.scripting.executeScript.mock.calls.map(([injection]) => injection.target.tabId)
+  const stopped = () =>
+    browser.tabs.sendMessage.mock.calls.filter(([, message]) => (message as { type?: string }).type === 'stop')
+
+  beforeEach(() => {
+    browser.openTabs = [
+      { id: 1, url: 'https://www.reddit.com/r/all' },
+      { id: 2, url: 'https://old.reddit.com/' },
+      { id: 3, url: 'https://x.com/home' },
+      { id: 4 },
+    ]
+  })
+
+  it('X2: a grant starts every open tab on the site, without a reload', async () => {
+    browser.grant(originsForSite('reddit.com'))
+    await flush()
+    expect(injected()).toEqual([1, 2])
+    expect(browser.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 1 }, files: ['content.js'] })
+  })
+
+  it('X2: leaves alone the tabs an earlier grant already covers', async () => {
+    browser.grant(['*://*/*'])
+    await flush()
+    browser.scripting.executeScript.mockClear()
+    browser.grant(originsForSite('reddit.com'))
+    await flush()
+    expect(injected()).toEqual([])
+  })
+
+  it('X2: starts no tab for a grant on a bare public suffix', async () => {
+    browser.grant(originsForSite('s3.amazonaws.com'))
+    await flush()
+    expect(injected()).toEqual([])
+  })
+
+  it('KNOWN-1: a revoke stops every page no longer covered, whoever revoked it', async () => {
+    browser.granted = new Set([...originsForSite('reddit.com'), ...originsForSite('x.com')])
+    // Revoked: the reddit tabs' URLs can't be seen any more.
+    browser.openTabs = [{ id: 1 }, { id: 2 }, { id: 3, url: 'https://x.com/home' }]
+    await browser.permissions.remove({ origins: originsForSite('reddit.com') })
+    await flush()
+    expect(stopped().map(([tabId]) => tabId)).toEqual([1, 2])
+    expect(registered()?.matches).toEqual(originsForSite('x.com'))
+  })
+
+  it('survives the browser failing every call', async () => {
+    browser.tabs.query.mockImplementation(() => Promise.reject(new Error('gone')))
+    browser.scripting.executeScript.mockImplementation(() => Promise.reject(new Error('no access')))
+    browser.grant(originsForSite('reddit.com'))
+    await browser.permissions.remove({ origins: originsForSite('reddit.com') })
+    browser.permissions.getAll.mockImplementation(() => Promise.reject(new Error('gone')))
+    browser.grant(originsForSite('x.com'))
+    browser.storage.session.data = {}
+    vi.resetModules()
+    await import('./background')
+    await flush()
+    // Not marked done: the next worker start tries again.
+    expect(browser.storage.session.data.injected).toBeUndefined()
+  })
+
+  it('W1/X1: a new extension context starts every tracked open tab, once', async () => {
+    browser.granted = new Set(originsForSite('reddit.com'))
+    // Updated, reloaded or enabled: storage.session is empty.
+    browser.storage.session.data = {}
+    vi.resetModules()
+    await import('./background')
+    await flush()
+    expect(injected()).toEqual([1, 2])
+    // The same context's worker starting again (after going idle).
+    vi.resetModules()
+    await import('./background')
+    await flush()
+    expect(injected()).toEqual([1, 2])
+  })
+})

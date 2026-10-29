@@ -29,10 +29,9 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
   // A millisecond on, so any interval opened from here starts after `first`.
   await advance(serviceWorker, 1)
 
-  // The popup's "Enable on this site" path, on a page whose instance from an
-  // earlier grant is still running (disable in options leaves it in place):
-  // it injects content.js into the tab again. The fixture hosts are granted
-  // at install, so the permission toggling itself (a prompt) is skipped.
+  // The worker's inject on a grant or a new extension context, on a page
+  // whose instance is still running: content.js runs in the tab again. The
+  // fixture hosts are granted at install, so the grant itself is skipped.
   await serviceWorker.evaluate(async (url) => {
     const [tab] = await chrome.tabs.query({ url })
     await chrome.scripting.executeScript({ target: { tabId: tab!.id! }, files: ['content.js'] })

@@ -90,12 +90,15 @@ describe('popup on a site not yet tracked', () => {
     expect($('enable-btn').getAttribute('aria-label')).toBe('Track time on reddit.com')
   })
 
-  it('requests the site, injects the tracker into the tab, and switches to tracking', async () => {
+  it('requests the site and switches to tracking; the worker injects the tracker', async () => {
     await openPopup({ id: 7, url: 'https://old.reddit.com/r/all' })
     click($('enable-btn'))
     await flush()
     expect(browser.permissions.request).toHaveBeenCalledWith({ origins: originsForSite('reddit.com') })
-    expect(browser.scripting.executeScript).toHaveBeenCalledWith({ target: { tabId: 7 }, files: ['content.js'] })
+    expect(browser.scripting.executeScript).toHaveBeenCalledExactlyOnceWith({
+      target: { tabId: 7 },
+      files: ['content.js'],
+    })
     expect(visibleSection()).toEqual(['tracked'])
   })
 
@@ -105,20 +108,11 @@ describe('popup on a site not yet tracked', () => {
     expect(visibleSection()).toEqual(['enable'])
   })
 
-  it('switches to tracking even if injecting into the tab fails', async () => {
-    browser.scripting.executeScript.mockImplementation(() => Promise.reject(new Error('no access')))
-    await openPopup({ id: 7, url: 'https://reddit.com/' })
-    click($('enable-btn'))
-    await flush()
-    expect(visibleSection()).toEqual(['tracked'])
-  })
-
   it('stays put if the permission prompt is declined', async () => {
     browser.acceptPermissionPrompts = false
     await openPopup({ id: 7, url: 'https://reddit.com/' })
     click($('enable-btn'))
     await flush()
-    expect(browser.scripting.executeScript).not.toHaveBeenCalled()
     expect(visibleSection()).toEqual(['enable'])
   })
 })

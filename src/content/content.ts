@@ -2,11 +2,12 @@ import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import Overlay from './Overlay'
 
-// content.js can run more than once in the same page: the popup's "Enable"
-// injects it into an open tab that may still be running an instance from an
-// earlier grant. Each run shares the extension's isolated world (and so this
-// window), so the running instance is recorded here and a new run disposes
-// it first; otherwise both would report (and draw) the same page.
+// content.js can run more than once in the same page: the service worker
+// injects it into the open tabs of a site when it is granted, and when the
+// extension is installed, updated or enabled. Each run shares the
+// extension's isolated world (and so this window), so the running instance
+// is recorded here and a new run disposes it first; otherwise both would
+// report (and draw) the same page.
 const INSTANCE = Symbol.for('tabtimer.content')
 type Instance = { dispose: () => void }
 const slot = window as unknown as Record<symbol, Instance | undefined>
@@ -53,6 +54,8 @@ try {
     },
   }
   slot[INSTANCE] = instance
+  // The site's grant was revoked, or the extension is gone.
+  tracker.onStop(() => instance.dispose())
 
   // A page entering the back/forward cache (persisted) is frozen, not
   // destroyed, and may be shown again: keep everything alive and report it

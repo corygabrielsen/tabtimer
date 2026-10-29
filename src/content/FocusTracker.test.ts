@@ -48,6 +48,10 @@ function started(): FocusTracker {
   return model
 }
 
+// A fake bus's extension, still there; a fake push channel that never stops.
+const alive = () => true
+const onStop = () => () => {}
+
 const today = (model: FocusTracker) => model.readElapsed().today
 const run = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 
@@ -223,7 +227,7 @@ describe('reporting to the service worker', () => {
 
   it('retries a report the worker could not take, ten seconds later', async () => {
     const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
-    const model = trackTracker(new FocusTracker(undefined, { send }))
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }))
     model.start()
     await run(seconds(5))
     expect(send).toHaveBeenCalledTimes(1)
@@ -238,7 +242,7 @@ describe('reporting to the service worker', () => {
   it('P4: reports a change at once after a failed report, without waiting out the retry', async () => {
     const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'internal' }) as never)
     setPageState({ hidden: true, focused: false }, false)
-    const model = trackTracker(new FocusTracker(undefined, { send }))
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }))
     model.start()
     await run(seconds(1))
     send.mockImplementation(bus.send)
@@ -258,7 +262,7 @@ describe('reporting to the service worker', () => {
       prerendering ? (Promise.resolve({ ok: false, error: 'forbidden' }) as never) : bus.send(type, req)
     )
     setPageState({ hidden: true, focused: false }, false)
-    const model = trackTracker(new FocusTracker(undefined, { send }))
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }))
     model.start()
     await run(seconds(2))
     expect(send).not.toHaveBeenCalled()
@@ -273,9 +277,9 @@ describe('reporting to the service worker', () => {
 
   it('P7: a push that isn’t a probe leaves a failed report to be retried', async () => {
     let handler: ((state: TabState, probe: boolean) => unknown) | null = null
-    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)), onStop }
     const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
-    const model = trackTracker(new FocusTracker(undefined, { send }, pushes))
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }, pushes))
     model.start()
     await run(seconds(2))
     // A checkpoint's push: its reply goes unread.
@@ -290,9 +294,9 @@ describe('reporting to the service worker', () => {
 
   it('P7: a probe’s reply is the report: not sent again', async () => {
     let handler: ((state: TabState, probe: boolean) => unknown) | null = null
-    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)), onStop }
     const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
-    trackTracker(new FocusTracker(undefined, { send }, pushes)).start()
+    trackTracker(new FocusTracker(undefined, { send, alive }, pushes)).start()
     await run(seconds(2))
     handler!({ ...STATE, seq: 1 }, true)
     await run(seconds(30))
@@ -320,10 +324,26 @@ describe('reporting to the service worker', () => {
     video.remove()
   })
 
+  it('X1: stops at once when a report finds the extension gone', async () => {
+    let gone = false
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
+    const model = trackTracker(new FocusTracker(undefined, { send, alive: () => !gone }))
+    const stopped = vi.fn()
+    model.onStop(stopped)
+    model.start()
+    gone = true
+    await flush()
+    expect(stopped).toHaveBeenCalledOnce()
+    // Gone: the page isn't reported hidden to a worker that can't hear it.
+    expect(send).toHaveBeenCalledOnce()
+    await run(seconds(30))
+    expect(send).toHaveBeenCalledOnce()
+  })
+
   it('retries a failed report while hidden', async () => {
     const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'unreachable' }) as never)
     setPageState({ hidden: true, focused: false }, false)
-    const model = trackTracker(new FocusTracker(undefined, { send }))
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }))
     model.start()
     await run(seconds(10))
     expect(send).toHaveBeenCalledTimes(2)
@@ -343,6 +363,7 @@ describe('reporting to the service worker', () => {
         handler = fn
         return () => (handler = null)
       },
+      onStop,
     }
     const model = trackTracker(new FocusTracker(undefined, bus, pushes))
     model.start()
@@ -369,7 +390,7 @@ describe('reporting to the service worker', () => {
 
   it('P8: orders states by the worker’s sequence, not its clock', async () => {
     let handler: ((state: TabState, probe: boolean) => unknown) | null = null
-    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)) }
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)), onStop }
     const model = trackTracker(new FocusTracker(undefined, bus, pushes))
     model.start()
     await flush()

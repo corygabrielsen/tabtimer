@@ -1,11 +1,13 @@
 import type { Bus, Pushes } from '../ports'
 import {
+  isStopPush,
   parseStatePush,
   type ErrorCode,
   type MessageType,
   type Request,
   type Response,
   type StatePush,
+  type StopPush,
 } from '../core/messages'
 
 // The sender of a message, as the service worker sees it.
@@ -31,6 +33,8 @@ function isResponse(v: unknown): boolean {
 // missing worker or a reloaded extension maps to 'unreachable'; a reply that
 // isn't a Response maps to 'internal'.
 export const bus: Bus = {
+  // An orphaned content script's chrome.runtime loses its id.
+  alive: () => chrome.runtime?.id !== undefined,
   send(type, req) {
     return new Promise((resolve) => {
       const fail = (error: ErrorCode) => resolve({ ok: false, error })
@@ -63,8 +67,8 @@ export function serveRouter(handle: Handler): void {
 
 // The page side of state pushes (core/messages.ts StatePush): `handle` gets
 // each state from this extension's service worker (and whether it is a
-// probe) and returns the page's presence, sent back as the reply. Returns
-// the unsubscribe function.
+// probe) and returns the page's presence, sent back as the reply. onStop
+// hears its StopPush. Each returns the unsubscribe function.
 export const pushes: Pushes = {
   onState(handle) {
     const listener = (raw: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r: unknown) => void) => {
@@ -81,10 +85,27 @@ export const pushes: Pushes = {
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
   },
+  onStop(handle) {
+    const listener = (raw: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r: unknown) => void) => {
+      if (sender.id === chrome.runtime.id && !sender.tab && isStopPush(raw)) {
+        handle()
+        sendResponse(null)
+      }
+      return false
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    return () => chrome.runtime.onMessage.removeListener(listener)
+  },
 }
 
 // The service-worker side: send one page its state. `doc` targets that
 // document ('' = the tab's top frame). Resolves with the page's reply.
 export function sendState(tabId: number, doc: string, push: StatePush): Promise<unknown> {
   return chrome.tabs.sendMessage(tabId, push, doc ? { documentId: doc } : { frameId: 0 })
+}
+
+// The service-worker side: tell a tab's page its site is no longer tracked.
+export function sendStop(tabId: number): Promise<void> {
+  const push: StopPush = { type: 'stop' }
+  return chrome.tabs.sendMessage(tabId, push, { frameId: 0 }).then(() => undefined)
 }

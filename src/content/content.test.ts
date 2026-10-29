@@ -90,7 +90,7 @@ describe('content script', () => {
     await expect(inject()).resolves.toBeUndefined()
   })
 
-  it('keeps a single overlay when injected twice (popup enable + registered script)', async () => {
+  it('keeps a single overlay when injected twice (worker inject + registered script)', async () => {
     await inject()
     await inject()
     expect(document.querySelectorAll('#tabtimer-root')).toHaveLength(1)
@@ -178,5 +178,54 @@ describe('content script', () => {
     pageTransition('pageshow', false)
     await vi.advanceTimersByTimeAsync(seconds(2))
     expect(pageTimers()).toBe(1)
+  })
+})
+
+describe('the page follows its grant and its extension', () => {
+  // A site's grant, as originsForSite makes it (core/site.ts is the worker's).
+  const originsForSite = (site: string) => [`*://${site}/*`, `*://*.${site}/*`]
+  const OVERLAY = 'tabtimer-root'
+  const BLOCK = 'tabtimer-block'
+
+  it('X1/P3: an orphaned page removes its UI, stops ticking and never blocks', async () => {
+    seedLimits({ perSite: { 'x.com': 1 } })
+    await inject()
+    await vi.advanceTimersByTimeAsync(seconds(30))
+    expect(document.getElementById(OVERLAY)).not.toBeNull()
+    // The extension updates, reloads or is disabled; this page keeps running.
+    fakeChrome().orphan()
+    await vi.advanceTimersByTimeAsync(minutes(5))
+    expect(document.getElementById(OVERLAY)).toBeNull()
+    expect(document.getElementById(BLOCK)).toBeNull()
+    expect(isBlocked()).toBe(false)
+    expect(pageTimers()).toBe(0)
+  })
+
+  it('KNOWN-1: stopping tracking removes the UI from the open page and credits its time', async () => {
+    const browser = fakeChrome()
+    browser.granted = new Set(originsForSite('x.com'))
+    seedLimits({ perSite: { 'x.com': 1 } })
+    await inject()
+    await vi.advanceTimersByTimeAsync(minutes(1) + seconds(1))
+    expect(isBlocked()).toBe(true)
+    // Revoked, the tab's URL can't be seen any more.
+    browser.openTabs = [{ id: 1 }]
+    await browser.permissions.remove({ origins: originsForSite('x.com') })
+    await flush()
+    expect(document.getElementById(OVERLAY)).toBeNull()
+    expect(document.getElementById(BLOCK)).toBeNull()
+    expect(document.documentElement.style.overflow).toBe('')
+    expect(pageTimers()).toBe(0)
+    expect(storedToday()).toBe(minutes(1))
+  })
+
+  it('KNOWN-1: a page still granted keeps running when another site is revoked', async () => {
+    const browser = fakeChrome()
+    browser.granted = new Set([...originsForSite('x.com'), ...originsForSite('reddit.com')])
+    browser.openTabs = [{ id: 1, url: 'https://www.x.com/home' }]
+    await inject()
+    await browser.permissions.remove({ origins: originsForSite('reddit.com') })
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(shadowOf(OVERLAY).querySelector('.pill')?.textContent).toBe('00:00:05')
   })
 })
