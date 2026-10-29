@@ -4,6 +4,29 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] - 2026-10-29
+
+### Fixed
+
+- A site you stopped tracking could keep counting and blocking after going Back
+  to one of its pages.
+- A site you started tracking now counts on pages you return to with Back, and
+  the all-sites limit counts only sites you track.
+- Waking from sleep or going back to a page could show a false block screen or
+  inflate the Focus timer.
+- Audio the block screen can't reach, like embedded players, is now muted while
+  blocked and counts as media.
+- Switching tabs while typing a custom limit could save the half-typed value;
+  closing the popup now keeps a limit you typed.
+- "Saved" now shows only when a change was stored; otherwise the setting
+  reverts.
+- A wrong system clock could delete your usage history.
+- Time in installed site app windows wasn't counted.
+- Pages scroll again after a snooze; open pages roll over at midnight; keyboard
+  focus no longer gets lost in the timer, Activity or Settings.
+- Hosts with a trailing dot and IPv6 addresses are matched like Chrome matches
+  them.
+
 ## [1.6.2] - 2026-10-29
 
 ### Changed
@@ -237,6 +260,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.6.3]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.5.0...v1.6.0
