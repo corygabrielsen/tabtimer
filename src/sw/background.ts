@@ -56,8 +56,13 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
       .catch(() => undefined)
   }
 })
-chrome.windows.onFocusChanged.addListener((windowId) =>
-  dispatch({ kind: 'windowFocus', windowId: windowId === chrome.windows.WINDOW_ID_NONE ? null : windowId })
+// Every window type that can show a tracked page, an installed site's app
+// window included (the default filter leaves 'app' out: focus there would
+// arrive as WINDOW_ID_NONE).
+chrome.windows.onFocusChanged.addListener(
+  (windowId) =>
+    dispatch({ kind: 'windowFocus', windowId: windowId === chrome.windows.WINDOW_ID_NONE ? null : windowId }),
+  { windowTypes: ['normal', 'popup', 'app'] }
 )
 chrome.alarms.onAlarm.addListener(({ name }) => {
   if (name === CHECKPOINT_ALARM) {

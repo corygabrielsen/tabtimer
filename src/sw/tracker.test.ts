@@ -516,6 +516,16 @@ describe('background wiring', () => {
     expect(tracked()).toMatchObject({ tabId: 1, windowId: 2 })
   })
 
+  it('keeps counting in an installed app’s window, and stops in devtools', async () => {
+    await report(SHOWN, { id: 1, windowId: 2 })
+    browser.windows.onFocusChanged.focus(2, 'app')
+    await flush()
+    expect(tracked()).toMatchObject({ tabId: 1, windowId: 2 })
+    browser.windows.onFocusChanged.focus(3, 'devtools')
+    await flush()
+    expect(tracked()).toBeNull()
+  })
+
   it('closes on navigation to another site, a page it can’t see, or a discard', async () => {
     const navigate = async (change: { url?: string; status?: string; discarded?: boolean }, url?: string) => {
       await report(SHOWN)
