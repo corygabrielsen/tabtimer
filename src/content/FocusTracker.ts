@@ -1,6 +1,9 @@
 import Timer, { TimerState, TimerType } from './Timer'
-import { storage, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost } from '../storage'
+import { local, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost } from '../storage'
 import { sendMessage } from '../messages'
+import { systemClock } from '../chrome/clock'
+import { nextMidnight, startOfDay } from '../core/day'
+import type { Clock } from '../ports'
 
 export type ElapsedEntry = {
   elapsed: number
@@ -61,22 +64,19 @@ export default class FocusTracker {
   private globalTouched = new Set<string>()
   private globalTodayLoad: Promise<void> | null = null
 
-  constructor() {
+  constructor(private clock: Clock = systemClock) {
     this.host = window.location.hostname
-    this.day = startOfDay(new Date())
+    this.day = new Date(startOfDay(this.clock.now()))
     this.resetTimersAtTime = this.getResetTime()
   }
 
+  // Next local calendar midnight.
   getResetTime(): Date {
-    const now = new Date()
-    // Next local calendar midnight. Day overflow normalizes across months,
-    // and rebuilding from y/m/d (rather than adding 24h) stays correct on
-    // DST-transition days where a local day is 23h or 25h long.
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0)
+    return new Date(nextMidnight(this.clock.now()))
   }
 
   isResetTime(): boolean {
-    return new Date() >= this.resetTimersAtTime
+    return this.clock.now() >= this.resetTimersAtTime.getTime()
   }
 
   start() {
@@ -144,7 +144,7 @@ export default class FocusTracker {
   }
 
   private tick = () => {
-    const now = Date.now()
+    const now = this.clock.now()
     this.countupTimer.tick(now)
     this.credit(this.focusTimer.tick(now))
     // This tick's time is credited to the day the tab was accounting to; a
@@ -184,7 +184,7 @@ export default class FocusTracker {
     this.countupTimer.tick()
     this.credit(this.focusTimer.tick())
     this.sendUnsent()
-    this.day = startOfDay(new Date())
+    this.day = new Date(startOfDay(this.clock.now()))
     this.resetTimersAtTime = this.getResetTime()
     this.resetTimers()
     this.storedToday = 0
@@ -258,11 +258,11 @@ export default class FocusTracker {
   private pruneOldKeys(): void {
     const prefix = `${baseKeyForHost(this.host)}_`
     const todayKey = this.getTodayKey()
-    storage
-      .keys('local')
-      .then((keys) => {
-        const stale = keys.filter((key) => key.startsWith(prefix) && key !== todayKey)
-        return stale.length > 0 ? storage.remove(stale, 'local') : undefined
+    local
+      .getAll()
+      .then((items) => {
+        const stale = Object.keys(items).filter((key) => key.startsWith(prefix) && key !== todayKey)
+        return stale.length > 0 ? local.remove(stale) : undefined
       })
       .catch(() => {
         // Pruning is best-effort; ignore storage errors.
@@ -273,21 +273,24 @@ export default class FocusTracker {
   private loadStoredToday(): Promise<void> {
     if (!this.storedTodayLoad) {
       const key = this.getTodayKey()
-      const load = storage.get(key, 0, 'local').then(
-        (value) => {
-          // Ignore a stale result if the day rolled over or onChanged already
-          // delivered a newer value meanwhile.
-          if (this.storedTodayLoad === load) {
-            this.storedToday = value
+      const load = local
+        .get<number>(key)
+        .then((v) => v ?? 0)
+        .then(
+          (value) => {
+            // Ignore a stale result if the day rolled over or onChanged already
+            // delivered a newer value meanwhile.
+            if (this.storedTodayLoad === load) {
+              this.storedToday = value
+            }
+          },
+          (error: unknown) => {
+            if (this.storedTodayLoad === load) {
+              this.storedTodayLoad = null
+            }
+            throw error
           }
-        },
-        (error: unknown) => {
-          if (this.storedTodayLoad === load) {
-            this.storedTodayLoad = null
-          }
-          throw error
-        }
-      )
+        )
       this.storedTodayLoad = load
     }
     return this.storedTodayLoad
@@ -298,26 +301,25 @@ export default class FocusTracker {
   private loadGlobalToday(): Promise<void> {
     if (!this.globalTodayLoad) {
       const day = this.day
-      const load = new Promise<void>((resolve, reject) => {
-        chrome.storage.local.get(null, (items: Record<string, unknown>) => {
-          const error = chrome.runtime.lastError
+      const load: Promise<void> = local.getAll().then(
+        (items) => {
           if (this.globalTodayLoad !== load) {
-            resolve() // superseded by a rollover
-            return
-          }
-          if (error) {
-            this.globalTodayLoad = null
-            reject(error)
-            return
+            return // superseded by a rollover
           }
           for (const [key, value] of Object.entries(items)) {
             if (isElapsedKeyForDay(key, day) && typeof value === 'number' && !this.globalTouched.has(key)) {
               this.globalToday.set(key, value)
             }
           }
-          resolve()
-        })
-      })
+        },
+        (error: unknown) => {
+          if (this.globalTodayLoad !== load) {
+            return // superseded by a rollover
+          }
+          this.globalTodayLoad = null
+          throw error
+        }
+      )
       this.globalTodayLoad = load
     }
     return this.globalTodayLoad
@@ -463,8 +465,4 @@ export default class FocusTracker {
       this.dropUnacknowledged(this.getTodayKey())
     }
   }
-}
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }

@@ -1,7 +1,7 @@
 import type FocusTracker from './FocusTracker'
 import type { ElapsedState } from './FocusTracker'
 import { formatTime } from '../format'
-import { storage, HIDDEN_KEY, SCALE_KEY } from '../storage'
+import { local, HIDDEN_KEY, SCALE_KEY } from '../storage'
 import { t } from '../i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
@@ -178,7 +178,10 @@ export default class Overlay {
     document.body.appendChild(this.host)
 
     // Respect the saved hide/size preferences before the first paint.
-    Promise.all([storage.get(HIDDEN_KEY, false, 'local'), storage.get(SCALE_KEY, 1, 'local')])
+    Promise.all([
+      local.get<boolean>(HIDDEN_KEY).then((v) => v ?? false),
+      local.get<number>(SCALE_KEY).then((v) => v ?? 1),
+    ])
       .then(([hidden, scale]) => {
         this.hidden = hidden
         this.scale = clampScale(scale)
@@ -205,7 +208,7 @@ export default class Overlay {
     }
     this.scale = next
     this.applyScale()
-    void storage.set(SCALE_KEY, next, 'local').catch(() => {})
+    void local.set({ [SCALE_KEY]: next }).catch(() => {})
   }
 
   private applyHostStyles() {
@@ -397,7 +400,7 @@ export default class Overlay {
     this.expanded = false
     this.detachOutsideClick()
     this.needsRebuild = true
-    void storage.set(HIDDEN_KEY, hidden, 'local').catch(() => {})
+    void local.set({ [HIDDEN_KEY]: hidden }).catch(() => {})
     this.render()
   }
 

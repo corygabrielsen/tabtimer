@@ -1,4 +1,4 @@
-import { storage } from '../storage'
+// Pure (no chrome, no DOM); reading and writing limits lives in src/storage.ts.
 
 // Daily time limits (all values in milliseconds, matching the stored "today"
 // focus totals). null / absent means no limit.
@@ -54,40 +54,4 @@ export function msToMinutes(ms: number): number {
 export function parseLimitMinutes(value: string): number | null {
   const n = Number(value.trim())
   return Number.isFinite(n) && n > 0 ? minutesToMs(Math.floor(n)) : null
-}
-
-export function readLimits(): Promise<Limits> {
-  return storage
-    .get<Limits>(LIMITS_KEY, DEFAULT_LIMITS, 'local')
-    .then(normalizeLimits)
-    .catch(() => DEFAULT_LIMITS)
-}
-
-function writeLimits(limits: Limits): Promise<void> {
-  return storage.set(LIMITS_KEY, limits, 'local').catch(() => undefined)
-}
-
-export async function setGlobalLimit(ms: number | null): Promise<void> {
-  const limits = await readLimits()
-  await writeLimits({ ...limits, global: ms })
-}
-
-export async function setPerSiteLimit(host: string, ms: number | null): Promise<void> {
-  const limits = await readLimits()
-  const perSite = { ...limits.perSite }
-  if (ms === null) {
-    delete perSite[host]
-  } else {
-    perSite[host] = ms
-  }
-  await writeLimits({ ...limits, perSite })
-}
-
-export function readSnoozeUntil(): Promise<number> {
-  return storage.get(BLOCK_SNOOZE_KEY, 0, 'local').catch(() => 0)
-}
-
-// Suppress all blocking for SNOOZE_MS of wall-clock time.
-export function snoozeBlocking(): Promise<void> {
-  return storage.set(BLOCK_SNOOZE_KEY, Date.now() + SNOOZE_MS, 'local').catch(() => undefined)
 }

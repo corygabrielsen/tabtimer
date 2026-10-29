@@ -243,6 +243,15 @@ describe('reporting to the background writer', () => {
     expect(storedToday()).toBe(seconds(18))
   })
 
+  it('retries loading the global total after a storage failure', async () => {
+    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(3) })
+    const model = started()
+    browser.storage.local.error = 'storage unavailable'
+    await expect(model.readGlobalToday()).rejects.toThrow('storage unavailable')
+    browser.storage.local.error = null
+    await expect(model.readGlobalToday()).resolves.toBe(minutes(3))
+  })
+
   it('retries a failed report without losing the time', async () => {
     browser.storage.local.error = 'storage unavailable'
     const model = started()

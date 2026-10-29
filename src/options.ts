@@ -1,14 +1,15 @@
 import { SUGGESTED_SITES, originsForHost, hostFromOrigin, normalizeHost } from './sites'
+import { msToMinutes, minutesToMs, LIMITS_KEY, type Limits } from './core/limits'
 import {
+  local,
+  todayKeyForHost,
+  HIDDEN_KEY,
+  SCALE_KEY,
+  ELAPSED_KEY_PREFIX,
   readLimits,
   setGlobalLimit,
   setPerSiteLimit,
-  msToMinutes,
-  minutesToMs,
-  LIMITS_KEY,
-  type Limits,
-} from './core/limits'
-import { storage, todayKeyForHost, HIDDEN_KEY, SCALE_KEY, ELAPSED_KEY_PREFIX } from './storage'
+} from './storage'
 import { localizeDom, t } from './i18n'
 import { h, byId, flashSaved, formatDuration, setDocumentLang } from './ui'
 import { createLimitPicker, formatChipMinutes, SITE_PRESETS, GLOBAL_PRESETS, type LimitPicker } from './limitPicker'
@@ -31,7 +32,10 @@ async function grantedHosts(): Promise<Set<string>> {
 }
 
 function readToday(host: string): Promise<number> {
-  return storage.get(todayKeyForHost(host), 0, 'local').catch(() => 0)
+  return local
+    .get<number>(todayKeyForHost(host))
+    .then((v) => v ?? 0)
+    .catch(() => 0)
 }
 
 // --- Tracked site rows -------------------------------------------------------
@@ -332,8 +336,14 @@ async function initOverlay() {
   }
 
   const [hidden, scale] = await Promise.all([
-    storage.get(HIDDEN_KEY, false, 'local').catch(() => false),
-    storage.get(SCALE_KEY, 1, 'local').catch(() => 1),
+    local
+      .get<boolean>(HIDDEN_KEY)
+      .then((v) => v ?? false)
+      .catch(() => false),
+    local
+      .get<number>(SCALE_KEY)
+      .then((v) => v ?? 1)
+      .catch(() => 1),
   ])
   renderSwitch(hidden)
   renderSize(scale)
@@ -341,13 +351,13 @@ async function initOverlay() {
   sw?.addEventListener('click', async () => {
     const next = sw.getAttribute('aria-checked') === 'true' // checked -> hide
     renderSwitch(next)
-    await storage.set(HIDDEN_KEY, next, 'local').catch(() => undefined)
+    await local.set({ [HIDDEN_KEY]: next }).catch(() => undefined)
     flashSaved(saved)
   })
   for (const r of radios) {
     r.addEventListener('change', async () => {
       if (r.checked) {
-        await storage.set(SCALE_KEY, Number(r.value), 'local').catch(() => undefined)
+        await local.set({ [SCALE_KEY]: Number(r.value) }).catch(() => undefined)
         flashSaved(saved)
       }
     })

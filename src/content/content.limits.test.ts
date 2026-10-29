@@ -170,8 +170,10 @@ describe('per-tab cost', () => {
     // the only reads are the background writer's, one per report (~10s).
     expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
     expect(get).toHaveBeenCalledTimes(6)
-    // Another tab's writes still count: x.com logs 29 minutes.
-    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(29) })
+    // Another tab's writes still count: x.com logs 29 minutes, which with
+    // this tab's reported minute crosses the cap (the report sent on this
+    // very tick may still be in flight, so it isn't counted on).
+    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(29) + seconds(10) })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')

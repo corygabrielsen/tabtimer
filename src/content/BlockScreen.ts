@@ -1,12 +1,9 @@
 import type FocusTracker from './FocusTracker'
-import { baseHost } from '../storage'
+import { baseHost, readLimits, readSnoozeUntil, snoozeBlocking } from '../storage'
 import {
   SNOOZE_MS,
   evaluateLimits,
   normalizeLimits,
-  readLimits,
-  readSnoozeUntil,
-  snoozeBlocking,
   LIMITS_KEY,
   BLOCK_SNOOZE_KEY,
   type BlockReason,
