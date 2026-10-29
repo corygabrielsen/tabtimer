@@ -4,6 +4,47 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-10-29
+
+### Changed
+
+- Tab Timer no longer runs in Incognito windows.
+
+### Fixed
+
+- Time could stop counting after switching between tracked tabs or windows.
+- Time stopped counting when you clicked into an embedded video, comment box or
+  form.
+- A page opened from the address bar or search results could go uncounted or
+  unblocked for its first seconds.
+- A tab dragged to another window, or a page after the clock changed, could stop
+  counting or updating.
+- After an extension update or reload, open tabs stopped counting and could show
+  a block screen that wouldn't snooze.
+- Tabs already open on a site now start counting as soon as you allow it, and
+  stopping tracking removes the timer and block screen from them right away.
+- The block screen could disappear on sites that replace the page, or sit under
+  the site's own pop-ups and dialogs.
+- Audio and video in web-component players and same-origin frames now pause when
+  a site is blocked.
+- The timer could drift off the top of pages that use transforms or filters.
+- Typing a custom limit could save a partial value, and block, when time was
+  recorded meanwhile.
+- The popup could show less time than the page; it now matches, and keeps a
+  limit picked with the arrow keys even if closed right away.
+- "From last week" and "from yesterday" now compare the same part of each
+  period.
+- Activity and Settings opened from the block screen now bring their window to
+  the front.
+- Sites allowed through Chrome's own site access settings now show and stop
+  correctly in Settings.
+- The popup no longer offers to track shared hosts like s3.amazonaws.com.
+- Time recorded while the system clock was wrong no longer counts once it's
+  corrected, and snoozes or idle time from before a clock change no longer
+  misapply.
+- Activity totals and averages no longer include days past the 30-day window.
+- A site granted right after another could stay untracked until restart.
+
 ## [1.6.1] - 2026-10-29
 
 ### Changed
@@ -196,6 +237,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.6.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.4.0...v1.5.0
