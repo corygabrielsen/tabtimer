@@ -4,6 +4,13 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.4] - 2026-10-29
+
+### Fixed
+
+- The activity page, Settings' This week total and the popup's hourly strip now
+  include the time still being counted, so every view shows the same minute.
+
 ## [1.6.3] - 2026-10-29
 
 ### Fixed
@@ -260,6 +267,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.6.4]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.0...v1.6.1
