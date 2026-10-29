@@ -11,7 +11,8 @@ Unlisted.
 ## Single purpose
 
 Show how much time you've actively spent on social-media sites today, as an
-on-page overlay and a toolbar popup.
+on-page overlay and a toolbar popup, with optional daily time limits that block
+a site once its cap is reached.
 
 ## Short description
 
@@ -23,9 +24,9 @@ See how much time you've spent on social media sites today.
 
 ## Permission justifications
 
-- **storage** — Persist each tracked site's daily elapsed time and the
-  show/hide preference locally in `chrome.storage.local`. No data leaves the
-  device.
+- **storage** — Persist each tracked site's daily elapsed time, the show/hide
+  preference, and any daily time limits locally in `chrome.storage.local`. No
+  data leaves the device.
 - **scripting** — Register the content script at runtime for the sites the user
   has enabled, so the overlay can render and measure active time.
 - **optional host access** — No host access is requested at install. When the

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-06-28_
+_Last updated: 2026-10-28_
 
 Tab Timer is built to keep your data on your own device.
 
@@ -15,6 +15,8 @@ enable it.
 - Per-site elapsed time for the current day, kept in `chrome.storage.local` on
   your own browser profile.
 - A single preference for whether the on-page overlay is shown or hidden.
+- Any daily time limits you set (per-site and across all sites), plus the end
+  time of a "5 more minutes" snooze, also in `chrome.storage.local`.
 
 That's all. Tab Timer only reads the **hostname** of the pages it runs on (to
 pick which counter to update). It does not read page content, your browsing
