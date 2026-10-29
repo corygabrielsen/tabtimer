@@ -7,6 +7,8 @@
 //   limits       Limits (core/limits.ts)
 //   prefs        Prefs
 //   snoozeUntil  epoch ms; blocking is suppressed until then
+//   idleState    'active' | 'idle' | 'locked' (core/away.ts), mirrored from
+//                chrome.idle so content scripts can pause their display
 //   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
@@ -20,6 +22,7 @@ export const SCHEMA_KEY = 'schema'
 export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
 export const SNOOZE_KEY = 'snoozeUntil'
+export const IDLE_STATE_KEY = 'idleState'
 export const DAY_KEY_PREFIX = 'day:'
 
 // Days of usage kept, today included: older day:* keys are pruned.

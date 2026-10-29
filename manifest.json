@@ -34,6 +34,6 @@
     "service_worker": "src/sw/background.ts",
     "type": "module"
   },
-  "permissions": ["storage", "scripting", "activeTab"],
+  "permissions": ["storage", "scripting", "activeTab", "idle"],
   "optional_host_permissions": ["*://*/*"]
 }

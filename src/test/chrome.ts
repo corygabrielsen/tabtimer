@@ -268,6 +268,21 @@ export class FakeChrome {
     ),
   }
 
+  // The OS idle state chrome.idle reports; setIdleState also fires
+  // onStateChanged, as a real change would.
+  idleState: 'active' | 'idle' | 'locked' = 'active'
+
+  readonly idle = {
+    setDetectionInterval: vi.fn<(seconds: number) => void>(),
+    queryState: vi.fn<(seconds: number) => Promise<string>>(() => Promise.resolve(this.idleState)),
+    onStateChanged: new FakeEvent<[string]>(),
+  }
+
+  setIdleState(state: 'active' | 'idle' | 'locked'): void {
+    this.idleState = state
+    this.idle.onStateChanged.dispatch(state)
+  }
+
   openTabs: FakeTab[] = []
 
   readonly tabs = {

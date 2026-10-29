@@ -153,7 +153,13 @@ test('stored data from an older schema is cleared when the upgraded extension st
     expect(await sw.evaluate(() => chrome.storage.sync.get('marker'))).toEqual({ marker: 1 })
     await expect
       .poll(() => sw.evaluate(() => chrome.storage.local.get(null)))
-      .toEqual({ schema: 2, limits: { global: null, perSite: {} }, prefs: { hidden: false, scale: 1 }, snoozeUntil: 0 })
+      .toEqual({
+        schema: 2,
+        limits: { global: null, perSite: {} },
+        prefs: { hidden: false, scale: 1 },
+        snoozeUntil: 0,
+        idleState: 'active',
+      })
   } finally {
     await after.close()
   }

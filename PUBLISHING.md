@@ -29,7 +29,14 @@ in required store metadata — do that once by hand.
    → **Add new item** → upload `tabtimer.zip`.
 3. Fill in the required fields: description, an icon, at least one screenshot
    (1280×800 or 640×400), category, language, single purpose, permission
-   justifications, and the data-use disclosures.
+   justifications (copy them from [STORE_LISTING.md](STORE_LISTING.md), one
+   per permission in `manifest.json`), and the data-use disclosures.
+
+   Adding a permission later (as 1.4.0 added `idle`) needs its justification
+   added in the dashboard's **Privacy** tab before the update is submitted.
+   `idle` shows no permission warning, so installed users get the update
+   without being asked to approve anything.
+
 4. Under **Distribution**, set **Visibility → Unlisted**.
 5. Save and **Submit for review** (the first publish must go through review).
 6. Copy the **Item ID** (the long id in the dashboard URL). You'll need it as

@@ -15,6 +15,9 @@ you choose — as an unobtrusive on-page overlay and a toolbar popup.
   from the options page or popup. Once a cap is hit, the page is covered by a
   block screen showing today's time against the limit, with a **5 more minutes**
   snooze; it lifts at the midnight reset.
+- **Counts only while you're there** — pauses after 5 minutes without keyboard
+  or mouse input (taking back the time since your last input) and whenever the
+  screen is locked; video or audio playing keeps it counting.
 - **Private by design** — everything stays in `chrome.storage.local`; nothing is
   ever sent off your device. See [PRIVACY.md](PRIVACY.md).
 

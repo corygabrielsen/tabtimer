@@ -285,7 +285,7 @@ describe('reporting to the background writer', () => {
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(12)) // the 11s report is in flight
     model.flush()
-    await vi.advanceTimersByTimeAsync(seconds(3))
+    await vi.advanceTimersByTimeAsync(seconds(6))
     expect(storedToday()).toBe(seconds(12))
   })
 })
@@ -381,5 +381,86 @@ describe('resets', () => {
     await vi.advanceTimersByTimeAsync(seconds(10))
     expect(storedToday('reddit.com', new Date(2026, 5, 10))).toBe(seconds(2))
     expect(storedToday('reddit.com', new Date(2026, 5, 11))).toBe(seconds(1))
+  })
+})
+
+describe('away from the computer (idle or locked)', () => {
+  // A media element in the page, playing (or not) as far as the tracker can
+  // tell.
+  function media(tag: 'audio' | 'video', playing: boolean) {
+    const el = document.createElement(tag)
+    const state = { paused: !playing }
+    Object.defineProperty(el, 'paused', { get: () => state.paused })
+    Object.defineProperty(el, 'readyState', { get: () => 4 })
+    document.body.append(el)
+    return { stop: () => (state.paused = true) }
+  }
+
+  it('stops counting while the screen is locked, and resumes after', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    browser.setIdleState('locked')
+    await vi.advanceTimersByTimeAsync(minutes(3))
+    expect((await model.readElapsed()).today).toEqual({ elapsed: seconds(5), state: TimerState.PAUSED })
+    expect(storedToday()).toBe(seconds(5))
+    browser.setIdleState('active')
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(seconds(10))
+  })
+
+  it('takes idle time back to the last input, five minutes before idle is reported', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(minutes(7))
+    browser.setIdleState('idle')
+    await vi.advanceTimersByTimeAsync(minutes(10))
+    expect(storedToday()).toBe(minutes(2))
+    expect(await today(model)).toBe(minutes(2))
+    browser.setIdleState('active')
+    await vi.advanceTimersByTimeAsync(seconds(30))
+    expect(await today(model)).toBe(minutes(2) + seconds(30))
+  })
+
+  it('keeps counting idle time while media plays, and stops when it does', async () => {
+    const reports: Array<{ type?: string; media?: boolean }> = []
+    browser.runtime.onMessage.addListener((message) => {
+      reports.push(message as { type?: string; media?: boolean })
+    })
+    const video = media('video', true)
+    media('audio', false)
+    const model = started()
+    await vi.advanceTimersByTimeAsync(minutes(1))
+    browser.setIdleState('idle')
+    await vi.advanceTimersByTimeAsync(minutes(2))
+    expect(await today(model)).toBe(minutes(3))
+    expect(storedToday()).toBeGreaterThan(minutes(2))
+    const timeReports = reports.filter((r) => r.type === 'addElapsed')
+    expect(timeReports.length).toBeGreaterThan(0)
+    expect(timeReports.every((r) => r.media === true)).toBe(true)
+
+    // The next tick notices the media stopped (up to a second later).
+    video.stop()
+    await vi.advanceTimersByTimeAsync(minutes(2))
+    const counted = minutes(3) + seconds(1)
+    expect(await today(model)).toBe(counted)
+    await vi.advanceTimersByTimeAsync(seconds(10))
+    expect(storedToday()).toBe(counted)
+    // A lock pauses media time too.
+    browser.setIdleState('locked')
+    await flush()
+    expect(await today(model)).toBe(counted)
+  })
+
+  it('starts paused in a page loaded while the screen is locked', async () => {
+    browser.storage.local.seed({ idleState: 'locked' })
+    const model = started()
+    await vi.advanceTimersByTimeAsync(minutes(1))
+    expect(await today(model)).toBe(0)
+  })
+
+  it('reads an unknown stored state as active', async () => {
+    browser.storage.local.seed({ idleState: 'asleep' })
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(seconds(5))
   })
 })

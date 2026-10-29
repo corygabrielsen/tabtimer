@@ -29,6 +29,11 @@ See how much time you've spent on social media sites today.
   data leaves the device.
 - **scripting** — Register the content script at runtime for the sites the user
   has enabled, so the overlay can render and measure active time.
+- **idle** — Pause timing while the user is away from the computer: Chrome
+  reports "idle" after 5 minutes without keyboard or mouse input, and "locked"
+  when the screen locks. Time spent away is not counted (unless audio or video
+  is playing on the tracked site while idle). Only the active/idle/locked state
+  is read, locally; it is never transmitted.
 - **optional host access** — No host access is requested at install. When the
   user enables a site (from the popup or the options page), the extension
   requests access to just that origin; grants are per-site and revocable. The

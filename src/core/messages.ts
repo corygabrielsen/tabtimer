@@ -18,8 +18,10 @@ export type Contract = {
   // content: which site this page counts under.
   hello: { req: Empty; res: { site: Site } }
   // content: credit active time to the sender's site. The service worker
-  // assigns it to local days and hours. Replies with the site's total today.
-  addElapsed: { req: { spans: Span[] }; res: { total: number } }
+  // assigns it to local days and hours, minus time away from the computer
+  // (core/away.ts). `media`: the page is playing audio or video, which keeps
+  // idle (but not locked) time counting. Replies with the site's total today.
+  addElapsed: { req: { spans: Span[]; media: boolean }; res: { total: number } }
   // extension pages: zero one site's time today.
   resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
@@ -142,7 +144,11 @@ export function parseRequest(raw: unknown, now: number): Request | null {
       return { type: 'openOptions' }
     case 'addElapsed': {
       const spans = parseSpans(raw.spans, now)
-      return spans ? { type: 'addElapsed', spans } : null
+      // `media` is optional on the wire (absent = no media playing).
+      if (!spans || (raw.media !== undefined && typeof raw.media !== 'boolean')) {
+        return null
+      }
+      return { type: 'addElapsed', spans, media: raw.media === true }
     }
     case 'resetToday':
       return isSiteString(raw.site) ? { type: 'resetToday', site: raw.site } : null

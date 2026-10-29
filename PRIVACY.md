@@ -20,8 +20,20 @@ Everything is kept in `chrome.storage.local` on your own browser profile:
 - `limits`: any daily time limits you set (per site and across all sites).
 - `prefs`: whether the on-page overlay is shown, and its size.
 - `snoozeUntil`: the end time of a "5 more minutes" snooze.
+- `idleState`: whether you are at the computer right now (`active`), away
+  after 5 minutes without keyboard or mouse input (`idle`), or have the screen
+  locked (`locked`), so time away isn't counted.
 - `schema`: the storage format version. Data stored in an older format is
   deleted once when the extension is updated.
+
+While the browser runs, the extension also keeps the recent times you were
+idle or locked, and the last few minutes of credited time, in
+`chrome.storage.session` (memory only, cleared when the browser closes), so it
+can take back time counted after your last input.
+
+The `idle` permission tells Tab Timer only whether you are active, idle or
+locked, never what you are doing. It is read locally to pause timing and is
+never transmitted.
 
 That's all. Tab Timer only reads the **address** of the pages it runs on (to
 pick which site's counter to update). It does not read page content, your

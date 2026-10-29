@@ -2,9 +2,10 @@ import Timer, { TimerState, TimerType } from './Timer'
 import { chromeStore } from '../chrome/store'
 import { bus as chromeBus } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
+import { isIdleState, type IdleState } from '../core/away'
 import { dayOf, nextMidnight, startOfDay, type DayStamp } from '../core/day'
 import { appendSpan, batchSpans, spanTimeSince, type ErrorCode, type Span } from '../core/messages'
-import { dayKey, dayTotal, normalizeDay, siteTotal, type DayUsage } from '../core/schema'
+import { dayKey, dayTotal, normalizeDay, siteTotal, IDLE_STATE_KEY, type DayUsage } from '../core/schema'
 import type { Bus, Clock, Store, StoreChanges } from '../ports'
 
 export type ElapsedEntry = {
@@ -59,10 +60,14 @@ export default class FocusTracker {
   // When we last attempted a routine report (throttle baseline); epoch so
   // the very first report fires immediately.
   private previousStorageUpdateTime: number = 0
-  // Focus time accrues only while the window has focus, the tab is visible
-  // and the block screen is not up.
+  // Focus time accrues only while the window has focus, the tab is visible,
+  // the block screen is not up, and the user is at the computer: not
+  // locked, and not idle unless media is playing (core/away.ts). The idle
+  // state is the service worker's, mirrored in storage. The worker trims
+  // reported time by the same rule, so this only keeps the display honest.
   private windowFocused = false
   private blocked = false
+  private idle: IdleState = 'active'
 
   // The site this page counts under, as the service worker resolves it
   // (content.js doesn't bundle the public suffix list).
@@ -153,6 +158,10 @@ export default class FocusTracker {
 
   private tick = () => {
     const now = this.clock.now()
+    if (this.idle === 'idle') {
+      // Media starting or stopping decides whether idle time counts.
+      this.updateFocusTimer()
+    }
     this.countupTimer.tick(now)
     this.creditFocus(() => this.focusTimer.tick(now))
     if (!this.maybeRollover()) {
@@ -220,11 +229,14 @@ export default class FocusTracker {
   // Send every unsent span to the service worker, which adds it to the
   // sender's site. The single writer makes cross-tab accumulation race-free.
   private sendUnsent(): void {
+    // Whether media played while this time accrued: while idle, the focus
+    // timer runs only with media playing; otherwise it is sampled now.
+    const media = this.idle === 'idle' || mediaPlaying()
     const batches = batchSpans(this.unsent, this.clock.now())
     this.unsent = []
     for (const spans of batches) {
       this.inFlight.add(spans)
-      void this.bus.send('addElapsed', { spans }).then((response) => {
+      void this.bus.send('addElapsed', { spans, media }).then((response) => {
         // A report dropped by a reset is no longer ours to retry.
         if (this.inFlight.delete(spans) && !response.ok && RETRYABLE.has(response.error)) {
           this.unsent = [...spans, ...this.unsent].sort((a, b) => a[0] - b[0])
@@ -289,9 +301,26 @@ export default class FocusTracker {
     return this.usageLoad
   }
 
-  // Everything a read needs: the site and today's usage.
+  // Everything a read needs: the site and today's usage; and the idle state.
   private load(): Promise<unknown> {
-    return Promise.all([this.getSite(), this.loadUsage()])
+    return Promise.all([this.getSite(), this.loadUsage(), this.loadIdle()])
+  }
+
+  private async loadIdle(): Promise<void> {
+    this.setIdle(await this.store.get(IDLE_STATE_KEY))
+  }
+
+  // Follow the service worker's idle state. What has accrued is reported
+  // first, flagged as it accrued (so going idle, the worker trims it back
+  // to the last input at once and the stored total settles).
+  private setIdle(value: unknown): void {
+    const next = isIdleState(value) ? value : 'active'
+    if (next === this.idle) {
+      return
+    }
+    this.flush()
+    this.idle = next
+    this.updateFocusTimer()
   }
 
   // Today's totals: this site's (including time not yet stored) and every
@@ -359,7 +388,8 @@ export default class FocusTracker {
     if (this.focusTimer.state === TimerState.NOT_STARTED) {
       return
     }
-    if (!this.blocked && !document.hidden && this.windowFocused) {
+    const away = this.idle === 'locked' || (this.idle === 'idle' && !mediaPlaying())
+    if (!this.blocked && !document.hidden && this.windowFocused && !away) {
       this.focusTimer.unpause()
     } else {
       this.creditFocus(() => this.focusTimer.pause())
@@ -390,6 +420,9 @@ export default class FocusTracker {
   }
 
   handleStorageChange = (changes: StoreChanges) => {
+    if (IDLE_STATE_KEY in changes) {
+      this.setIdle(changes[IDLE_STATE_KEY]?.newValue)
+    }
     const change = changes[this.getTodayKey()]
     if (!change) {
       return
@@ -408,4 +441,16 @@ export default class FocusTracker {
       this.inFlight.clear()
     }
   }
+}
+
+// Whether the page is playing audio or video (muted or not): watching or
+// listening keeps idle time counting. Media in closed shadow roots or
+// cross-origin frames isn't seen. readyState 2 is HAVE_CURRENT_DATA.
+export function mediaPlaying(): boolean {
+  for (const media of document.querySelectorAll<HTMLMediaElement>('video, audio')) {
+    if (!media.paused && !media.ended && media.readyState >= 2) {
+      return true
+    }
+  }
+  return false
 }
