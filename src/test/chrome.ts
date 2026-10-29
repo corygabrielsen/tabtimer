@@ -238,6 +238,10 @@ export class FakeChrome {
     onInstalled: new FakeEvent<[{ reason: string }]>(),
     onStartup: new FakeEvent<[]>(),
     openOptionsPage: vi.fn(() => Promise.resolve()),
+    // The extension's open documents (none unless a test adds them).
+    getContexts: vi.fn<(filter: object) => Promise<Array<{ windowId: number; tabId: number }>>>(() =>
+      Promise.resolve([])
+    ),
     sendMessage: (message: unknown, callback?: Callback<unknown>) => this.sendMessage(message, callback),
   }
 
@@ -350,7 +354,7 @@ export class FakeChrome {
     sendMessage: vi.fn((...[tabId, message]: [number, unknown, { documentId?: string; frameId?: number }?]) =>
       this.sendToTab(tabId, message)
     ),
-    create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, ...props })),
+    create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, windowId: 1, ...props })),
     onActivated: new FakeEvent<[{ tabId: number; windowId: number }]>(),
     onRemoved: new FakeEvent<[number]>(),
     onAttached: new FakeEvent<[number, { newWindowId: number; newPosition: number }]>(),
