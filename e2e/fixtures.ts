@@ -109,6 +109,8 @@ export function launch(userDataDir: string, extensionPath = EXTENSION_PATH): Pro
       '--host-resolver-rules=MAP *.test 127.0.0.1',
       // Let fixture media play() without a user gesture.
       '--autoplay-policy=no-user-gesture-required',
+      // Middle-click autoscroll, as on Windows (off by default on Linux).
+      '--enable-blink-features=MiddleClickAutoscroll',
     ],
   })
 }

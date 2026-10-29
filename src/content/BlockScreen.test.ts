@@ -584,120 +584,18 @@ describe('page scroll lock', () => {
     expect(style().getPropertyValue('overflow')).toBe('auto')
     expect(document.body.style.getPropertyValue('overflow')).toBe('clip')
   })
-})
 
-describe('scroll input while blocked', () => {
-  beforeEach(() => {
-    seedLimits({ perSite: { 'reddit.com': 1 } })
-    logged('reddit.com', minutes(2))
-  })
-
-  afterEach(() => {
-    document.documentElement.removeAttribute('style')
-    document.body.removeAttribute('style')
-  })
-
-  // Dispatch a cancelable event at `target` and report whether it was prevented.
-  function prevented(event: Event, target: EventTarget = document.body): boolean {
-    target.dispatchEvent(event)
-    return event.defaultPrevented
-  }
-  const wheel = (init: WheelEventInit = {}) => {
-    const e = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
-    // happy-dom drops modifier keys from WheelEventInit.
-    Object.defineProperty(e, 'ctrlKey', { value: init.ctrlKey ?? false })
-    return e
-  }
-  const touchmove = () => new Event('touchmove', { bubbles: true, cancelable: true })
-  const key = (k: string, init: KeyboardEventInit = {}) =>
-    new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, composed: true, ...init })
-  const mousedown = (button: number) => new MouseEvent('mousedown', { button, bubbles: true, cancelable: true })
-  const SCROLL_KEYS = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
-
-  it('swallows wheel, touch, scroll keys, and middle-click autoscroll', async () => {
-    await mount()
-    expect(isBlocked()).toBe(true)
-    expect(prevented(wheel({ deltaY: 100 }))).toBe(true)
-    expect(prevented(touchmove())).toBe(true)
-    expect(prevented(mousedown(1))).toBe(true)
-    for (const k of SCROLL_KEYS) {
-      expect(prevented(key(k)), k).toBe(true)
-    }
-  })
-
-  it('leaves other input alone', async () => {
-    await mount()
-    expect(prevented(mousedown(0))).toBe(false)
-    expect(prevented(key('a'))).toBe(false)
-    // Zoom, and history navigation.
-    expect(prevented(wheel({ deltaY: 100, ctrlKey: true }))).toBe(false)
-    expect(prevented(key('ArrowLeft', { altKey: true }))).toBe(false)
-    expect(prevented(key('ArrowRight', { metaKey: true }))).toBe(false)
-  })
-
-  it('lets Space press a block screen button', async () => {
-    await mount()
-    expect(screen().activeElement).toBe(snoozeButton())
-    expect(prevented(key(' '), snoozeButton()!)).toBe(false)
-    expect(prevented(key('PageDown'), snoozeButton()!)).toBe(true)
-  })
-
-  it('stops listening once dismissed', async () => {
-    await mount()
-    click(snoozeButton())
-    expect(isBlocked()).toBe(false)
-    expect(prevented(wheel({ deltaY: 100 }))).toBe(false)
-    expect(prevented(touchmove())).toBe(false)
-    expect(prevented(mousedown(1))).toBe(false)
-    expect(prevented(key('PageDown'))).toBe(false)
-  })
-
-  it('stops listening once destroyed', async () => {
-    const blocker = await mount()
-    blocker.destroy()
-    expect(prevented(wheel({ deltaY: 100 }))).toBe(false)
-    expect(prevented(touchmove())).toBe(false)
-    expect(prevented(key('End'))).toBe(false)
-  })
-
-  it('puts back an inner scroller that scrolls anyway', async () => {
-    const scroller = page('div')
-    scroller.scrollTop = 40
-    const fresh = page('div')
-    await mount()
-    scroller.scrollTop = 300
-    scroller.dispatchEvent(new Event('scroll'))
-    expect(scroller.scrollTop).toBe(40)
-    // One at the origin when blocking began goes back there.
-    fresh.scrollTop = 50
-    fresh.dispatchEvent(new Event('scroll'))
-    expect(fresh.scrollTop).toBe(0)
-
-    click(snoozeButton())
-    scroller.scrollTop = 300
-    scroller.dispatchEvent(new Event('scroll'))
-    expect(scroller.scrollTop).toBe(300)
-  })
-
-  it('puts the window back if it scrolls anyway', async () => {
+  it('puts the window back where it was on dismissal', async () => {
     await mount()
     const scrollTo = vi.spyOn(window, 'scrollTo')
+    // Hiding overflow clamped the window's offset while blocked.
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
     try {
-      document.dispatchEvent(new Event('scroll'))
-      expect(scrollTo).toHaveBeenCalledWith({ left: 0, top: 0, behavior: 'instant' })
-      scrollTo.mockClear()
-      // On dismissal too: hiding overflow can clamp the window's offset.
       click(snoozeButton())
       expect(scrollTo).toHaveBeenCalledWith({ left: 0, top: 0, behavior: 'instant' })
     } finally {
       delete (window as { scrollY?: number }).scrollY
       scrollTo.mockRestore()
     }
-  })
-
-  it('ignores scroll events from elsewhere', async () => {
-    await mount()
-    expect(() => window.dispatchEvent(new Event('scroll'))).not.toThrow()
   })
 })

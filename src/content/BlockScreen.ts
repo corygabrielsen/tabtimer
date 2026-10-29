@@ -12,6 +12,8 @@ const HOST_ID = 'tabtimer-block'
 const STYLES = `
   :host { all: initial; }
   * { box-sizing: border-box; }
+  /* The top-layer scroll container every wheel, touch and key scroll
+     targets; contain keeps them from chaining to the page behind. */
   dialog.screen {
     width: 100%;
     height: 100%;
@@ -20,13 +22,13 @@ const STYLES = `
     margin: 0;
     padding: 0;
     border: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
   .screen:not([open]) { display: none; }
   .screen,
   .screen::backdrop {
     background: #000;
-    overscroll-behavior: none;
-    touch-action: none;
   }
   .screen {
     position: fixed;
@@ -121,21 +123,6 @@ const OVERFLOW_PROPS = ['overflow', 'overflow-x', 'overflow-y'] as const
 type SavedStyle = { value: string; priority: string }
 type ScrollPosition = { left: number; top: number }
 
-// Keys that scroll the page (or the nearest scroller) by default.
-const SCROLL_KEYS = new Set([
-  ' ',
-  'PageUp',
-  'PageDown',
-  'Home',
-  'End',
-  'ArrowUp',
-  'ArrowDown',
-  'ArrowLeft',
-  'ArrowRight',
-])
-// Capture phase, and not passive, so preventDefault holds for wheel/touch.
-const ACTIVE_CAPTURE: AddEventListenerOptions = { capture: true, passive: false }
-
 // The block screen is a modal <dialog> inside a closed shadow root. While it
 // is open (showModal), the browser puts it in the top layer and makes the rest
 // of the page inert: no clicks, no Tab stops, hidden from assistive tech. The
@@ -159,10 +146,8 @@ export default class BlockScreen {
   // The page's own inline overflow on <html> and <body>, saved only while this
   // instance overrides it.
   private savedOverflow: Map<HTMLElement, Map<string, SavedStyle>> | null = null
-  // Scroll offsets frozen while blocked: the window's, and every element that
-  // was scrolled away from the origin when blocking began.
-  private frozenWindow: ScrollPosition | null = null
-  private frozenElements = new Map<Element, ScrollPosition>()
+  // The window's scroll offset when blocking began, restored on dismissal.
+  private savedWindow: ScrollPosition | null = null
 
   constructor(
     private tracker: Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'onState'>,
@@ -280,15 +265,10 @@ export default class BlockScreen {
 
   // Add (or remove) the page listeners held while blocked.
   private listen(on: boolean) {
-    const listeners: Array<[EventTarget, string, (e: never) => void, boolean | AddEventListenerOptions]> = [
+    const listeners: Array<[EventTarget, string, (e: never) => void, boolean]> = [
       [document, 'focusin', this.handleFocusIn, true],
       [document, 'play', this.handlePlay, true],
       [document, 'fullscreenchange', this.handleFullscreenChange, false],
-      [window, 'wheel', this.handleWheel, ACTIVE_CAPTURE],
-      [window, 'touchmove', this.preventDefault, ACTIVE_CAPTURE],
-      [window, 'mousedown', this.handleMouseDown, true],
-      [window, 'keydown', this.handleScrollKey, true],
-      [window, 'scroll', this.handleScroll, true],
     ]
     for (const [target, type, listener, options] of listeners) {
       if (on) {
@@ -327,7 +307,7 @@ export default class BlockScreen {
   // scroll into a scroller of its own. The page's inline values and
   // priorities are saved first, so dismissal restores exactly what it had.
   private lockScroll() {
-    this.freezeScrollPositions()
+    this.savedWindow = { left: window.scrollX, top: window.scrollY }
     if (this.savedOverflow) {
       return
     }
@@ -348,9 +328,8 @@ export default class BlockScreen {
   }
 
   private restoreScroll() {
-    const frozen = this.frozenWindow
-    this.frozenWindow = null
-    this.frozenElements.clear()
+    const position = this.savedWindow
+    this.savedWindow = null
     const saved = this.savedOverflow
     if (!saved) {
       return
@@ -361,74 +340,7 @@ export default class BlockScreen {
     }
     // Hiding overflow can shrink the viewport's scroll range (a body sized to
     // the viewport) and clamp its offset; go back to where the page was.
-    restoreWindowScroll(frozen)
-  }
-
-  // Record where everything is scrolled to. Anything not recorded was at the
-  // origin.
-  private freezeScrollPositions() {
-    this.frozenWindow = { left: window.scrollX, top: window.scrollY }
-    this.frozenElements.clear()
-    for (const el of document.querySelectorAll('*')) {
-      if (el.scrollLeft !== 0 || el.scrollTop !== 0) {
-        this.frozenElements.set(el, { left: el.scrollLeft, top: el.scrollTop })
-      }
-    }
-  }
-
-  // Backstop for whatever the input handlers miss (a page script, an input
-  // path they don't cover): put anything that scrolls while blocked back.
-  private handleScroll = (e: Event) => {
-    const target = e.target
-    if (target === document || target === document.scrollingElement) {
-      restoreWindowScroll(this.frozenWindow)
-      return
-    }
-    if (!(target instanceof Element)) {
-      return
-    }
-    const frozen = this.frozenElements.get(target) ?? { left: 0, top: 0 }
-    if (target.scrollLeft !== frozen.left || target.scrollTop !== frozen.top) {
-      target.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
-    }
-  }
-
-  private preventDefault = (e: Event) => {
-    e.preventDefault()
-  }
-
-  // Ctrl+wheel (and trackpad pinch) zooms rather than scrolls; leave it be.
-  private handleWheel = (e: WheelEvent) => {
-    if (!e.ctrlKey) {
-      e.preventDefault()
-    }
-  }
-
-  // Middle-click starts autoscroll.
-  private handleMouseDown = (e: MouseEvent) => {
-    if (e.button === 1) {
-      e.preventDefault()
-    }
-  }
-
-  // Scroll keys scroll the page behind the block screen; Space on one of its
-  // buttons presses it instead, so that one goes through. Alt/Meta with
-  // Left/Right is history navigation, not scrolling.
-  private handleScrollKey = (e: KeyboardEvent) => {
-    if (!SCROLL_KEYS.has(e.key)) {
-      return
-    }
-    if (
-      e.key === ' ' &&
-      e.composedPath().includes(this.host) &&
-      this.shadow.activeElement instanceof HTMLButtonElement
-    ) {
-      return
-    }
-    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (e.altKey || e.metaKey)) {
-      return
-    }
-    e.preventDefault()
+    restoreWindowScroll(position)
   }
 
   // A fullscreen element shares the top layer and would cover the dialog;
@@ -498,10 +410,10 @@ export default class BlockScreen {
   }
 }
 
-// Scroll the window back to `frozen`, if it moved.
-function restoreWindowScroll(frozen: ScrollPosition | null) {
-  if (frozen && (window.scrollX !== frozen.left || window.scrollY !== frozen.top)) {
-    window.scrollTo({ left: frozen.left, top: frozen.top, behavior: 'instant' })
+// Scroll the window back to `position`, if it moved.
+function restoreWindowScroll(position: ScrollPosition | null) {
+  if (position && (window.scrollX !== position.left || window.scrollY !== position.top)) {
+    window.scrollTo({ left: position.left, top: position.top, behavior: 'instant' })
   }
 }
 

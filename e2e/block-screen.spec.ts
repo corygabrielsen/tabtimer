@@ -254,6 +254,39 @@ for (const [layout, path] of [
   })
 }
 
+// Middle-click, then move down: autoscroll (see launch() in fixtures.ts).
+async function autoscroll(page: Page) {
+  const { width, height } = page.viewportSize()!
+  await page.mouse.click(width / 2, height / 2, { button: 'middle' })
+  await page.mouse.move(width / 2, height - 5, { steps: 5 })
+  await page.waitForTimeout(500)
+  await page.mouse.click(width / 2, height / 2, { button: 'middle' })
+}
+
+for (const path of ['/scroll-document', '/scroll-inner']) {
+  test(`middle-click autoscroll doesn't reach the page behind it (${path})`, async ({
+    context,
+    serviceWorker,
+    site,
+  }) => {
+    await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
+    const page = await context.newPage()
+    await page.goto(site(SITE_A, path))
+    await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+    // It scrolls the page while not blocked.
+    const initial = await scrollState(page)
+    await autoscroll(page)
+    expect(await scrollState(page)).not.toEqual(initial)
+
+    await page.evaluate(() => (document.getElementById('shell') ?? window).scrollTo(0, 1000))
+    await seed(serviceWorker, BLOCKING)
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+    const blocked = await scrollState(page)
+    await autoscroll(page)
+    expect(await scrollState(page)).toEqual(blocked)
+  })
+}
+
 test('is fully opaque over a bright page, in light and dark', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/scroll-document'))
