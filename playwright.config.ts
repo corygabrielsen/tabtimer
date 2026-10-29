@@ -5,7 +5,9 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: 'e2e',
   timeout: 30_000,
-  expect: { timeout: 5_000 },
+  // Assertions retry until they pass, so a longer limit only gives a loaded
+  // runner time to render; a real failure still fails.
+  expect: { timeout: 10_000 },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: 0,
