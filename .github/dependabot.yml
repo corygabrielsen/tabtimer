@@ -1,12 +1,29 @@
 version: 2
 updates:
+  # Minor + patch bumps land as one weekly PR; majors stay individual.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'build(deps)'
+      prefix-development: 'build(deps-dev)'
+    groups:
+      dev-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    commit-message:
+      prefix: 'ci(deps)'
+    groups:
+      actions:
+        patterns:
+          - '*'
