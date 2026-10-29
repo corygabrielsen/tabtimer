@@ -7,7 +7,9 @@
 // kept in step too: a grant injects the script into its open tabs, a revoke
 // tells each page no longer covered to stop, and a new extension context
 // (install, update, reload, enable) injects into every tracked tab, whose
-// pages still run the previous context's orphaned script.
+// pages still run the previous context's orphaned script. A page restored
+// from the back/forward cache runs no registered script: one loaded before
+// its grant is started when it is shown.
 import { sendStop } from '../chrome/bus'
 import { chromeStore } from '../chrome/store'
 import { serial } from '../core/serial'
@@ -82,6 +84,21 @@ async function stopUntracked(): Promise<void> {
         : sendStop(tab.id).catch(ignore)
     )
   )
+}
+
+// Start the tab's page at `url` if a grant covers it and it runs no script
+// (content.ts records its instance in the isolated world this checks).
+export async function startTab(tabId: number, url: string, granted: readonly string[]): Promise<void> {
+  if (!isTracked(granted, url)) {
+    return
+  }
+  const target = { tabId }
+  const [ran] = await chrome.scripting
+    .executeScript({ target, func: () => Symbol.for('tabtimer.content') in window })
+    .catch(none)
+  if (ran?.result === false) {
+    await chrome.scripting.executeScript({ target, files: [CONTENT_JS] }).catch(ignore)
+  }
 }
 
 // One change at a time, each reading the grants and the registration

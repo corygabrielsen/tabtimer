@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
+import { dayKeyOf } from '../test/content'
 import { bus } from '../chrome/bus'
 import { originsForSite } from '../core/site'
-import { SCHEMA } from '../core/schema'
+import { emptyBuckets, SCHEMA } from '../core/schema'
 
 let browser: FakeChrome
 
@@ -58,6 +59,10 @@ describe('idle', () => {
 })
 
 describe('messages', () => {
+  beforeEach(() => {
+    browser.granted = new Set(originsForSite('reddit.com'))
+  })
+
   it('serves the contract to this extension', async () => {
     browser.sender = {
       id: browser.runtime.id,
@@ -229,6 +234,53 @@ describe('open tabs follow the grants', () => {
     await flush()
     expect(stopped().map(([tabId]) => tabId)).toEqual([1, 2])
     expect(registered()?.matches).toEqual(originsForSite('x.com'))
+  })
+
+  it('X2: starts a page shown on a granted site that runs no script, as after a bfcache restore', async () => {
+    browser.granted = new Set(originsForSite('reddit.com'))
+    let running = false
+    browser.scripting.executeScript.mockImplementation((injection: { files?: string[] }) =>
+      Promise.resolve(injection.files ? [] : [{ result: running }])
+    )
+    const shown = async (tabId: number, url: string, status = 'complete') => {
+      browser.tabs.onUpdated.dispatch(tabId, { status }, { url })
+      await flush()
+    }
+    await shown(1, 'https://www.reddit.com.:443/r/all')
+    await shown(3, 'https://x.com/home')
+    await shown(1, 'https://www.reddit.com/r/all', 'loading')
+    running = true
+    await shown(2, 'https://old.reddit.com/')
+    expect(browser.scripting.executeScript.mock.calls.map(([injection]) => injection)).toEqual([
+      { target: { tabId: 1 }, func: expect.any(Function) },
+      { target: { tabId: 1 }, files: ['content.js'] },
+      { target: { tabId: 2 }, func: expect.any(Function) },
+    ])
+  })
+
+  it('X4: tells every page its new all-sites total when the grants change', async () => {
+    browser.granted = new Set(originsForSite('reddit.com'))
+    browser.storage.local.seed({ [dayKeyOf()]: { 'x.com': emptyBuckets().fill(1000) } })
+    browser.sender = {
+      id: browser.runtime.id,
+      url: 'https://www.reddit.com/',
+      tab: { id: 1, windowId: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
+    await expect(bus.send('presence', PRESENT)).resolves.toMatchObject({ ok: true, value: { globalToday: 0 } })
+    const told = () =>
+      browser.tabs.sendMessage.mock.calls
+        .map(([, message]) => message as { type?: string; state?: { globalToday: number } })
+        .filter((m) => m.type === 'state')
+        .map((m) => m.state!.globalToday)
+    browser.grant(originsForSite('x.com'))
+    await flush()
+    // The page's own running time aside.
+    expect(told().at(-1)).toBeGreaterThanOrEqual(24_000)
+    await browser.permissions.remove({ origins: originsForSite('x.com') })
+    await flush()
+    expect(told().at(-1)).toBeLessThan(24_000)
   })
 
   it('survives the browser failing every call', async () => {

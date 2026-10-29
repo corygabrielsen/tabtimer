@@ -10,7 +10,7 @@ import { dayOf, startOfDay } from '../core/day'
 import { blockAt, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, type DayUsage, type Prefs } from '../core/schema'
-import type { Site } from '../core/site'
+import { trackedSite, type Site } from '../core/site'
 import { creditEnd, step, type Attest, type Open, type TrackerEvent, type TrackerState } from '../core/tracker'
 import type { Ledger, Tx } from './ledger'
 
@@ -22,11 +22,15 @@ export type TrackerDeps = {
   // Keep the checkpoint alarm running (true) or not. Called in the queue,
   // so the alarm follows the state each transaction leaves.
   alarm: (on: boolean) => Promise<void>
+  // The tracked grants (sw/grants.ts): the all-sites total is theirs.
+  granted: () => Promise<readonly string[]>
 }
 
 export type Tracker = ReturnType<typeof createTracker>
 
 type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[] }
+
+const everySite = () => true
 
 // The open interval's uncredited part, today's share of it.
 function uncredited(open: Open, now: number): number {
@@ -38,14 +42,16 @@ export function createTracker(deps: TrackerDeps) {
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
-    let ctx: Promise<[DayUsage, Limits, Prefs]> | null = null
+    let ctx: Promise<[DayUsage, Limits, Prefs, (site: Site) => boolean]> | null = null
     return async (tabId: number, attest: Pick<Attest, 'site'>, s: TrackerState): Promise<TabState> => {
-      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs()])
-      const [usage, limits, prefs] = await ctx
+      // Grants that can't be read count every site.
+      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), deps.granted().then(trackedSite, () => everySite)])
+      const [usage, limits, prefs, counts] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
       const extra = open ? uncredited(open, tx.now) : 0
       const today = siteTotal(usage, attest.site) + extra
-      const globalToday = dayTotal(usage) + extra
+      // Sites no longer tracked don't count toward the all-sites limit.
+      const globalToday = dayTotal(usage, counts) + extra
       const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null)
       return {
         site: attest.site,
@@ -146,6 +152,10 @@ export function createTracker(deps: TrackerDeps) {
   return {
     // A content script's presence message; replies with the tab's state.
     presence: (tabId: number, attest: Omit<Attest, 'at'>): Promise<TabState> => report(tabId, attest, false),
+
+    // A content script on a page no grant covers spoke: forget its tab.
+    untracked: async (tabId: number, doc: string, departing: boolean): Promise<void> =>
+      settle(await run({ kind: 'untracked', tabId, doc, departing })),
 
     // An extension page's question: the state a tab on `site` is told. Its
     // open interval counts only if it is on that site.

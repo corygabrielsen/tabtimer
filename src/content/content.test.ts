@@ -12,6 +12,7 @@ import {
   seconds,
   seedLimits,
   startBackground,
+  EVERY_HOST,
   storedToday,
   useClock,
 } from '../test/content'
@@ -26,7 +27,7 @@ async function inject(): Promise<void> {
 }
 
 beforeEach(async () => {
-  await startBackground()
+  await startBackground(EVERY_HOST)
   useClock(new Date(2026, 5, 10, 12, 0, 0))
   shadowOf = trackShadowRoots()
 })

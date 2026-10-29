@@ -14,9 +14,15 @@ export type Site = string
 
 const PSL = { allowPrivateDomains: true } as const
 
+// A hostname as Chrome's match patterns compare it: lowercase, without the
+// trailing dot of a fully qualified name. Every host is read through this.
+function canonicalHost(hostname: string): string {
+  return hostname.toLowerCase().replace(/\.$/, '')
+}
+
 // The site a hostname belongs to.
 export function siteOf(hostname: string): Site {
-  const host = hostname.toLowerCase()
+  const host = canonicalHost(hostname)
   return parse(host, PSL).domain ?? host
 }
 
@@ -25,16 +31,16 @@ function isIp(hostname: string): boolean {
   return parse(hostname.replace(/^\[(.*)\]$/, '$1'), PSL).isIp === true
 }
 
-// The site tracking runs under for `hostname`, or null: a host without a dot,
-// or a bare public suffix (co.uk, s3.amazonaws.com), whose grant would cover
-// every site under it. The one test the popup, the settings input and the
-// service worker share.
+// The site tracking runs under for `hostname`, or null: a name without a
+// dot, or a bare public suffix (co.uk, s3.amazonaws.com), whose grant would
+// cover every site under it. An IP address is its own site. The one test
+// the popup, the settings input and the service worker share.
 export function trackableSite(hostname: string): Site | null {
-  const host = hostname.toLowerCase()
-  if (!host.includes('.')) {
-    return null
+  const host = canonicalHost(hostname)
+  if (isIp(host)) {
+    return host
   }
-  return isIp(host) ? host : (parse(host, PSL).domain ?? null)
+  return host.includes('.') ? (parse(host, PSL).domain ?? null) : null
 }
 
 // Hosts extensions can never run on, even with a grant.
@@ -53,7 +59,7 @@ function httpUrl(url: string): URL | null {
 // http(s), a restricted host, or no trackable site).
 export function trackableSiteOfUrl(url: string): Site | null {
   const parsed = httpUrl(url)
-  return parsed && !RESTRICTED_HOSTS.has(parsed.hostname) ? trackableSite(parsed.hostname) : null
+  return parsed && !RESTRICTED_HOSTS.has(canonicalHost(parsed.hostname)) ? trackableSite(parsed.hostname) : null
 }
 
 // Normalize free-form input (a bare host or a full URL) to its trackable
@@ -94,7 +100,7 @@ export function parsePattern(origin: string): Pattern | null {
     return null
   }
   const scheme = m[1] as Pattern['scheme']
-  const host = m[2]!.toLowerCase()
+  const host = canonicalHost(m[2]!)
   if (host === '*') {
     return { scheme, host: '', wildcard: true }
   }
@@ -107,7 +113,7 @@ function patternMatches(pattern: Pattern, url: string): boolean {
   if (!parsed || (pattern.scheme !== '*' && `${pattern.scheme}:` !== parsed.protocol)) {
     return false
   }
-  const host = parsed.hostname
+  const host = canonicalHost(parsed.hostname)
   return host === pattern.host || (pattern.wildcard && (pattern.host === '' || host.endsWith(`.${pattern.host}`)))
 }
 
@@ -146,6 +152,13 @@ export function trackedOrigins(origins: readonly string[]): string[] {
 // Is the page at `url` covered by one of the tracked `origins`?
 export function isTracked(origins: readonly string[], url: string): boolean {
   return trackedOrigins(origins).some((origin) => patternMatches(parsePattern(origin)!, url))
+}
+
+// Which sites the tracked `origins` count time for: those granted, or every
+// site under an every-host grant.
+export function trackedSite(origins: readonly string[]): (site: Site) => boolean {
+  const grants = grantsOf(trackedOrigins(origins))
+  return (site) => grants.all.length > 0 || grants.sites.has(site)
 }
 
 // Suggested social sites the user can enable with one click. They can also add

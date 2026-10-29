@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test'
+import type { BrowserContext, Page, Worker } from '@playwright/test'
 import {
   test,
   expect,
@@ -92,4 +92,68 @@ test('X1/P3: a page that outlives its extension removes itself and never blocks'
   await call('management.setEnabled', extensionId, true)
   await expect(overlay(page)).toBeAttached()
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+})
+
+// A main-world marker survives only if the page itself is restored.
+async function leaveForBfcache(page: Page, to: string) {
+  await page.evaluate(() => ((window as unknown as { bfcacheMarker: number }).bfcacheMarker = 1))
+  await page.goto(to)
+}
+
+async function backFromBfcache(page: Page) {
+  // A bfcache restore fires no load event, so wait only for the commit.
+  await page.goBack({ waitUntil: 'commit' })
+  expect(await page.evaluate(() => (window as unknown as { bfcacheMarker?: number }).bfcacheMarker)).toBe(1)
+}
+
+const revokeAll = async (context: BrowserContext, serviceWorker: Worker, extensionId: string) => {
+  const call = await extensionsPage(context)
+  await call('developerPrivate.updateExtensionConfiguration', { extensionId, hostAccess: 'ON_SPECIFIC_SITES' })
+  await expect.poll(() => serviceWorker.evaluate(() => chrome.permissions.getAll().then((p) => p.origins))).toEqual([])
+  return call
+}
+
+test('X1/W1: a revoked page restored from the back/forward cache stops', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/one'))
+  await expect(overlay(page)).toBeAttached()
+  await leaveForBfcache(page, site(SITE_A, '/two'))
+  await expect(overlay(page)).toBeAttached()
+
+  await revokeAll(context, serviceWorker, extensionId)
+  await expect(overlay(page)).toHaveCount(0)
+
+  await page.bringToFront()
+  await backFromBfcache(page)
+  await expect(overlay(page)).toHaveCount(0)
+  await page.waitForTimeout(2_000)
+  await expect(overlay(page)).toHaveCount(0)
+  expect(await openInterval(serviceWorker)).toBeNull()
+})
+
+test('X2: a page granted while in the back/forward cache starts when restored', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  const call = await revokeAll(context, serviceWorker, extensionId)
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/one'))
+  await leaveForBfcache(page, site(SITE_A, '/two'))
+
+  for (const origin of ORIGINS) {
+    await call('developerPrivate.addHostPermission', extensionId, origin)
+  }
+  await expect(overlay(page)).toBeAttached()
+
+  await page.bringToFront()
+  await backFromBfcache(page)
+  await expect(overlay(page)).toHaveCount(1)
+  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
 })

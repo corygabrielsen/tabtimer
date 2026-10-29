@@ -5,17 +5,21 @@
 //      recognized by its URL; a content script by a tab, its document's
 //      lifecycle and a trackable URL (core/site.ts), and its site is taken
 //      from that URL, never from the payload; else 'forbidden';
-//   4. the handler runs; a throw is 'internal'.
+//   4. a content script's URL is covered by the current grants, else
+//      'untracked' (the page stops, and the worker forgets its tab);
+//   5. the handler runs; a throw is 'internal'.
 import { SENDERS, type Contract, type MessageType, type Origin, type Page, type RequestOf } from '../core/messages'
 import { parseRequest } from '../core/requests'
-import { trackableSiteOfUrl, type Site } from '../core/site'
+import { isTracked, trackableSiteOfUrl, type Site } from '../core/site'
 import type { Handler, Sender } from '../chrome/bus'
 import type { Ledger } from './ledger'
 import type { Tracker } from './tracker'
 
 export type RouterDeps = {
   ledger: Pick<Ledger, 'setLimit' | 'snooze' | 'setPrefs'>
-  tracker: Pick<Tracker, 'presence' | 'tabState' | 'todayTotals' | 'resetToday'>
+  tracker: Pick<Tracker, 'presence' | 'untracked' | 'tabState' | 'todayTotals' | 'resetToday'>
+  // The tracked grants (sw/grants.ts).
+  granted: () => Promise<readonly string[]>
   extensionId: string
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
@@ -25,7 +29,7 @@ export type RouterDeps = {
 // Where a request came from, and for a content script the site it runs on
 // and its tab.
 type Tab = { id: number; windowId: number; doc: string; departing: boolean }
-type Context = { origin: Origin; site: Site | null; tab: Tab | null }
+type Context = { origin: Origin; url: string; site: Site | null; tab: Tab | null }
 
 type Handlers = { [K in MessageType]: (req: RequestOf<K>, ctx: Context) => Promise<Contract[K]['res']> }
 
@@ -51,7 +55,7 @@ function departing(sender: Sender): boolean | null {
 function classify(sender: Sender, extensionUrl: string): Context | null {
   const url = sender.url ?? ''
   if (url.startsWith(extensionUrl)) {
-    return { origin: 'extension', site: null, tab: null }
+    return { origin: 'extension', url, site: null, tab: null }
   }
   const site = trackableSiteOfUrl(url)
   const tab = sender.tab
@@ -59,6 +63,7 @@ function classify(sender: Sender, extensionUrl: string): Context | null {
   if (typeof tab?.id === 'number' && leaving !== null && site !== null) {
     return {
       origin: 'content',
+      url,
       site,
       tab: { id: tab.id, windowId: tab.windowId ?? -1, doc: sender.documentId ?? '', departing: leaving },
     }
@@ -111,6 +116,11 @@ export function createRouter(deps: RouterDeps): Handler {
       return { ok: false, error: 'forbidden' }
     }
     try {
+      if (ctx.origin === 'content' && !isTracked(await deps.granted(), ctx.url)) {
+        const { id, doc, departing } = ctx.tab!
+        await tracker.untracked(id, doc, departing)
+        return { ok: false, error: 'untracked' }
+      }
       const handler = handlers[req.type] as (req: unknown, ctx: Context) => Promise<unknown>
       return { ok: true, value: await handler(req, ctx) } as never
     } catch {

@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createRouter } from './router'
 import { createLedger } from './ledger'
 import { createTracker } from './tracker'
+import { watchGrants } from './grants'
 import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
 import { LIMITS_KEY, PREFS_KEY, emptyBuckets } from '../core/schema'
 import { SNOOZE_MS } from '../core/limits'
 import type { Page } from '../core/messages'
+import { originsForSite } from '../core/site'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const ID = 'tabtimer-test'
@@ -48,12 +50,15 @@ beforeEach(() => {
   NOW = NOON
   const clock = { now: () => NOW }
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
+  const granted = watchGrants()
   const tracker = createTracker({
     ledger,
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
+    granted,
   })
-  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, open })
+  handle = createRouter({ ledger, tracker, granted, extensionId: ID, extensionUrl: EXT, open })
+  browser.grant(['*://*/*'])
 })
 
 describe('sender policy', () => {
@@ -176,6 +181,90 @@ describe('sender policy', () => {
         error: 'bad_request',
       })
     }
+  })
+})
+
+describe('the current grants', () => {
+  const opened = () => (browser.storage.session.data.worker as { tracker: { open: unknown } }).tracker.open
+  const only = async (origins: string[]) => {
+    await browser.permissions.remove({ origins: ['*://*/*'] })
+    browser.grant(origins)
+  }
+
+  it('X1/W1: refuses a page no grant covers, and records nothing for it', async () => {
+    await only(originsForSite('x.com'))
+    await expect(handle(presence, content())).resolves.toEqual({ ok: false, error: 'untracked' })
+    for (const raw of [{ type: 'snooze' }, { type: 'setPrefs', hidden: true }, { type: 'open', page: 'options' }]) {
+      await expect(handle(raw, content())).resolves.toEqual({ ok: false, error: 'untracked' })
+    }
+    NOW += 3 * MIN
+    await handle(hidden, content())
+    expect(today()).toBeUndefined()
+    expect(browser.storage.local.data[LIMITS_KEY]).toBeUndefined()
+    expect(open).not.toHaveBeenCalled()
+  })
+
+  it('X1/W1: a revoke ends the page’s interval, though its last report is refused', async () => {
+    await handle(presence, content())
+    NOW += 3000
+    await browser.permissions.remove({ origins: ['*://*/*'] })
+    // The page is told to stop; its hiding is then refused.
+    await expect(handle(hidden, content())).resolves.toEqual({ ok: false, error: 'untracked' })
+    expect(opened()).toBeNull()
+    expect(today()?.['reddit.com']?.[12]).toBe(3000)
+    NOW += 3000
+    await handle(presence, content())
+    expect(today()?.['reddit.com']?.[12]).toBe(3000)
+  })
+
+  it('X1/W1: a revoked page leaving the tab closes nothing of the page that replaced it', async () => {
+    await only(originsForSite('x.com'))
+    await handle(presence, content('https://x.com/', { documentId: 'new' }))
+    const late = content(undefined, { frameId: 4, documentId: 'old', documentLifecycle: 'cached' })
+    await expect(handle(hidden, late)).resolves.toEqual({ ok: false, error: 'untracked' })
+    expect(opened()).toMatchObject({ doc: 'new', site: 'x.com' })
+  })
+
+  it('X2: takes a grant from the moment it is made', async () => {
+    await only([])
+    await expect(handle(presence, content())).resolves.toEqual({ ok: false, error: 'untracked' })
+    browser.grant(['https://old.reddit.com/*'])
+    await expect(handle(presence, content())).resolves.toMatchObject({ ok: true, value: { running: true } })
+    await expect(handle(presence, content('https://www.reddit.com/'))).resolves.toEqual({
+      ok: false,
+      error: 'untracked',
+    })
+  })
+
+  it('C1: counts a trailing-dot host under its site’s grant', async () => {
+    await only(originsForSite('youtube.com'))
+    await expect(handle(presence, content('https://www.youtube.com./watch'))).resolves.toMatchObject({
+      ok: true,
+      value: { site: 'youtube.com', running: true },
+    })
+  })
+
+  it('C2: counts an IPv6 address under its grant', async () => {
+    await only(originsForSite('[2001:db8::1]'))
+    await expect(handle(presence, content('http://[2001:db8::1]:8080/'))).resolves.toMatchObject({
+      ok: true,
+      value: { site: '[2001:db8::1]', running: true },
+    })
+  })
+
+  it('reads the grants once, and again after a change', async () => {
+    await handle(presence, content())
+    await handle(hidden, content())
+    expect(browser.permissions.getAll).toHaveBeenCalledOnce()
+    await only(originsForSite('reddit.com'))
+    await handle(presence, content())
+    expect(browser.permissions.getAll).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the grants again after a failed read', async () => {
+    browser.permissions.getAll.mockImplementationOnce(() => Promise.reject(new Error('gone')))
+    await expect(handle(presence, content())).resolves.toEqual({ ok: false, error: 'internal' })
+    await expect(handle(presence, content())).resolves.toMatchObject({ ok: true })
   })
 })
 

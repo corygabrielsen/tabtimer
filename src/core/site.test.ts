@@ -10,6 +10,7 @@ import {
   trackableSite,
   trackableSiteOfUrl,
   trackedOrigins,
+  trackedSite,
 } from './site'
 
 describe('siteOf (Public Suffix List)', () => {
@@ -73,6 +74,45 @@ describe('trackableSiteOfUrl', () => {
     'http://intranet/',
   ])('U2: %s has no trackable site', (url) => {
     expect(trackableSiteOfUrl(url)).toBeNull()
+  })
+})
+
+describe('one host rule (C1, C2)', () => {
+  it('C1: a trailing-dot host is the same site, tracked by the same grants', () => {
+    const url = 'https://www.youtube.com./watch'
+    expect(trackableSiteOfUrl(url)).toBe('youtube.com')
+    expect(isTracked(originsForSite('youtube.com'), url)).toBe(true)
+    expect(isTracked(['*://www.youtube.com./*'], 'https://www.youtube.com/')).toBe(true)
+    expect(siteOf('youtube.com.')).toBe('youtube.com')
+    expect(normalizeSiteInput('youtube.com.')).toBe('youtube.com')
+  })
+
+  it('C1: a trailing dot does not get past the restricted hosts', () => {
+    expect(trackableSiteOfUrl('https://chromewebstore.google.com./detail/x')).toBeNull()
+  })
+
+  it('C2: an IPv6 address is a trackable site of its own', () => {
+    expect(trackableSite('[::1]')).toBe('[::1]')
+    expect(trackableSiteOfUrl('http://[2001:DB8::1]:8080/')).toBe('[2001:db8::1]')
+    expect(normalizeSiteInput('http://[2001:db8::1]/x')).toBe('[2001:db8::1]')
+    expect(originsForSite('[2001:db8::1]')).toEqual(['*://[2001:db8::1]/*'])
+    expect(isTracked(originsForSite('[2001:db8::1]'), 'http://[2001:db8::1]/x')).toBe(true)
+    expect(isTracked(originsForSite('[2001:db8::1]'), 'http://[2001:db8::2]/x')).toBe(false)
+    expect(grantsOf(originsForSite('[::1]')).sites).toEqual(new Map([['[::1]', ['*://[::1]/*']]]))
+  })
+})
+
+describe('trackedSite', () => {
+  it('X4: is a site some tracked grant covers', () => {
+    const tracked = trackedSite(['https://www.reddit.com/*', ...originsForSite('s3.amazonaws.com')])
+    expect(tracked('reddit.com')).toBe(true)
+    expect(tracked('x.com')).toBe(false)
+    expect(tracked('s3.amazonaws.com')).toBe(false)
+  })
+
+  it('X4: is every site under an every-host grant', () => {
+    expect(trackedSite(['*://*/*'])('x.com')).toBe(true)
+    expect(trackedSite([])('x.com')).toBe(false)
   })
 })
 

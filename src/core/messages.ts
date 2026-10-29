@@ -123,7 +123,8 @@ export type RequestOf<K extends MessageType> = { type: K } & Contract[K]['req']
 
 export type Request = { [K in MessageType]: RequestOf<K> }[MessageType]
 
-export type ErrorCode = 'bad_request' | 'forbidden' | 'internal' | 'unreachable'
+// 'untracked': the sending page is on no granted site; it stops.
+export type ErrorCode = 'bad_request' | 'forbidden' | 'untracked' | 'internal' | 'unreachable'
 
 export type Response<K extends MessageType> = { ok: true; value: Contract[K]['res'] } | { ok: false; error: ErrorCode }
 

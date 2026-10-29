@@ -17,6 +17,7 @@ import {
   seedLimits,
   seedToday,
   startBackground,
+  EVERY_HOST,
   storedToday,
   useClock,
 } from '../test/content'
@@ -38,7 +39,7 @@ const run = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 
 beforeEach(async () => {
   browser = fakeChrome()
-  await startBackground()
+  await startBackground(EVERY_HOST)
   useClock(new Date(2026, 5, 10, 12, 0, 0))
   shadowOf = trackShadowRoots()
 })

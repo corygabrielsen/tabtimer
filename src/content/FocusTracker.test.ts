@@ -19,6 +19,7 @@ import {
   seedLimits,
   seedToday,
   startBackground,
+  EVERY_HOST,
   storedToday,
   trackTracker,
   useClock,
@@ -75,7 +76,7 @@ async function close(model: FocusTracker): Promise<void> {
 
 beforeEach(async () => {
   browser = fakeChrome()
-  await startBackground()
+  await startBackground(EVERY_HOST)
   useClock(NOON)
 })
 
@@ -338,6 +339,20 @@ describe('reporting to the service worker', () => {
     expect(send).toHaveBeenCalledOnce()
     await run(seconds(30))
     expect(send).toHaveBeenCalledOnce()
+  })
+
+  it('X1/W1: stops when the worker says its site is not tracked', async () => {
+    const send = vi.fn<Bus['send']>(() => Promise.resolve({ ok: false, error: 'untracked' }) as never)
+    const model = trackTracker(new FocusTracker(undefined, { send, alive: () => true }))
+    const stopped = vi.fn()
+    model.onStop(stopped)
+    model.start()
+    await flush()
+    expect(stopped).toHaveBeenCalledOnce()
+    // Its hiding, once: nothing retries.
+    expect(send).toHaveBeenCalledTimes(2)
+    await run(seconds(30))
+    expect(send).toHaveBeenCalledTimes(2)
   })
 
   it('retries a failed report while hidden', async () => {

@@ -6,7 +6,16 @@ import FocusTracker from './FocusTracker'
 import { PREFS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { disposeTrackers, minutes, seconds, seedToday, startBackground, trackTracker, useClock } from '../test/content'
+import {
+  disposeTrackers,
+  minutes,
+  seconds,
+  seedToday,
+  startBackground,
+  EVERY_HOST,
+  trackTracker,
+  useClock,
+} from '../test/content'
 
 let browser: FakeChrome
 const prefs = () => browser.storage.local.data[PREFS_KEY] as { hidden: boolean; scale: number }
@@ -39,7 +48,7 @@ async function tickView(view: Overlay, ms: number): Promise<void> {
 
 beforeEach(async () => {
   browser = fakeChrome()
-  await startBackground()
+  await startBackground(EVERY_HOST)
   useClock(new Date(2026, 5, 10, 12, 0, 0))
   shadowOf = trackShadowRoots()
 })
