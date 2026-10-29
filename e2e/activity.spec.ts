@@ -60,7 +60,7 @@ test('opens from the settings', async ({ context, serviceWorker, extensionId }) 
 })
 
 test('opens from the block screen, which stays up', async ({ context, serviceWorker, extensionId, site }) => {
-  await seedUsage(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 * MINUTE } } })
+  await seedUsage(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 } } })
   const tab = await context.newPage()
   await tab.goto(site(SITE_A))
   await expect(blocked(tab)).toBeVisible()

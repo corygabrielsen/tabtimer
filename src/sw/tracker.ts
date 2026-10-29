@@ -46,17 +46,17 @@ export function createTracker(deps: TrackerDeps) {
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
-    let ctx: Promise<[DayUsage, Awaited<ReturnType<Tx['limits']>>, number]> | null = null
+    let ctx: Promise<[DayUsage, Awaited<ReturnType<Tx['limits']>>]> | null = null
     return async (tabId: number, attest: Attest, s: TrackerState): Promise<TabState> => {
-      ctx ??= Promise.all([tx.today(), tx.limits(), tx.snoozeUntil()])
-      const [usage, limits, snoozeUntil] = await ctx
+      ctx ??= Promise.all([tx.today(), tx.limits()])
+      const [usage, limits] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
       // The open interval's uncredited part, today's share of it.
       const end = open ? creditEnd(open, tx.now) : 0
       const extra = open ? Math.max(0, end - Math.max(open.since, startOfDay(tx.now))) : 0
       const today = siteTotal(usage, attest.site) + extra
       const globalToday = dayTotal(usage) + extra
-      const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null, snoozeUntil)
+      const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null)
       return {
         site: attest.site,
         day: dayOf(tx.now),

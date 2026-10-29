@@ -1,4 +1,4 @@
-import { test, expect, readToday, seed, LIMITS_KEY, OVERLAY_ID, BLOCK_ID } from './fixtures'
+import { test, expect, readToday, seed, today, LIMITS_KEY, MINUTE, OVERLAY_ID, BLOCK_ID } from './fixtures'
 
 // Time accounting in a real tab: how much focus time reaches storage across
 // re-injection and navigation.
@@ -54,7 +54,10 @@ test('B9: a page restored from the back/forward cache keeps tracking and blockin
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
 
   // The restored instance still enforces limits...
-  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } } })
+  await seed(serviceWorker, {
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
+    ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
+  })
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: {} } })
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()

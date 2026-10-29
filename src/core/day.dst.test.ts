@@ -3,7 +3,7 @@
 ;(globalThis as unknown as { process: { env: Record<string, string> } }).process.env.TZ = 'America/New_York'
 
 import { describe, it, expect } from 'vitest'
-import { dayBefore, dayOf, nextHour, splitByHour } from './day'
+import { addDays, dayOf, nextHour, splitByHour } from './day'
 
 const HOUR = 3600_000
 const MIN = 60_000
@@ -66,8 +66,8 @@ describe('splitByHour across DST', () => {
 
 describe('day arithmetic across DST', () => {
   it('counts calendar days, not 24h steps', () => {
-    expect(dayBefore(at(FALL.y, FALL.m, FALL.d + 1, 0, 30), 1)).toBe('2026-11-01')
-    expect(dayBefore(at(SPRING.y, SPRING.m, SPRING.d + 1, 23, 30), 1)).toBe('2026-03-08')
+    expect(addDays(dayOf(at(FALL.y, FALL.m, FALL.d + 1, 0, 30)), -1)).toBe('2026-11-01')
+    expect(addDays(dayOf(at(SPRING.y, SPRING.m, SPRING.d + 1, 23, 30)), -1)).toBe('2026-03-08')
     expect(dayOf(at(FALL.y, FALL.m, FALL.d, 23, 59))).toBe('2026-11-01')
   })
 })

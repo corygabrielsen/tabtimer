@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { emptyBuckets, LIMITS_KEY } from './core/schema'
+import { LIMITS_KEY } from './core/schema'
 import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, loadPageBody } from './test/dom'
+import { $, click, flush, loadPageBody, normText } from './test/dom'
+import { bucketsOf } from './test/data'
 import { startBackground, useClock } from './test/content'
 
 const MIN = 60_000
@@ -12,8 +13,7 @@ const NOW = new Date(2026, 9, 28, 16, 40)
 
 let browser: FakeChrome
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
-const text = (id: string) => $(id).textContent?.replace(/\s+/g, ' ').trim()
+const text = (id: string) => normText($(id))
 const bars = () => [...document.querySelectorAll<HTMLElement>('#bars .bar')]
 const rows = () => [...document.querySelectorAll<HTMLElement>('#site-list .site-btn')]
 const row = (site: string) => document.querySelector<HTMLElement>(`#site-list [data-site="${site}"]`)!
@@ -26,14 +26,11 @@ const mode = (value: 'day' | 'week') => {
 
 // A day:* entry: each site's minutes per hour ({ hour: minutes }).
 function day(date: string, sites: Record<string, Record<number, number>>): Record<string, unknown> {
-  const usage: Record<string, number[]> = {}
-  for (const [site, hours] of Object.entries(sites)) {
-    usage[site] = emptyBuckets()
-    for (const [hour, minutes] of Object.entries(hours)) {
-      usage[site][Number(hour)] = minutes * MIN
-    }
+  const ms = (hours: Record<number, number>) =>
+    Object.fromEntries(Object.entries(hours).map(([hour, minutes]) => [hour, minutes * MIN]))
+  return {
+    [`day:${date}`]: Object.fromEntries(Object.entries(sites).map(([site, hours]) => [site, bucketsOf(ms(hours))])),
   }
-  return { [`day:${date}`]: usage }
 }
 
 const SEED = {
@@ -46,7 +43,7 @@ const SEED = {
     'x.com': { 15: 3 },
     'wikipedia.org': { 15: 1 },
   }),
-  [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 * MIN, 'x.com': 60 * MIN } },
+  [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30, 'x.com': 60 } },
 }
 
 async function open(seed: Record<string, unknown> = SEED): Promise<void> {
@@ -282,7 +279,7 @@ describe('a selected site', () => {
     click(row('reddit.com'))
     click([...$('site-panel').querySelectorAll('[role="radio"]')].find((c) => c.textContent === '1h'))
     await flush()
-    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 60 * MIN } })
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 60 } })
     expect(row('reddit.com').hasAttribute('data-over')).toBe(false)
     expect($('site-panel').querySelector('[aria-checked="true"]')?.textContent).toBe('1h')
     click([...$('site-panel').querySelectorAll('[role="radio"]')].find((c) => c.textContent === 'Off'))

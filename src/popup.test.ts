@@ -1,18 +1,17 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { LIMITS_KEY, PREFS_KEY, SNOOZE_KEY } from './core/schema'
+import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, loadPageBody } from './test/dom'
+import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
 import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const visibleSection = () => ['tracked', 'enable', 'untracked', 'loading'].filter((id) => !$(id).hasAttribute('hidden'))
 const face = () => $('hero').getAttribute('data-state')
-const text = (id: string) => $(id).textContent?.replace(/\s+/g, ' ').trim()
+const text = (id: string) => normText($(id))
 
 // Open the popup: load its markup, run popup.ts, fire DOMContentLoaded at
 // this instance only (earlier tests' instances must not re-run).
@@ -36,11 +35,7 @@ const limitChip = (label: string) => limitChips().find((c) => c.textContent === 
 const checkedChip = () => limitChips().find((c) => c.getAttribute('aria-checked') === 'true')
 const customField = () => $<HTMLInputElement>('site-limit-custom')
 
-function enterCustom(value: string, key = 'Enter'): void {
-  click(limitChip('Custom') ?? limitChips().at(-1))
-  customField().value = value
-  customField().dispatchEvent(new KeyboardEvent('keydown', { key }))
-}
+const enterCustom = (value: string, key = 'Enter') => enterCustomIn($('site-limit'), value, key)
 
 const storedLimits = () => browser.storage.local.data[LIMITS_KEY]
 
@@ -198,7 +193,7 @@ describe('popup on a tracked site', () => {
 
     it('under the site limit: meter and time left', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 * MIN } },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } },
         ...dayEntry({ 'reddit.com': 23 * MIN }),
       })
       await openReddit()
@@ -216,7 +211,7 @@ describe('popup on a tracked site', () => {
 
     it('over the site limit: limit reached, by how much', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 } },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
@@ -228,7 +223,7 @@ describe('popup on a tracked site', () => {
 
     it('over the all-sites cap only: names the cap', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: 30 * MIN, perSite: {} },
+        [LIMITS_KEY]: { global: 30, perSite: {} },
         ...dayEntry({ 'reddit.com': 10 * MIN, 'x.com': 25 * MIN }),
       })
       await openReddit()
@@ -239,7 +234,7 @@ describe('popup on a tracked site', () => {
 
     it('with only an all-sites cap: the meter follows the cap', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: 180 * MIN, perSite: {} },
+        [LIMITS_KEY]: { global: 180, perSite: {} },
         ...dayEntry({ 'reddit.com': 12 * MIN, 'x.com': 48 * MIN }),
       })
       await openReddit()
@@ -250,7 +245,7 @@ describe('popup on a tracked site', () => {
 
     it('with both limits: the all-sites total gets its own line', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: 180 * MIN, perSite: { 'reddit.com': 60 * MIN } },
+        [LIMITS_KEY]: { global: 180, perSite: { 'reddit.com': 60 } },
         ...dayEntry({ 'reddit.com': 20 * MIN, 'x.com': 65 * MIN }),
       })
       await openReddit()
@@ -260,9 +255,8 @@ describe('popup on a tracked site', () => {
 
     it('snoozed: still over, says when blocking resumes', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
-        [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
       expect(face()).toBe('snoozed')
@@ -274,7 +268,7 @@ describe('popup on a tracked site', () => {
       seedToday({ 'reddit.com': 20 * MIN })
       await openReddit()
       expect(face()).toBe('open')
-      browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 10 * MIN } } })
+      browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 10 } } })
       await flush()
       expect(face()).toBe('over')
       expect(checkedChip()?.textContent).toBe('10m')
@@ -285,9 +279,8 @@ describe('popup on a tracked site', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
     try {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 * MIN } },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
-        [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
       expect(text('summary')).toContain('Snoozed · 4 min left')
@@ -384,7 +377,7 @@ describe('popup on a tracked site', () => {
 
   describe('daily limit', () => {
     beforeEach(() => {
-      browser.storage.local.seed({ [LIMITS_KEY]: { global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } } })
+      browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 } })
     })
 
     it('offers preset chips for the site, with the saved limit selected', async () => {
@@ -400,7 +393,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       click(limitChip('2h'))
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 120 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 120 }, snoozeUntil: 0 })
       expect(text('site-limit-saved')).toBe('Saved')
       expect(text('summary')).toBe('2 h left of 2 h')
     })
@@ -409,7 +402,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       click(limitChip('Off'))
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: {} })
+      expect(storedLimits()).toEqual({ global: 60, perSite: {}, snoozeUntil: 0 })
     })
 
     // B3: a per-keystroke save turned a half-typed "30" into a 3-minute limit
@@ -420,11 +413,11 @@ describe('popup on a tracked site', () => {
       customField().value = '4'
       customField().dispatchEvent(new Event('input'))
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 })
       customField().value = '45'
       customField().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 45 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 45 }, snoozeUntil: 0 })
       expect(checkedChip()?.textContent).toBe('45m')
       expect(text('site-limit-saved')).toBe('Saved')
     })
@@ -436,7 +429,7 @@ describe('popup on a tracked site', () => {
       expect(customField().getAttribute('aria-invalid')).toBe('true')
       expect($('site-limit-error').hidden).toBe(false)
       expect(text('site-limit-error')).toBe('Enter whole minutes from 1 to 1440.')
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 })
     })
 
     it('Escape cancels the custom value and keeps the saved one', async () => {
@@ -444,14 +437,14 @@ describe('popup on a tracked site', () => {
       enterCustom('90', 'Escape')
       await flush()
       expect(checkedChip()?.textContent).toBe('30m')
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 })
     })
 
     it('a custom value equal to a preset selects the preset', async () => {
       await openReddit()
       enterCustom('060')
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 60 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 60 }, snoozeUntil: 0 })
       expect(checkedChip()?.textContent).toBe('1h')
       expect(limitChips().at(-1)?.textContent).toBe('Custom')
     })

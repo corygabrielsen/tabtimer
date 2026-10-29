@@ -3,14 +3,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { SUGGESTED_SITES, originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, loadPageBody } from './test/dom'
+import { $, click, enterCustom, flush, loadPageBody, normText } from './test/dom'
 import { dayEntry, seedToday, startBackground } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
-const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim()
+const text = normText
 
 async function openOptions(): Promise<void> {
   loadPageBody('options.html')
@@ -42,14 +41,6 @@ const todayCell = (host: string) => row(host)?.querySelector<HTMLElement>('[data
 // Suggested sites that aren't tracked yet, as one-tap buttons.
 const chips = () => [...$('suggested').querySelectorAll<HTMLButtonElement>('button')]
 const chip = (host: string) => chips().find((b) => b.dataset.host === host)
-
-// Pick Custom in a picker and type a value, then press `key`.
-function enterCustom(root: Element | null | undefined, value: string, key = 'Enter'): void {
-  click(radios(root).at(-1))
-  const input = root!.querySelector<HTMLInputElement>('input')!
-  input.value = value
-  input.dispatchEvent(new KeyboardEvent('keydown', { key }))
-}
 
 function submitAdd(value: string): Event {
   $<HTMLInputElement>('add-input').value = value
@@ -105,7 +96,7 @@ describe('tracked sites', () => {
   it('shows today’s time per site, marking a site over its limit', async () => {
     grant('reddit.com', 'x.com')
     browser.storage.local.seed({
-      [LIMITS_KEY]: { global: null, perSite: { 'x.com': 10 * MIN } },
+      [LIMITS_KEY]: { global: null, perSite: { 'x.com': 10 } },
       ...dayEntry({ 'reddit.com': 23 * MIN, 'x.com': 12 * MIN }),
     })
     await openOptions()
@@ -122,7 +113,7 @@ describe('tracked sites', () => {
     seedToday({ 'reddit.com': 125 * MIN })
     await flush()
     expect(todayCell('reddit.com')?.textContent).toBe('2 h 05 min')
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 * MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } } })
     await flush()
     expect(todayCell('reddit.com')?.textContent).toBe('2 h 05 min (over)')
   })
@@ -245,7 +236,7 @@ describe('limits', () => {
   it('shows each tracked site’s limit as a compact toggle', async () => {
     grant('reddit.com', 'alpha.org', 'x.com')
     browser.storage.local.seed({
-      [LIMITS_KEY]: { global: 90 * MIN, perSite: { 'reddit.com': 15 * MIN, 'alpha.org': 50 * MIN } },
+      [LIMITS_KEY]: { global: 90, perSite: { 'reddit.com': 15, 'alpha.org': 50 } },
     })
     await openOptions()
     expect(text(limitToggle('reddit.com'))).toBe('15m')
@@ -261,7 +252,7 @@ describe('limits', () => {
 
   it('expands a row into the same chip picker, one row at a time', async () => {
     grant('reddit.com', 'x.com')
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 * MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 } } })
     await openOptions()
     click(limitToggle('reddit.com'))
     const panel = limitPanel('reddit.com')
@@ -285,12 +276,12 @@ describe('limits', () => {
     click(limitToggle('reddit.com'))
     click(radio(limitPanel('reddit.com'), '1h'))
     await flush()
-    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 60 * MIN } })
+    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 60 }, snoozeUntil: 0 })
     expect(text(limitToggle('reddit.com'))).toBe('1h')
     expect(text(limitPanel('reddit.com')?.querySelector('.saved'))).toBe('Saved')
     click(radio(limitPanel('reddit.com'), 'Off'))
     await flush()
-    expect(storedLimits()).toEqual({ global: null, perSite: {} })
+    expect(storedLimits()).toEqual({ global: null, perSite: {}, snoozeUntil: 0 })
     expect(text(limitToggle('reddit.com'))).toBe('Off')
   })
 
@@ -311,7 +302,7 @@ describe('limits', () => {
     input!.value = '50'
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
     await flush()
-    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 50 * MIN } })
+    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 50 }, snoozeUntil: 0 })
     expect(checkedRadio(panel)).toBe('50m')
     expect(text(limitToggle('reddit.com'))).toBe('50m')
   })
@@ -340,7 +331,7 @@ describe('limits', () => {
   it('follows per-site limits changed elsewhere', async () => {
     grant('reddit.com')
     await openOptions()
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 120 * MIN } } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 120 } } })
     await flush()
     expect(text(limitToggle('reddit.com'))).toBe('2h')
     expect(checkedRadio(limitPanel('reddit.com'))).toBe('2h')
@@ -354,37 +345,37 @@ describe('limits', () => {
     expect(checkedRadio(picker)).toBe('Off')
     click(radio(picker, '3h'))
     await flush()
-    expect(storedLimits()).toEqual({ global: 180 * MIN, perSite: {} })
+    expect(storedLimits()).toEqual({ global: 180, perSite: {}, snoozeUntil: 0 })
     expect(text($('global-limit-saved'))).toBe('Saved')
     enterCustom(picker, '-3')
     await flush()
-    expect(storedLimits()).toEqual({ global: 180 * MIN, perSite: {} })
+    expect(storedLimits()).toEqual({ global: 180, perSite: {}, snoozeUntil: 0 })
     expect($('global-limit-error').hidden).toBe(false)
     enterCustom(picker, '-3', 'Escape')
     enterCustom(picker, '150')
     await flush()
-    expect(storedLimits()).toEqual({ global: 150 * MIN, perSite: {} })
+    expect(storedLimits()).toEqual({ global: 150, perSite: {}, snoozeUntil: 0 })
     expect(checkedRadio(picker)).toBe('2h 30m')
     click(radio(picker, 'Off'))
     await flush()
-    expect(storedLimits()).toEqual({ global: null, perSite: {} })
+    expect(storedLimits()).toEqual({ global: null, perSite: {}, snoozeUntil: 0 })
   })
 
   it('follows a cap changed elsewhere', async () => {
     await openOptions()
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: 45 * MIN, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 45, perSite: {} } })
     await flush()
     expect(checkedRadio(globalPicker())).toBe('45m')
   })
 
   it('keeps the all-sites cap when a per-site limit changes', async () => {
     grant('x.com')
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: MIN, perSite: {} } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {} } })
     await openOptions()
     click(limitToggle('x.com'))
     click(radio(limitPanel('x.com'), '15m'))
     await flush()
-    expect(storedLimits()).toEqual({ global: MIN, perSite: { 'x.com': 15 * MIN } })
+    expect(storedLimits()).toEqual({ global: 1, perSite: { 'x.com': 15 }, snoozeUntil: 0 })
   })
 })
 

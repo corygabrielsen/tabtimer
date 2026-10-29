@@ -1,5 +1,6 @@
-// Small typed DOM helpers shared by the popup and options page. Text is always
-// set through textContent; nothing here parses HTML.
+// Small typed DOM helpers shared by the extension pages. Text is always set
+// through textContent; nothing here parses HTML.
+import { MAX_LIMIT_MINUTES, MIN_LIMIT_MINUTES } from './core/limits'
 import { t } from './i18n'
 
 type Attrs = Record<string, string | boolean | undefined>
@@ -70,25 +71,15 @@ export function formatDuration(ms: number): string {
   return t('durHoursMinutes', [String(hours), String(minutes).padStart(2, '0')])
 }
 
-export const MAX_LIMIT_MINUTES = 1440
-
-export type MinutesParse = { ok: true; value: string } | { ok: false }
-
-// Validate a minutes field: blank or a whole number 1..1440. Returns the
-// canonical text (leading zeros dropped).
-export function validateMinutes(raw: string): MinutesParse {
+// Read a minutes field: null when blank, else a whole number of minutes in
+// the settable range, or 'invalid'.
+export function validateMinutes(raw: string): number | null | 'invalid' {
   const value = raw.trim()
   if (value === '') {
-    return { ok: true, value }
-  }
-  if (!/^\d+$/.test(value)) {
-    return { ok: false }
+    return null
   }
   const n = Number(value)
-  if (n < 1 || n > MAX_LIMIT_MINUTES) {
-    return { ok: false }
-  }
-  return { ok: true, value: String(n) }
+  return /^\d+$/.test(value) && n >= MIN_LIMIT_MINUTES && n <= MAX_LIMIT_MINUTES ? n : 'invalid'
 }
 
 // Briefly show a "Saved" acknowledgement in a polite live region.

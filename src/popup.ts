@@ -4,23 +4,21 @@ import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { hourLabel } from './core/usage'
 import { originsForSite, siteOf } from './core/site'
-import { msToMinutes, minutesToMs, evaluateLimits, normalizeLimits, type Limits } from './core/limits'
+import { blockAt, limitsFor, msToMinutes, normalizeLimits, siteLimitOf, type Limits } from './core/limits'
 import {
   dayKey,
   dayTotal,
   emptyBuckets,
   normalizeDay,
   normalizePrefs,
-  normalizeSnooze,
   siteTotal,
   DAY_KEY_PREFIX,
   LIMITS_KEY,
   PREFS_KEY,
-  SNOOZE_KEY,
 } from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, setDocumentLang, uiLocale } from './ui'
-import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'
+import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; hostname: string; protocol: string }
 type View = 'tracked' | 'enable' | 'untracked' | 'loading'
@@ -70,7 +68,7 @@ function activeTab(): Promise<ActiveTab | null> {
   })
 }
 
-type Snapshot = { siteToday: number; globalToday: number; limits: Limits; snoozeUntil: number; hours: number[] }
+type Snapshot = { siteToday: number; globalToday: number; limits: Limits; hours: number[] }
 
 // The strip's full height: the day's busiest hour, or this much if less, so a
 // few minutes don't fill it.
@@ -124,18 +122,22 @@ function renderStrip(base: string, hours: number[]) {
 }
 
 function faceFor(base: string, s: Snapshot) {
-  const siteLimit = s.limits.perSite[base]
-  const hasSite = typeof siteLimit === 'number' && siteLimit > 0
-  const hasGlobal = typeof s.limits.global === 'number' && s.limits.global > 0
-  const reason = evaluateLimits(s.limits, base, s.siteToday, s.globalToday)
-  const snoozed = reason !== null && Date.now() < s.snoozeUntil
+  const { site: siteLimit, global: globalLimit } = limitsFor(s.limits, base)
+  // Not accruing, a block is due only when already over.
+  const over = blockAt(s.limits, base, s.siteToday, s.globalToday, Date.now(), false)
+  const reason = over && {
+    scope: over.scope,
+    limit: over.limit,
+    elapsed: over.scope === 'site' ? s.siteToday : s.globalToday,
+  }
+  const snoozed = reason !== null && Date.now() < s.limits.snoozeUntil
   let state: FaceState = 'open'
   if (reason) {
     state = snoozed ? 'snoozed' : 'over'
-  } else if (hasSite || hasGlobal) {
+  } else if (siteLimit !== null || globalLimit !== null) {
     state = 'ok'
   }
-  return { state, reason, hasSite, hasGlobal, siteLimit: hasSite ? siteLimit : null }
+  return { state, reason, siteLimit, globalLimit }
 }
 
 function renderFace(base: string, s: Snapshot) {
@@ -162,7 +164,7 @@ function renderFace(base: string, s: Snapshot) {
   }
 
   // The meter tracks this site's own limit; fall back to the all-sites cap.
-  const meterLimit = face.siteLimit ?? (face.hasGlobal ? s.limits.global : null)
+  const meterLimit = face.siteLimit ?? face.globalLimit
   const meterValue = face.siteLimit !== null ? s.siteToday : s.globalToday
   if (meter) {
     meter.hidden = meterLimit === null
@@ -185,10 +187,10 @@ function renderFace(base: string, s: Snapshot) {
 
   if (globalLine) {
     // Show the all-sites cap separately when the meter is about this site.
-    const showGlobal = face.hasGlobal && face.siteLimit !== null && s.limits.global !== null
-    globalLine.hidden = !showGlobal
-    if (showGlobal && s.limits.global !== null) {
-      globalLine.textContent = t('popupGlobalLine', [formatDuration(s.globalToday), formatDuration(s.limits.global)])
+    const globalLimit = face.siteLimit !== null ? face.globalLimit : null
+    globalLine.hidden = globalLimit === null
+    if (globalLimit !== null) {
+      globalLine.textContent = t('popupGlobalLine', [formatDuration(s.globalToday), formatDuration(globalLimit)])
     }
   }
 }
@@ -203,7 +205,7 @@ function summaryText(
     const over = formatDuration(face.reason.elapsed - face.reason.limit)
     const cause = face.reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)
     if (face.state === 'snoozed') {
-      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.snoozeUntil - Date.now())))}`
+      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.limits.snoozeUntil - Date.now())))}`
     }
     return cause
   }
@@ -227,16 +229,14 @@ function renderTracked(base: string) {
 
   const snapshot = async (): Promise<Snapshot> => {
     const read = (key: string) => local.get(key).catch(() => undefined)
-    const [day, limits, snoozeUntil] = await Promise.all([
+    const [day, limits] = await Promise.all([
       read(dayKey(dayOf(Date.now()))).then(normalizeDay),
       read(LIMITS_KEY).then(normalizeLimits),
-      read(SNOOZE_KEY).then(normalizeSnooze),
     ])
     return {
       siteToday: siteTotal(day, base),
       globalToday: dayTotal(day),
       limits,
-      snoozeUntil,
       hours: day[base] ?? emptyBuckets(),
     }
   }
@@ -249,10 +249,6 @@ function renderTracked(base: string) {
   }
 
   // --- daily limit for this site: preset chips, or a custom whole-minutes value ---
-  const siteMinutes = (limits: Limits): number | null => {
-    const ms = limits.perSite[base]
-    return typeof ms === 'number' && ms > 0 ? msToMinutes(ms) : null
-  }
   let picker: LimitPicker | null = null
   const syncLimitField = (limits: Limits) => {
     const mount = byId('site-limit')
@@ -260,21 +256,16 @@ function renderTracked(base: string) {
       return
     }
     if (!picker) {
-      picker = createLimitPicker({
+      picker = createSiteLimitPicker({
         id: 'site-limit',
-        presets: SITE_PRESETS,
-        label: t('popupLimitAria', base),
-        fieldLabel: t('limitCustomSiteAria', base),
-        value: siteMinutes(limits),
+        site: base,
+        value: siteLimitOf(limits, base),
         saved: byId('site-limit-saved'),
-        commit: async (minutes) => {
-          await bus.send('setLimit', { scope: 'site', site: base, ms: minutes === null ? null : minutesToMs(minutes) })
-        },
       })
       mount.replaceWith(picker.el)
       return
     }
-    picker.set(siteMinutes(limits))
+    picker.set(siteLimitOf(limits, base))
   }
 
   // --- overlay switch ---
@@ -329,9 +320,7 @@ function renderTracked(base: string) {
     if (changes[PREFS_KEY]) {
       void renderToggle()
     }
-    const relevant = Object.keys(changes).some(
-      (k) => k === LIMITS_KEY || k === SNOOZE_KEY || k.startsWith(DAY_KEY_PREFIX)
-    )
+    const relevant = Object.keys(changes).some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))
     if (relevant) {
       void refresh()
     }

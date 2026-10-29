@@ -7,7 +7,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import FocusTracker from './FocusTracker'
 import { bus } from '../chrome/bus'
-import { LIMITS_KEY } from '../core/schema'
 import type { TabState } from '../core/messages'
 import type { Bus, Pushes } from '../ports'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
@@ -17,6 +16,7 @@ import {
   disposeTrackers,
   minutes,
   seconds,
+  seedLimits,
   seedToday,
   startBackground,
   storedToday,
@@ -266,11 +266,8 @@ describe('B10: while the block screen is up', () => {
 })
 
 describe('limits', () => {
-  const limits = (perSite: Record<string, number>, global: number | null = null) =>
-    browser.storage.local.seed({ [LIMITS_KEY]: { global, perSite } })
-
   it('blocks at the moment the worker said, naming the limit', async () => {
-    limits({ 'reddit.com': minutes(1) })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     seedToday({ 'reddit.com': seconds(50) })
     const model = started()
     await run(seconds(9))
@@ -280,7 +277,7 @@ describe('limits', () => {
   })
 
   it('takes the all-sites cap from every site’s time', async () => {
-    limits({}, minutes(5))
+    seedLimits({ global: 5 })
     seedToday({ 'x.com': minutes(5) })
     const model = started()
     await run(0)
@@ -288,7 +285,7 @@ describe('limits', () => {
   })
 
   it('does not block while a snooze is being asked for, then until it ends', async () => {
-    limits({ 'reddit.com': minutes(1) })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     seedToday({ 'reddit.com': minutes(2) })
     const model = started()
     await run(0)

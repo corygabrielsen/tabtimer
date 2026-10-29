@@ -3,9 +3,9 @@
 ;(globalThis as unknown as { process: { env: Record<string, string> } }).process.env.TZ = 'America/New_York'
 
 import { describe, it, expect } from 'vitest'
-import { dayOf, splitByHour, type DayStamp } from './day'
+import { addDays, dayOf, splitByHour, type DayStamp } from './day'
 import { emptyBuckets, type DayUsage } from './schema'
-import { addDays, dayBars, daysFrom, hourBars, hourLabel, periodOf, weekStartOf, type History } from './usage'
+import { dayBars, daysFrom, hourBars, hourLabel, periodOf, weekStartOf, type History } from './usage'
 
 const HOUR = 3600_000
 const at = (...args: [number, number, number, number?, number?]) => new Date(...args).getTime()

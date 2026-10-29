@@ -4,7 +4,7 @@ import { createLedger } from './ledger'
 import { createTracker } from './tracker'
 import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
-import { LIMITS_KEY, PREFS_KEY, SNOOZE_KEY, emptyBuckets } from '../core/schema'
+import { LIMITS_KEY, PREFS_KEY, emptyBuckets } from '../core/schema'
 import { SNOOZE_MS } from '../core/limits'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
@@ -137,8 +137,8 @@ describe('sender policy', () => {
     browser.storage.local.seed({ 'day:2026-06-10': { 'x.com': emptyBuckets().fill(1000) } })
     for (const raw of [
       { type: 'resetToday', site: 'x.com' },
-      { type: 'setLimit', scope: 'global', ms: MIN },
-      { type: 'setLimit', scope: 'site', site: 'x.com', ms: MIN },
+      { type: 'setLimit', scope: 'global', minutes: 1 },
+      { type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 },
     ]) {
       await expect(handle(raw, content())).resolves.toEqual({ ok: false, error: 'forbidden' })
     }
@@ -154,7 +154,7 @@ describe('sender policy', () => {
   it('wants sites from extension pages in canonical form', async () => {
     for (const site of ['www.reddit.com', 'news.bbc.co.uk']) {
       await expect(handle({ type: 'resetToday', site }, page())).resolves.toEqual({ ok: false, error: 'bad_request' })
-      await expect(handle({ type: 'setLimit', scope: 'site', site, ms: MIN }, page())).resolves.toEqual({
+      await expect(handle({ type: 'setLimit', scope: 'site', site, minutes: 1 }, page())).resolves.toEqual({
         ok: false,
         error: 'bad_request',
       })
@@ -178,13 +178,13 @@ describe('handlers', () => {
   })
 
   it('set a limit and answer with all limits', async () => {
-    await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', ms: MIN }, page())).resolves.toEqual({
+    await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 }, page())).resolves.toEqual({
       ok: true,
-      value: { global: null, perSite: { 'x.com': MIN } },
+      value: { global: null, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
     })
-    await expect(handle({ type: 'setLimit', scope: 'global', ms: 2 * MIN }, page('options.html'))).resolves.toEqual({
+    await expect(handle({ type: 'setLimit', scope: 'global', minutes: 2 }, page('options.html'))).resolves.toEqual({
       ok: true,
-      value: { global: 2 * MIN, perSite: { 'x.com': MIN } },
+      value: { global: 2, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
     })
   })
 
@@ -193,7 +193,7 @@ describe('handlers', () => {
       ok: true,
       value: { snoozeUntil: NOW + SNOOZE_MS },
     })
-    expect(browser.storage.local.data[SNOOZE_KEY]).toBe(NOW + SNOOZE_MS)
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: NOW + SNOOZE_MS })
   })
 
   it('set prefs, changing only the fields given', async () => {

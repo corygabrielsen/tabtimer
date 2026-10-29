@@ -19,17 +19,14 @@ import { dayOf, splitByHour } from '../core/day'
 import { applyLimit, normalizeLimits, SNOOZE_MS, type LimitEdit, type Limits } from '../core/limits'
 import {
   dayKey,
-  defaultState,
   emptyBuckets,
   expiredDayKeys,
   normalizeDay,
   normalizePrefs,
-  normalizeSnooze,
   LIMITS_KEY,
   PREFS_KEY,
   SCHEMA,
   SCHEMA_KEY,
-  SNOOZE_KEY,
   type DayUsage,
   type Prefs,
 } from '../core/schema'
@@ -51,10 +48,9 @@ export type Tx = {
   // time credited since a back-dated idle start.
   observeIdle(next: IdleState): Promise<void>
   idleState(): Promise<IdleState>
-  // Today's usage, limits and snooze, as stored.
+  // Today's usage, and the limits (the snooze included), as stored.
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
-  snoozeUntil(): Promise<number>
   // Zero one site's time for today.
   resetToday(site: Site): Promise<void>
 }
@@ -135,7 +131,6 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
       idleState: async () => normalizeAway(await session.get(AWAY_KEY)).state,
       today: async () => normalizeDay(await local.get(dayKey(dayOf(now)))),
       limits: async () => normalizeLimits(await local.get(LIMITS_KEY)),
-      snoozeUntil: async () => normalizeSnooze(await local.get(SNOOZE_KEY)),
       resetToday: async (site) => {
         const key = dayKey(dayOf(now))
         const usage = normalizeDay(await local.get(key))
@@ -157,16 +152,14 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     // in between).
     transaction: <T>(task: (tx: Tx) => Promise<T>): Promise<T> => enqueue(() => task(tx(clock.now()))),
 
-    // If storage is in any layout but this one, clear it and start over.
-    // Returns whether it cleared.
-    ensureSchema: (): Promise<boolean> =>
+    // If storage is in any layout but this one, clear it and start over
+    // (every reader falls back to the defaults).
+    ensureSchema: (): Promise<void> =>
       enqueue(async () => {
-        if ((await local.get(SCHEMA_KEY)) === SCHEMA) {
-          return false
+        if ((await local.get(SCHEMA_KEY)) !== SCHEMA) {
+          await local.clear()
+          await local.set({ [SCHEMA_KEY]: SCHEMA })
         }
-        await local.clear()
-        await local.set(defaultState())
-        return true
       }),
 
     prune: (): Promise<void> => enqueue(() => pruneNow(clock.now())),
@@ -182,7 +175,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     snooze: (): Promise<number> =>
       enqueue(async () => {
         const until = clock.now() + SNOOZE_MS
-        await local.set({ [SNOOZE_KEY]: until })
+        await local.set({ [LIMITS_KEY]: { ...normalizeLimits(await local.get(LIMITS_KEY)), snoozeUntil: until } })
         return until
       }),
 

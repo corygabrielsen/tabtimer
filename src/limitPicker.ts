@@ -1,11 +1,13 @@
-// Daily-limit picker shared by the popup and the options page: a radio group of
-// preset chips (Off, a few durations, Custom). Custom opens one whole-minutes
-// field; a saved custom value takes the Custom chip's place, so the selected
-// chip always names the stored limit.
+// Daily-limit picker shared by the extension pages: a radio group of preset
+// chips (Off, a few durations, Custom). Custom opens one whole-minutes field;
+// a saved custom value takes the Custom chip's place, so the selected chip
+// always names the stored limit.
 //
-// Values are minutes (null = no limit); callers convert to the stored ms.
+// Values are minutes (null = no limit), as stored.
+import { bus } from './chrome/bus'
+import { minutesToMs, MAX_LIMIT_MINUTES } from './core/limits'
 import { t } from './i18n'
-import { h, flashSaved, formatDuration, validateMinutes, MAX_LIMIT_MINUTES } from './ui'
+import { h, flashSaved, formatDuration, validateMinutes } from './ui'
 
 export const SITE_PRESETS = [15, 30, 60, 120]
 export const GLOBAL_PRESETS = [60, 120, 180, 240]
@@ -70,7 +72,7 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
       class: 'limit-chip',
       id: `${opts.id}-chip-${i}`,
       'data-choice': choice === null ? 'off' : String(choice),
-      'aria-label': typeof choice === 'number' ? formatDuration(choice * 60000) : undefined,
+      'aria-label': typeof choice === 'number' ? formatDuration(minutesToMs(choice)) : undefined,
     })
     chip.textContent = choice === null ? t('limitOff') : typeof choice === 'number' ? formatChipMinutes(choice) : ''
     chip.addEventListener('click', () => choose(i))
@@ -133,7 +135,7 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
     const custom = chips[customIdx]!
     if (isCustomValue() && value !== null) {
       custom.textContent = formatChipMinutes(value)
-      custom.setAttribute('aria-label', t('limitCustomAria', formatDuration(value * 60000)))
+      custom.setAttribute('aria-label', t('limitCustomAria', formatDuration(minutesToMs(value))))
     } else {
       custom.textContent = t('limitCustom')
       custom.removeAttribute('aria-label')
@@ -223,8 +225,8 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
   }
 
   function customValid(): number | null {
-    const result = validateMinutes(input.value)
-    return result.ok && result.value !== '' ? Number(result.value) : null
+    const minutes = validateMinutes(input.value)
+    return typeof minutes === 'number' ? minutes : null
   }
 
   function showError(on: boolean) {
@@ -289,4 +291,23 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
       chips[checkedIdx]?.focus()
     },
   }
+}
+
+export type SiteLimitPickerOptions = Pick<LimitPickerOptions, 'id' | 'value' | 'saved' | 'onChange' | 'onEscape'> & {
+  site: string
+  label?: string // default: "Daily limit for <site>"
+}
+
+// One site's limit picker: the site presets, each change saved through the
+// service worker.
+export function createSiteLimitPicker({ site, label, ...opts }: SiteLimitPickerOptions): LimitPicker {
+  return createLimitPicker({
+    ...opts,
+    presets: SITE_PRESETS,
+    label: label ?? t('popupLimitAria', site),
+    fieldLabel: t('limitCustomSiteAria', site),
+    commit: async (minutes) => {
+      await bus.send('setLimit', { scope: 'site', site, minutes })
+    },
+  })
 }

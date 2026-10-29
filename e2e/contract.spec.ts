@@ -45,14 +45,14 @@ test('concurrent limit edits from the popup and the options page both survive', 
   ])
   await expect
     .poll(() => read(serviceWorker, LIMITS_KEY))
-    .toEqual({ global: 120 * MINUTE, perSite: { [SITE_A]: 15 * MINUTE } })
+    .toEqual({ global: 120, perSite: { [SITE_A]: 15 }, snoozeUntil: 0 })
 
   // A burst of edits from both pages at once: none is lost.
   const burst = (page: typeof popup, sites: string[]) =>
     page.evaluate(
       (sites) =>
         Promise.all(
-          sites.map((site) => chrome.runtime.sendMessage({ type: 'setLimit', scope: 'site', site, ms: 30 * 60_000 }))
+          sites.map((site) => chrome.runtime.sendMessage({ type: 'setLimit', scope: 'site', site, minutes: 30 }))
         ),
       sites
     )
@@ -111,8 +111,8 @@ test('a forged message naming another site is ignored or refused', async ({ cont
   // Resetting another site, or changing limits, is for extension pages only.
   for (const forged of [
     { type: 'resetToday', site: SITE_B },
-    { type: 'setLimit', scope: 'global', ms: MINUTE },
-    { type: 'setLimit', scope: 'site', site: SITE_B, ms: MINUTE },
+    { type: 'setLimit', scope: 'global', minutes: 1 },
+    { type: 'setLimit', scope: 'site', site: SITE_B, minutes: 1 },
   ]) {
     expect(await sendFromTab(serviceWorker, site(SITE_A), forged)).toEqual({ ok: false, error: 'forbidden' })
   }
@@ -122,7 +122,7 @@ test('a forged message naming another site is ignored or refused', async ({ cont
     error: 'bad_request',
   })
   expect(await readToday(serviceWorker, SITE_B)).toBe(7 * MINUTE)
-  expect(await read(serviceWorker, LIMITS_KEY)).toEqual({ global: null, perSite: {} })
+  expect(await read(serviceWorker, LIMITS_KEY)).toBeUndefined()
 })
 
 test('stored data from an older schema is cleared when the upgraded extension starts', async ({}, testInfo) => {
@@ -155,14 +155,7 @@ test('stored data from an older schema is cleared when the upgraded extension st
     const sw = await extensionWorker(after)
     expect(await sw.evaluate(() => chrome.runtime.getManifest().version)).toBe(`${manifest.version}.1`)
     expect(await sw.evaluate(() => chrome.storage.sync.get('marker'))).toEqual({ marker: 1 })
-    await expect
-      .poll(() => sw.evaluate(() => chrome.storage.local.get(null)))
-      .toEqual({
-        schema: 2,
-        limits: { global: null, perSite: {} },
-        prefs: { hidden: false, scale: 1 },
-        snoozeUntil: 0,
-      })
+    await expect.poll(() => sw.evaluate(() => chrome.storage.local.get(null))).toEqual({ schema: 3 })
   } finally {
     await after.close()
   }

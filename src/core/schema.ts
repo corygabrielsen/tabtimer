@@ -1,25 +1,23 @@
-// The chrome.storage.local layout (schema 2). Pure: no chrome, no DOM.
+// The chrome.storage.local layout (schema 3). Pure: no chrome, no DOM.
 //
 // The service worker is the only writer. Every reader goes through the
 // normalize* functions below, so a malformed value reads as its default.
 //
-//   schema       2
-//   limits       Limits (core/limits.ts)
+//   schema       3
+//   limits       Limits (core/limits.ts), the snooze included
 //   prefs        Prefs
-//   snoozeUntil  epoch ms; blocking is suppressed until then
 //   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
-import { dayBefore, type DayStamp } from './day'
-import { DEFAULT_LIMITS, type Limits } from './limits'
+import { addDays, dayOf, isDayStamp, type DayStamp } from './day'
+import { isBool, isFiniteNumber, isObject } from './guards'
 
-export const SCHEMA = 2
+export const SCHEMA = 3
 
 export const SCHEMA_KEY = 'schema'
 export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
-export const SNOOZE_KEY = 'snoozeUntil'
 export const DAY_KEY_PREFIX = 'day:'
 
 // Days of usage kept, today included: older day:* keys are pruned.
@@ -40,7 +38,17 @@ export type Prefs = { hidden: boolean; scale: number }
 
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 1
+// The overlay's sizes are MIN_SCALE to MAX_SCALE in steps of this.
+export const SCALE_STEP = 0.25
 export const DEFAULT_PREFS: Prefs = { hidden: false, scale: 1 }
+
+// The overlay size nearest `scale`; not a number at all reads as the default.
+export function snapScale(scale: number): number {
+  if (!Number.isFinite(scale)) {
+    return DEFAULT_PREFS.scale
+  }
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(scale / SCALE_STEP) * SCALE_STEP))
+}
 
 export type DayKey = `${typeof DAY_KEY_PREFIX}${DayStamp}`
 
@@ -48,18 +56,21 @@ export function dayKey(day: DayStamp): DayKey {
   return `${DAY_KEY_PREFIX}${day}`
 }
 
-const DAY_KEY_PATTERN = /^day:(\d{4}-\d{2}-\d{2})$/
-
 // The day a day:* key is for, or null if `key` isn't one.
 export function dayOfKey(key: string): DayStamp | null {
-  const match = DAY_KEY_PATTERN.exec(key)
-  return match ? (match[1] as DayStamp) : null
+  const day = key.startsWith(DAY_KEY_PREFIX) ? key.slice(DAY_KEY_PREFIX.length) : null
+  return isDayStamp(day) ? day : null
+}
+
+// The oldest day still kept on `today`.
+export function oldestKept(today: DayStamp): DayStamp {
+  return addDays(today, -(RETENTION_DAYS - 1))
 }
 
 // The day:* keys among `keys` that fall outside the retention window ending
 // on the day containing `now` (malformed day:* keys go too).
 export function expiredDayKeys(keys: string[], now: number): string[] {
-  const oldest = dayBefore(now, RETENTION_DAYS - 1)
+  const oldest = oldestKept(dayOf(now))
   return keys.filter((key) => {
     if (!key.startsWith(DAY_KEY_PREFIX)) {
       return false
@@ -80,14 +91,14 @@ function normalizeBuckets(value: unknown): HourBuckets | null {
   const buckets = emptyBuckets()
   for (let h = 0; h < HOURS_PER_DAY; h++) {
     const ms: unknown = value[h]
-    buckets[h] = typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? ms : 0
+    buckets[h] = isFiniteNumber(ms) && ms > 0 ? ms : 0
   }
   return buckets
 }
 
 export function normalizeDay(value: unknown): DayUsage {
   const day: DayUsage = {}
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (isObject(value)) {
     for (const [site, buckets] of Object.entries(value)) {
       const normalized = normalizeBuckets(buckets)
       if (normalized) {
@@ -115,25 +126,8 @@ export function dayTotal(day: DayUsage): number {
 export function normalizePrefs(value: unknown): Prefs {
   const p = (value ?? {}) as Partial<Prefs>
   return {
-    hidden: typeof p.hidden === 'boolean' ? p.hidden : DEFAULT_PREFS.hidden,
+    hidden: isBool(p.hidden) ? p.hidden : DEFAULT_PREFS.hidden,
     // Out of range is clamped; not a number at all reads as the default.
-    scale:
-      typeof p.scale === 'number' && Number.isFinite(p.scale)
-        ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, p.scale))
-        : DEFAULT_PREFS.scale,
-  }
-}
-
-export function normalizeSnooze(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-// What a freshly cleared store holds.
-export function defaultState(): Record<string, unknown> {
-  return {
-    [SCHEMA_KEY]: SCHEMA,
-    [LIMITS_KEY]: DEFAULT_LIMITS satisfies Limits,
-    [PREFS_KEY]: DEFAULT_PREFS,
-    [SNOOZE_KEY]: 0,
+    scale: isFiniteNumber(p.scale) ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, p.scale)) : DEFAULT_PREFS.scale,
   }
 }

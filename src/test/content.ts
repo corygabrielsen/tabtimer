@@ -3,9 +3,11 @@
 import { vi } from 'vitest'
 import FocusTracker from '../content/FocusTracker'
 import { dayOf } from '../core/day'
-import { dayKey, emptyBuckets, normalizeDay, siteTotal } from '../core/schema'
+import { DEFAULT_LIMITS, type Limits } from '../core/limits'
+import { dayKey, normalizeDay, siteTotal, LIMITS_KEY, type DayUsage } from '../core/schema'
 import { siteOf } from '../core/site'
 import { fakeChrome } from './chrome'
+import { bucketsOf } from './data'
 import { resetPageState } from './dom'
 
 // Wire the real background.ts into the fake browser so FocusTracker's reports land
@@ -20,20 +22,28 @@ export function useClock(now: Date): void {
   resetPageState()
 }
 
-const models: FocusTracker[] = []
+const trackers: FocusTracker[] = []
 
-export function trackTracker(model: FocusTracker): FocusTracker {
-  models.push(model)
-  return model
+export function trackTracker(tracker: FocusTracker): FocusTracker {
+  trackers.push(tracker)
+  return tracker
 }
 
 // Stop a FocusTracker's tick and listeners so it can't keep reporting into a later
 // test.
 export function disposeTrackers(): void {
-  for (const model of models.splice(0)) {
-    model.destroy()
+  for (const tracker of trackers.splice(0)) {
+    tracker.destroy()
   }
 }
+
+// Store limits (in minutes); anything not given is at its default.
+export function seedLimits(limits: Partial<Limits>): void {
+  fakeChrome().storage.local.seed({ [LIMITS_KEY]: { ...DEFAULT_LIMITS, ...limits } })
+}
+
+// Whether the block screen is up.
+export const isBlocked = () => document.getElementById('tabtimer-block')?.style.getPropertyValue('display') === 'block'
 
 // The stored day:* key for the local day containing `date`.
 export function dayKeyOf(date: Date = new Date()): string {
@@ -45,15 +55,15 @@ export function storedToday(site = siteOf(window.location.hostname), date = new 
   return siteTotal(normalizeDay(fakeChrome().storage.local.data[dayKeyOf(date)]), site)
 }
 
+// Sites' time, each in the hour of `date`.
+function usageOf(sites: Record<string, number>, date: Date): DayUsage {
+  return Object.fromEntries(Object.entries(sites).map(([site, ms]) => [site, bucketsOf({ [date.getHours()]: ms })]))
+}
+
 // A day:* entry holding sites' time (each in the hour of `date`), for
 // seeding storage alongside other keys.
 export function dayEntry(sites: Record<string, number>, date = new Date()): Record<string, unknown> {
-  const usage: Record<string, number[]> = {}
-  for (const [site, ms] of Object.entries(sites)) {
-    usage[site] = emptyBuckets()
-    usage[site][date.getHours()] = ms
-  }
-  return { [dayKeyOf(date)]: usage }
+  return { [dayKeyOf(date)]: usageOf(sites, date) }
 }
 
 // Store sites' time for the day of `date` (in that hour's bucket), keeping
@@ -61,13 +71,7 @@ export function dayEntry(sites: Record<string, number>, date = new Date()): Reco
 export function seedToday(sites: Record<string, number>, date = new Date()): void {
   const local = fakeChrome().storage.local
   const key = dayKeyOf(date)
-  const usage = normalizeDay(local.data[key])
-  for (const [site, ms] of Object.entries(sites)) {
-    const buckets = emptyBuckets()
-    buckets[date.getHours()] = ms
-    usage[site] = buckets
-  }
-  local.seed({ [key]: usage })
+  local.seed({ [key]: { ...normalizeDay(local.data[key]), ...usageOf(sites, date) } })
 }
 
 export const minutes = (n: number) => n * 60_000
