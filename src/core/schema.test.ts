@@ -50,6 +50,12 @@ describe('retention', () => {
   it('keeps days after today (a clock set back)', () => {
     expect(expiredDayKeys(['day:2026-07-04'], now)).toEqual([])
   })
+
+  it('expires days after today up to the last day shown before the clock went back', () => {
+    const keys = ['day:2026-06-30', 'day:2026-07-01', 'day:2026-07-02', 'day:2026-07-03']
+    expect(expiredDayKeys(keys, now, '2026-07-02')).toEqual(['day:2026-07-01', 'day:2026-07-02'])
+    expect(expiredDayKeys(keys, now, '2026-06-29')).toEqual([])
+  })
 })
 
 describe('normalizeDay', () => {

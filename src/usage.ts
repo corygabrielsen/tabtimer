@@ -314,7 +314,7 @@ function siteRow(period: Period, site: string, ms: number, days: number): HTMLLI
 function render(): void {
   const focused = document.activeElement?.id || null
   const day = today()
-  const empty = !hasAnyUsage(state.history)
+  const empty = !hasAnyUsage(state.history, day)
   byId('empty')!.hidden = !empty
   byId('report')!.hidden = empty
   byId('mode')!.hidden = empty

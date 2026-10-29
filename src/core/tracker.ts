@@ -175,12 +175,14 @@ function accrual(open: Open, end: number): Accrual[] {
   return end > open.since ? [{ site: open.site, start: open.since, end, media: open.media }] : []
 }
 
-// Most recent first, then the lowest tab id (a stable order).
-function freshest(tabs: Record<string, Attest>, idle: IdleState): number | null {
-  let best: [number, Attest] | null = null
+// Most recent first, then the lowest tab id (a stable order). A report heard
+// after `now` was heard before the clock went back: it is the oldest.
+function freshest(tabs: Record<string, Attest>, idle: IdleState, now: number): number | null {
+  let best: [number, number] | null = null
   for (const [id, attest] of Object.entries(tabs)) {
-    if (live(attest, idle) && (!best || attest.at > best[1].at)) {
-      best = [Number(id), attest]
+    const at = attest.at > now ? -Infinity : attest.at
+    if (live(attest, idle) && (!best || at > best[1])) {
+      best = [Number(id), at]
     }
   }
   return best ? best[0] : null
@@ -244,9 +246,9 @@ function presence(b: Builder, tabId: number, a: Attest, idle: IdleState): void {
   const key = String(tabId)
   const previous = b.tabs[key]
   // A late report from a document this tab has already replaced (the page
-  // navigated away, and its hiding arrived after the new page's report)
-  // changes nothing.
-  if (a.departing && previous && previous.doc !== a.doc) {
+  // navigated away, and its hiding arrived after the new page's report), or
+  // from a tab already removed, changes nothing.
+  if (a.departing && previous?.doc !== a.doc) {
     return
   }
   const accrues = live(a, idle)
@@ -325,7 +327,7 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
       }
       if (!b.open) {
         // Back at the computer: the page last seen in use reports again.
-        const candidate = freshest(b.tabs, 'active')
+        const candidate = freshest(b.tabs, 'active', now)
         if (candidate !== null && idle !== 'locked') {
           b.probe.add(candidate)
         }

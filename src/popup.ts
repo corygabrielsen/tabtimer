@@ -11,6 +11,7 @@ import {
   msToMinutes,
   normalizeLimits,
   siteLimitOf,
+  snoozeOf,
   DEFAULT_LIMITS,
   type Limits,
 } from './core/limits'
@@ -113,7 +114,7 @@ function faceFor(base: string, s: Snapshot) {
     limit: over.limit,
     elapsed: over.scope === 'site' ? s.siteToday : s.globalToday,
   }
-  const snoozed = reason !== null && Date.now() < s.limits.snoozeUntil
+  const snoozed = reason !== null && Date.now() < snoozeOf(s.limits, Date.now())
   let state: FaceState = 'open'
   if (reason) {
     state = snoozed ? 'snoozed' : 'over'

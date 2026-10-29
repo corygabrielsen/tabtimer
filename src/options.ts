@@ -398,12 +398,12 @@ function renderWeek() {
   if (!card) {
     return
   }
-  card.hidden = !hasAnyUsage(history)
+  const today = dayOf(Date.now())
+  card.hidden = !hasAnyUsage(history, today)
   if (card.hidden) {
     return
   }
   const week = thisWeek()
-  const today = dayOf(Date.now())
   const summary = summarize(history, week, today, null)
   byId('week-total')!.textContent = formatDuration(summary.total)
   byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))

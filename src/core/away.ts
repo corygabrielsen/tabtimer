@@ -102,6 +102,20 @@ export function normalizeAway(value: unknown): AwayState {
   }
 }
 
+// `s` as of `now`. A period or credit ending after `now` was stamped before
+// the clock went back, at a time now unknown: it is dropped. An ongoing
+// period lasts, from no later than `now`; `since` is no later than `now`.
+export function asOf(s: AwayState, now: number): AwayState {
+  const periods = s.periods.flatMap((p): AwayPeriod[] => {
+    if (p.end === null) {
+      return [{ ...p, start: Math.min(p.start, now) }]
+    }
+    return p.end <= now ? [p] : []
+  })
+  const recent = s.recent.filter((c) => c.end <= now)
+  return { ...s, since: Math.min(s.since, now), periods, recent }
+}
+
 // Whether a period pauses time reported with media playing (or not).
 function pauses(kind: AwayKind, media: boolean): boolean {
   return kind === 'locked' || !media

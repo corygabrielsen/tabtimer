@@ -4,7 +4,16 @@
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
 import { addDays, daysBetween, utcOf, type DayStamp } from './day'
-import { dayOfKey, normalizeDay, oldestKept, sumBuckets, RETENTION_DAYS, HOURS_PER_DAY, type DayUsage } from './schema'
+import {
+  dayOfKey,
+  isKept,
+  normalizeDay,
+  oldestKept,
+  sumBuckets,
+  RETENTION_DAYS,
+  HOURS_PER_DAY,
+  type DayUsage,
+} from './schema'
 
 // Stored days by date. Days absent from the map had no usage.
 export type History = Map<DayStamp, DayUsage>
@@ -150,8 +159,13 @@ export function change(current: number, previous: number): number | null {
 // already begun and still kept. A day in the future, or older than the
 // retention window, was never recorded.
 export function countedDays(days: DayStamp[], today: DayStamp): number {
-  const oldest = oldestKept(today)
-  return days.filter((day) => day <= today && day >= oldest).length
+  return days.filter((day) => isKept(day, today)).length
+}
+
+// The days of `history` kept on `today`. A stored day outside the window
+// (not yet pruned) counts as never recorded, as countedDays has it.
+export function keptOf(history: History, today: DayStamp): History {
+  return new Map([...history].filter(([day]) => isKept(day, today)))
 }
 
 // The average per counted day (0 when no day counts).
@@ -159,9 +173,9 @@ export function dailyAverage(total: number, days: number): number {
   return days > 0 ? total / days : 0
 }
 
-// Whether any kept day has usage.
-export function hasAnyUsage(history: History): boolean {
-  for (const usage of history.values()) {
+// Whether any day kept on `today` has usage.
+export function hasAnyUsage(history: History, today: DayStamp): boolean {
+  for (const usage of keptOf(history, today).values()) {
     for (const buckets of Object.values(usage)) {
       if (buckets.some((ms) => ms > 0)) {
         return true
@@ -265,7 +279,8 @@ export type Summary = {
   average: number
 }
 
-export function summarize(history: History, period: Period, today: DayStamp, site: string | null): Summary {
+export function summarize(stored: History, period: Period, today: DayStamp, site: string | null): Summary {
+  const history = keptOf(stored, today)
   const bars = period.mode === 'day' ? hourBars(history, period.days[0]!) : dayBars(history, period.days)
   const total = periodTotal(bars, site)
   const previous = periodTotal(dayBars(history, period.previous), site)
