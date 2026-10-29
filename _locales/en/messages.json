@@ -1,7 +1,7 @@
 {
   "appName": { "message": "Tab Timer" },
   "appShortName": { "message": "Tab Timer" },
-  "appDesc": { "message": "See how much time you've spent on social media sites today." },
+  "appDesc": { "message": "Counts your active time on chosen sites and blocks them when you reach your daily limit." },
   "actionTitle": { "message": "Tab Timer" },
   "labelToday": { "message": "Today" },
   "labelFocus": { "message": "Focus" },

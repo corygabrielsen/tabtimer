@@ -10,13 +10,12 @@ Unlisted.
 
 ## Single purpose
 
-Show how much time you've actively spent on social-media sites today, as an
-on-page overlay and a toolbar popup, with optional daily time limits that block
-a site once its cap is reached.
+Count the time you actively spend on sites you choose and block a site once
+its daily time limit is reached.
 
 ## Short description
 
-See how much time you've spent on social media sites today.
+Counts your active time on chosen sites and blocks them when you reach your daily limit.
 
 ## Privacy policy URL
 
