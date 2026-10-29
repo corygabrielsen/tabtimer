@@ -2,7 +2,7 @@ import { chromeStore } from '../chrome/store'
 import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
-import { siteOfUrl } from '../core/site'
+import { trackableSiteOfUrl } from '../core/site'
 import { checkpointAlarm, CHECKPOINT_ALARM } from './checkpoint'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
@@ -31,7 +31,7 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   // seen went to a site that isn't tracked.
   if (change.url !== undefined || change.status === 'loading' || change.discarded) {
     const url = change.discarded ? undefined : (change.url ?? tab.url)
-    dispatch({ kind: 'navigated', tabId, site: url === undefined ? null : siteOfUrl(url) })
+    dispatch({ kind: 'navigated', tabId, site: url === undefined ? null : trackableSiteOfUrl(url) })
   }
 })
 chrome.windows.onFocusChanged.addListener((windowId) =>

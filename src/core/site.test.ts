@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { SUGGESTED_SITES, normalizeSiteInput, originsForSite, siteFromOrigin, siteOf, siteOfUrl } from './site'
+import {
+  SUGGESTED_SITES,
+  grantsOf,
+  isTracked,
+  normalizeSiteInput,
+  originsForSite,
+  parsePattern,
+  siteOf,
+  trackableSite,
+  trackableSiteOfUrl,
+  trackedOrigins,
+} from './site'
 
 describe('siteOf (Public Suffix List)', () => {
   it.each([
@@ -38,13 +49,42 @@ describe('siteOf (Public Suffix List)', () => {
   })
 })
 
-describe('siteOfUrl', () => {
+describe('trackableSiteOfUrl', () => {
   it('resolves http(s) URLs only', () => {
-    expect(siteOfUrl('https://old.reddit.com/r/all')).toBe('reddit.com')
-    expect(siteOfUrl('http://news.bbc.co.uk:8080/x')).toBe('bbc.co.uk')
-    expect(siteOfUrl('chrome-extension://abc/popup.html')).toBeNull()
-    expect(siteOfUrl('about:blank')).toBeNull()
-    expect(siteOfUrl('not a url')).toBeNull()
+    expect(trackableSiteOfUrl('https://old.reddit.com/r/all')).toBe('reddit.com')
+    expect(trackableSiteOfUrl('http://news.bbc.co.uk:8080/x')).toBe('bbc.co.uk')
+    expect(trackableSiteOfUrl('http://192.168.1.1/')).toBe('192.168.1.1')
+    expect(trackableSiteOfUrl('chrome-extension://abc/popup.html')).toBeNull()
+    expect(trackableSiteOfUrl('about:blank')).toBeNull()
+    expect(trackableSiteOfUrl('not a url')).toBeNull()
+  })
+
+  it('refuses hosts extensions never run on', () => {
+    expect(trackableSiteOfUrl('https://chromewebstore.google.com/detail/x')).toBeNull()
+    expect(trackableSiteOfUrl('https://www.google.com/')).toBe('google.com')
+  })
+
+  it.each([
+    'https://s3.amazonaws.com/bucket/key',
+    'https://githubusercontent.com/',
+    'https://vercel.app/',
+    'https://co.uk/',
+    'http://localhost:3000/',
+    'http://intranet/',
+  ])('U2: %s has no trackable site', (url) => {
+    expect(trackableSiteOfUrl(url)).toBeNull()
+  })
+})
+
+describe('trackableSite', () => {
+  it('is the one test the settings input applies', () => {
+    for (const host of ['s3.amazonaws.com', 'github.io', 'co.uk', 'localhost', 'www.reddit.com', '10.0.0.1']) {
+      expect(normalizeSiteInput(host)).toBe(trackableSite(host))
+    }
+  })
+
+  it('keeps a site under a private suffix', () => {
+    expect(trackableSite('bucket.s3.amazonaws.com')).toBe('bucket.s3.amazonaws.com')
   })
 })
 
@@ -89,10 +129,86 @@ describe('origin patterns', () => {
 
   it('round-trip back to the site', () => {
     for (const site of ['x.com', 'bbc.co.uk', '192.168.1.1']) {
-      for (const origin of originsForSite(site)) {
-        expect(siteFromOrigin(origin)).toBe(site)
-      }
+      expect(grantsOf(originsForSite(site)).sites).toEqual(new Map([[site, originsForSite(site)]]))
     }
+  })
+})
+
+describe('parsePattern (match-pattern grammar)', () => {
+  it.each([
+    ['*://reddit.com/*', { scheme: '*', host: 'reddit.com', wildcard: false }],
+    ['*://*.reddit.com/*', { scheme: '*', host: 'reddit.com', wildcard: true }],
+    ['https://www.Reddit.com/*', { scheme: 'https', host: 'www.reddit.com', wildcard: false }],
+    ['http://localhost:8080/path/*', { scheme: 'http', host: 'localhost', wildcard: false }],
+    ['*://[::1]/*', { scheme: '*', host: '[::1]', wildcard: false }],
+    ['*://*/*', { scheme: '*', host: '', wildcard: true }],
+    ['https://*/*', { scheme: 'https', host: '', wildcard: true }],
+    ['<all_urls>', { scheme: '*', host: '', wildcard: true }],
+  ])('%s', (origin, pattern) => {
+    expect(parsePattern(origin)).toEqual(pattern)
+  })
+
+  it.each(['file:///*', 'ftp://x.com/*', 'reddit.com', '*://reddit.com', '*://www.*.com/*', '*://*reddit.com/*'])(
+    'rejects %s',
+    (origin) => {
+      expect(parsePattern(origin)).toBeNull()
+    }
+  )
+})
+
+describe('grantsOf', () => {
+  it('X3/U5: groups any granted shape under its site, keeping the raw patterns', () => {
+    const grants = grantsOf([
+      'https://www.reddit.com/*',
+      '*://*.reddit.com/*',
+      '*://x.com/*',
+      'http://news.bbc.co.uk/*',
+      '*://*/*',
+      'file:///*',
+    ])
+    expect(grants.sites).toEqual(
+      new Map([
+        ['reddit.com', ['https://www.reddit.com/*', '*://*.reddit.com/*']],
+        ['x.com', ['*://x.com/*']],
+        ['bbc.co.uk', ['http://news.bbc.co.uk/*']],
+      ])
+    )
+    expect(grants.all).toEqual(['*://*/*'])
+  })
+
+  it('X3: never yields a site that is not a hostname', () => {
+    const grants = grantsOf(['*://*/*', 'https://*/*', '<all_urls>', 'https://www.reddit.com/*'])
+    expect([...grants.sites.keys()]).toEqual(['reddit.com'])
+    expect(grants.all).toEqual(['*://*/*', 'https://*/*', '<all_urls>'])
+  })
+})
+
+describe('trackedOrigins', () => {
+  it('U2: drops grants for a bare public suffix', () => {
+    expect(trackedOrigins([...originsForSite('s3.amazonaws.com'), ...originsForSite('x.com'), '*://*/*'])).toEqual([
+      ...originsForSite('x.com'),
+      '*://*/*',
+    ])
+  })
+
+  it('drops what is not an http(s) pattern', () => {
+    expect(trackedOrigins(['file:///*', 'nonsense'])).toEqual([])
+  })
+})
+
+describe('isTracked', () => {
+  it.each([
+    [originsForSite('reddit.com'), 'https://old.reddit.com/r/all', true],
+    [originsForSite('reddit.com'), 'https://reddit.com/', true],
+    [originsForSite('reddit.com'), 'https://notreddit.com/', false],
+    [['https://www.reddit.com/*'], 'https://www.reddit.com/r/all', true],
+    [['https://www.reddit.com/*'], 'http://www.reddit.com/', false],
+    [['https://www.reddit.com/*'], 'https://old.reddit.com/', false],
+    [['*://*/*'], 'https://example.org/', true],
+    [['*://*/*'], 'chrome://extensions/', false],
+    [originsForSite('s3.amazonaws.com'), 'https://bucket.s3.amazonaws.com/', false],
+  ])('%j covers %s: %s', (origins, url, expected) => {
+    expect(isTracked(origins, url)).toBe(expected)
   })
 })
 

@@ -169,6 +169,37 @@ describe('tracked sites', () => {
     expect(trackedHosts()).toEqual(['alpha.org'])
   })
 
+  it("X3/U5: a grant from Chrome's own site access is its site's row, and Stop removes it", async () => {
+    // Shapes chrome://extensions and the toolbar's site access grant.
+    browser.granted = new Set(['https://www.reddit.com/*', 'http://www.reddit.com/*', '*://x.com/*'])
+    seedToday({ 'reddit.com': 3 * MIN })
+    await openOptions()
+    expect(trackedHosts()).toEqual(['reddit.com', 'x.com'])
+    expect(text(todayCell('reddit.com'))).toBe('3 min')
+    click(stopButton('reddit.com'))
+    await flush()
+    expect(browser.permissions.remove).toHaveBeenCalledExactlyOnceWith({
+      origins: ['https://www.reddit.com/*', 'http://www.reddit.com/*'],
+    })
+    expect(browser.granted).toEqual(new Set(['*://x.com/*']))
+    expect(trackedHosts()).toEqual(['x.com'])
+  })
+
+  it('X3: an all-sites grant is one All sites row that Stop removes, with nothing left to suggest', async () => {
+    browser.granted = new Set(['*://*/*', ...originsForSite('reddit.com')])
+    await openOptions()
+    expect(trackedHosts()).toEqual(['reddit.com', '*'])
+    expect(row('*')?.querySelector('strong')?.textContent).toBe('All sites')
+    expect(row('*')?.querySelector('.limit-toggle')).toBeNull()
+    expect(text($('tracked-count'))).toBe('2')
+    expect(chips()).toEqual([])
+    click(stopButton('*'))
+    await flush()
+    expect(browser.permissions.remove).toHaveBeenCalledExactlyOnceWith({ origins: ['*://*/*'] })
+    expect(trackedHosts()).toEqual(['reddit.com'])
+    expect(chip('x.com')).toBeDefined()
+  })
+
   it('tracks every suggested site at once, then drops the Suggested section', async () => {
     await openOptions()
     expect(document.querySelector<HTMLElement>('.suggest-head')!.hidden).toBe(false)

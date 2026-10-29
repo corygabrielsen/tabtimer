@@ -31,6 +31,28 @@ type StorageChanges = Record<string, chrome.storage.StorageChange>
 type AreaName = 'local' | 'sync' | 'managed' | 'session'
 type Callback<T> = (value: T) => void
 
+// Does granted match pattern `g` cover requested pattern `r`? Schemes and
+// hosts as Chrome compares them; ports and paths are ignored (host
+// permissions don't scope by path). Written apart from core/site.ts, so the
+// fake doesn't share the parser it tests.
+function patternCovers(g: string, r: string): boolean {
+  const split = (p: string) => (p === '<all_urls>' ? ['*', '*'] : /^([^:]+):\/\/([^/:]+)/.exec(p)?.slice(1))
+  const [gs, gh] = split(g) ?? []
+  const [rs, rh] = split(r) ?? []
+  if (!gs || !gh || !rs || !rh || (gs !== '*' && gs !== rs)) {
+    return false
+  }
+  if (gh === '*') {
+    return true
+  }
+  if (!gh.startsWith('*.')) {
+    return gh === rh
+  }
+  const base = gh.slice(2)
+  const host = rh.replace(/^\*\./, '')
+  return host === base || host.endsWith(`.${base}`)
+}
+
 export class FakeStorageArea {
   data: Record<string, unknown> = {}
   // When set, every operation on this area fails with this lastError message.
@@ -224,18 +246,27 @@ export class FakeChrome {
     getUILanguage: () => 'en-US',
   }
 
-  // Origins currently granted, and whether a permission prompt is accepted.
+  // Origins currently granted, as getAll reports them (the strings granted,
+  // whoever granted them), and whether a permission prompt is accepted.
   granted = new Set<string>()
   acceptPermissionPrompts = true
+
+  // Chrome's host-permission semantics: an origin is held when some granted
+  // pattern covers it, and a request for held origins succeeds without a
+  // prompt or a change. remove() takes exact granted strings.
+  private holds(origin: string): boolean {
+    return [...this.granted].some((g) => patternCovers(g, origin))
+  }
 
   readonly permissions = {
     onAdded: new FakeEvent<[{ origins?: string[] }]>(),
     onRemoved: new FakeEvent<[{ origins?: string[] }]>(),
     getAll: vi.fn(() => Promise.resolve({ origins: [...this.granted], permissions: [] as string[] })),
-    contains: vi.fn(({ origins = [] }: { origins?: string[] }) =>
-      Promise.resolve(origins.every((o) => this.granted.has(o)))
-    ),
+    contains: vi.fn(({ origins = [] }: { origins?: string[] }) => Promise.resolve(origins.every((o) => this.holds(o)))),
     request: vi.fn(({ origins = [] }: { origins?: string[] }) => {
+      if (origins.every((o) => this.holds(o))) {
+        return Promise.resolve(true)
+      }
       if (!this.acceptPermissionPrompts) {
         return Promise.resolve(false)
       }

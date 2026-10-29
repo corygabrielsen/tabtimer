@@ -59,6 +59,10 @@ describe('popup on a page it cannot track', () => {
     'file:///home/me/notes.txt',
     'https://chromewebstore.google.com/detail/abc',
     'http://localhost:3000/',
+    // U2: bare public suffixes (path-style S3, private-suffix hosts).
+    'https://s3.amazonaws.com/bucket/key',
+    'https://githubusercontent.com/',
+    'https://vercel.app/',
   ])('says so for %s', async (url) => {
     await openPopup({ id: 3, url })
     expect(visibleSection()).toEqual(['untracked'])
@@ -95,7 +99,7 @@ describe('popup on a site not yet tracked', () => {
   })
 
   it('falls back to offering tracking if the permission check fails', async () => {
-    browser.permissions.contains.mockImplementation(() => Promise.reject(new Error('nope')))
+    browser.permissions.getAll.mockImplementation(() => Promise.reject(new Error('nope')))
     await openPopup({ id: 7, url: 'https://reddit.com/' })
     expect(visibleSection()).toEqual(['enable'])
   })
@@ -114,6 +118,25 @@ describe('popup on a site not yet tracked', () => {
     click($('enable-btn'))
     await flush()
     expect(browser.scripting.executeScript).not.toHaveBeenCalled()
+    expect(visibleSection()).toEqual(['enable'])
+  })
+})
+
+describe("popup on a site granted through Chrome's own site access", () => {
+  it.each([
+    [['https://www.reddit.com/*'], 'https://www.reddit.com/r/all'],
+    [['*://*/*'], 'https://www.reddit.com/'],
+    [['https://*/*'], 'https://old.reddit.com/'],
+  ])('U5: %j shows %s as tracked', async (origins, url) => {
+    browser.granted = new Set(origins)
+    await openPopup({ id: 7, url })
+    expect(visibleSection()).toEqual(['tracked'])
+    expect($('site').textContent).toBe('reddit.com')
+  })
+
+  it('offers tracking for the rest of a site only part of which is granted', async () => {
+    browser.granted = new Set(['https://www.reddit.com/*'])
+    await openPopup({ id: 7, url: 'https://old.reddit.com/' })
     expect(visibleSection()).toEqual(['enable'])
   })
 })

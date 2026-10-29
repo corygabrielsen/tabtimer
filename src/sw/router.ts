@@ -3,12 +3,12 @@
 //   2. the payload parses (core/requests.ts parseRequest), else 'bad_request';
 //   3. the sender may send this type (SENDERS): an extension page is
 //      recognized by its URL; a content script by a tab, its document's
-//      lifecycle and an http(s) URL, and its site is taken from that URL,
-//      never from the payload; else 'forbidden';
+//      lifecycle and a trackable URL (core/site.ts), and its site is taken
+//      from that URL, never from the payload; else 'forbidden';
 //   4. the handler runs; a throw is 'internal'.
 import { SENDERS, type Contract, type MessageType, type Origin, type Page, type RequestOf } from '../core/messages'
 import { parseRequest } from '../core/requests'
-import { siteOfUrl, type Site } from '../core/site'
+import { trackableSiteOfUrl, type Site } from '../core/site'
 import type { Handler, Sender } from '../chrome/bus'
 import type { Ledger } from './ledger'
 import type { Tracker } from './tracker'
@@ -53,7 +53,7 @@ function classify(sender: Sender, extensionUrl: string): Context | null {
   if (url.startsWith(extensionUrl)) {
     return { origin: 'extension', site: null, tab: null }
   }
-  const site = siteOfUrl(url)
+  const site = trackableSiteOfUrl(url)
   const tab = sender.tab
   const leaving = departing(sender)
   if (typeof tab?.id === 'number' && leaving !== null && site !== null) {
