@@ -4,6 +4,28 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-10-28
+
+Upgrading resets stored time, sites and limits once (new storage format).
+
+### Changed
+
+- Time now counts under the site you'd expect, using the public list of domain
+  suffixes: `news.bbc.co.uk` counts as `bbc.co.uk`, each `*.github.io` site is
+  its own, and an IP address or `localhost` stays as it is. Before, every
+  address under a suffix like `co.uk` was lumped together.
+- Adding a site by a bare suffix such as `co.uk` or `github.io` is refused,
+  since it would cover every site under it.
+- Time is now recorded by the hour of the day it was spent, ready for an
+  activity view. The last 30 days are kept; older days are removed
+  automatically.
+
+### Fixed
+
+- Setting a limit in the popup while the settings page is open (or the other
+  way round) no longer loses one of the two changes.
+- A web page can no longer reset or change another site's time or limits.
+
 ## [1.2.2] - 2026-10-28
 
 ### Fixed
@@ -112,6 +134,7 @@ All notable changes to Tab Timer. The format follows
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.3.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.1...v1.2.0
