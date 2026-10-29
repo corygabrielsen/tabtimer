@@ -27,7 +27,11 @@ updates:
           - major
 
   - package-ecosystem: github-actions
-    directory: /
+    # The composite action pins its own action SHAs; Dependabot only scans
+    # the directories listed here.
+    directories:
+      - /
+      - /.github/actions/setup
     schedule:
       interval: weekly
     commit-message:
