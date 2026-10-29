@@ -1,6 +1,6 @@
 # Privacy Policy
 
-_Last updated: 2026-10-28_
+_Last updated: 2026-10-29_
 
 Tab Timer is built to keep your data on your own device.
 
@@ -17,14 +17,14 @@ Everything is kept in `chrome.storage.local` on your own browser profile:
 - `day:YYYY-MM-DD`: for each day, the active time per tracked site, split into
   the 24 hours of the day. The last 30 days are kept; older days are deleted
   automatically.
-- `limits`: any daily time limits you set (per site and across all sites).
+- `limits`: any daily time limits you set (per site and across all sites),
+  and when a "5 more minutes" snooze ends.
 - `prefs`: whether the on-page overlay is shown, and its size.
-- `snoozeUntil`: the end time of a "5 more minutes" snooze.
 - `schema`: the storage format version. Data stored in an older format is
   deleted once when the extension is updated.
 
-While the browser runs, the extension also keeps, in `chrome.storage.session`
-(memory only, cleared when the browser closes):
+While the browser runs, the extension also keeps one `worker` entry in
+`chrome.storage.session` (memory only, cleared when the browser closes) with:
 
 - whether you are at the computer right now (active, idle after 5 minutes
   without keyboard or mouse input, or locked), the recent times you were idle
