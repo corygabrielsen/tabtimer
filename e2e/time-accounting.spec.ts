@@ -1,4 +1,4 @@
-import { test, expect, read, todayKey, OVERLAY_ID } from './fixtures'
+import { test, expect, read, seed, todayKey, LIMITS_KEY, OVERLAY_ID, BLOCK_ID } from './fixtures'
 
 // Time accounting in a real tab: how much focus time reaches storage across
 // re-injection and navigation.
@@ -32,4 +32,39 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
   const total = Number(await read(serviceWorker, key))
   expect(total).toBeGreaterThan(wall / 2)
   expect(total).toBeLessThanOrEqual(wall)
+})
+
+test('B9: a page restored from the back/forward cache keeps tracking and blocking', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  const key = await todayKey(serviceWorker, SITE_A)
+  const stored = async () => Number((await read(serviceWorker, key)) ?? 0)
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/one'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  // A main-world marker survives only if the page itself is restored.
+  await page.evaluate(() => ((window as unknown as { bfcacheMarker: number }).bfcacheMarker = 1))
+
+  // Same-origin navigation away and back: eligible for the bfcache.
+  await page.goto(site(SITE_A, '/two'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  // A bfcache restore fires no load event, so wait only for the commit.
+  await page.goBack({ waitUntil: 'commit' })
+  expect(await page.evaluate(() => (window as unknown as { bfcacheMarker?: number }).bfcacheMarker)).toBe(1)
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+
+  // The restored instance still enforces limits...
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } } })
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: {} } })
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+
+  // ...and still counts: time spent after the restore reaches storage when
+  // the page is left again.
+  const before = await stored()
+  await page.waitForTimeout(3_000)
+  await page.goto('about:blank')
+  await expect.poll(stored).toBeGreaterThanOrEqual(before + 2_000)
 })

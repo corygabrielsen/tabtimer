@@ -78,6 +78,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // Fresh profile per test: a clean install, empty storage.
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
+      // Playwright turns the back/forward cache off by default; the content
+      // script has to cope with it, so keep Chrome's real behaviour.
+      ignoreDefaultArgs: ['--disable-back-forward-cache'],
       args: [
         `--disable-extensions-except=${EXTENSION_PATH}`,
         `--load-extension=${EXTENSION_PATH}`,

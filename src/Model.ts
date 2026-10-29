@@ -123,6 +123,20 @@ export default class Model {
     chrome.storage.onChanged.removeListener(this.handleStorageChange)
   }
 
+  // Catch up after the page was frozen in the back/forward cache: storage
+  // events aren't delivered while frozen, so reload the cached totals, and
+  // re-sample focus (no focus event may fire on restore).
+  resync(): void {
+    this.maybeRollover()
+    this.storedTodayLoad = null
+    this.globalToday.clear()
+    this.globalTouched.clear()
+    this.globalTodayLoad = null
+    void this.loadStoredToday().catch(() => undefined)
+    this.windowFocused = document.hasFocus()
+    this.updateFocusTimer()
+  }
+
   // Run `listener` after every tick (once the timers have advanced).
   onTick(listener: () => void): () => void {
     this.tickListeners.add(listener)

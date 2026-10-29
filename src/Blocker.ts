@@ -160,7 +160,8 @@ export default class Blocker {
     chrome.storage.onChanged.addListener(this.handleStorageChange)
   }
 
-  private async refresh() {
+  // Re-read limits and snooze state, then re-evaluate.
+  async refresh(): Promise<void> {
     this.limits = await readLimits()
     this.snoozeUntil = await readSnoozeUntil()
     await this.tick()

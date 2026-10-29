@@ -29,7 +29,8 @@ try {
   // Persist pending focus time and tear down listeners, the tick and the UI.
   const instance: Instance = {
     dispose: () => {
-      window.removeEventListener('pagehide', instance.dispose)
+      window.removeEventListener('pagehide', handlePageHide)
+      window.removeEventListener('pageshow', handlePageShow)
       model.flush()
       controller.destroy()
       model.destroy()
@@ -40,8 +41,27 @@ try {
   }
   slot[INSTANCE] = instance
 
-  // Best-effort: when the page goes away.
-  window.addEventListener('pagehide', instance.dispose)
+  // A page entering the back/forward cache (persisted) is frozen, not
+  // destroyed, and may be shown again: keep everything alive and only
+  // persist pending time. Otherwise the page is going away for good.
+  const handlePageHide = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      model.flush()
+    } else {
+      instance.dispose()
+    }
+  }
+  // Restored from the back/forward cache: catch up on what changed while
+  // frozen (totals, limits, snooze) and redraw.
+  const handlePageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      model.resync()
+      void blocker.refresh()
+      view.updateDisplayText()
+    }
+  }
+  window.addEventListener('pagehide', handlePageHide)
+  window.addEventListener('pageshow', handlePageShow)
 } catch {
   // Never spam a host page's console if init fails on a hostile/odd page.
 }
