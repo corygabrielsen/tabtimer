@@ -40,12 +40,8 @@ const TOOLTIPS: Record<TimerKey, string> = {
   session: t('tooltipSession'),
 }
 
-// Map our display keys to the tracker's keys.
 function getElapsedForKey(elapsed: ElapsedState, key: TimerKey): number {
-  if (key === 'session') {
-    return elapsed.countup.elapsed
-  }
-  return elapsed[key].elapsed
+  return elapsed[key]
 }
 
 // All widget styling lives inside the shadow root, so the host page's CSS
@@ -160,9 +156,10 @@ export default class Overlay {
   private outsideClickAttached = false
 
   private unsubscribeStore: () => void
+  private unsubscribeState: () => void
 
   constructor(
-    private tracker: FocusTracker,
+    private tracker: Pick<FocusTracker, 'readElapsed' | 'onState'>,
     private bus: Bus = chromeBus,
     private store: Store = chromeStore('local')
   ) {
@@ -199,6 +196,12 @@ export default class Overlay {
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
     this.unsubscribeStore = this.store.onChanged(this.handlePrefsChange)
+    // Fresh totals from the service worker (a hidden tab redraws when shown).
+    this.unsubscribeState = tracker.onState(() => {
+      if (!document.hidden) {
+        this.render()
+      }
+    })
   }
 
   private applyScale() {
@@ -236,28 +239,21 @@ export default class Overlay {
       return
     }
 
-    this.tracker
-      .readElapsed()
-      .then((elapsed) => {
-        // If we just need fresh times, update text in place without rebuilding.
-        if (!this.needsRebuild && this.timeElements.size > 0) {
-          this.updateTimes(elapsed)
-          return
-        }
+    const elapsed = this.tracker.readElapsed()
+    // If we just need fresh times, update text in place without rebuilding.
+    if (!this.needsRebuild && this.timeElements.size > 0) {
+      this.updateTimes(elapsed)
+      return
+    }
 
-        this.needsRebuild = false
-        this.timeElements.clear()
+    this.needsRebuild = false
+    this.timeElements.clear()
 
-        if (this.expanded) {
-          this.mount.replaceChildren(this.buildExpanded(elapsed))
-        } else {
-          this.mount.replaceChildren(this.buildCollapsed(elapsed))
-        }
-      })
-      .catch(() => {
-        // Storage/SW error (e.g. extension context invalidated); skip this
-        // frame rather than throwing an unhandled rejection every second.
-      })
+    if (this.expanded) {
+      this.mount.replaceChildren(this.buildExpanded(elapsed))
+    } else {
+      this.mount.replaceChildren(this.buildCollapsed(elapsed))
+    }
   }
 
   private updateTimes(elapsed: ElapsedState) {
@@ -438,6 +434,7 @@ export default class Overlay {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('focus', this.handleFocus)
     this.unsubscribeStore()
+    this.unsubscribeState()
     this.detachOutsideClick()
     this.host.remove()
   }

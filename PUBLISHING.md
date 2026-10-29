@@ -32,10 +32,11 @@ in required store metadata — do that once by hand.
    justifications (copy them from [STORE_LISTING.md](STORE_LISTING.md), one
    per permission in `manifest.json`), and the data-use disclosures.
 
-   Adding a permission later (as 1.4.0 added `idle`) needs its justification
-   added in the dashboard's **Privacy** tab before the update is submitted.
-   `idle` shows no permission warning, so installed users get the update
-   without being asked to approve anything.
+   Adding a permission later (as 1.4.0 added `idle` and 1.5.0 added `alarms`)
+   needs its justification added in the dashboard's **Privacy** tab before the
+   update is submitted. Neither `idle` nor `alarms` shows a permission warning
+   ([permissions list](https://developer.chrome.com/docs/extensions/reference/permissions-list)),
+   so installed users get the update without being asked to approve anything.
 
 4. Under **Distribution**, set **Visibility → Unlisted**.
 5. Save and **Submit for review** (the first publish must go through review).

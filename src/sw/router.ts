@@ -6,22 +6,27 @@
 //      an http(s) URL, and its site is taken from that URL, never from the
 //      payload; else 'forbidden';
 //   4. the handler runs; a throw is 'internal'.
+// A page being navigated away from may still report (its last report is
+// sent as it is hidden): it is heard as hidden, whatever it says.
 import { parseRequest, SENDERS, type Contract, type MessageType, type Origin, type RequestOf } from '../core/messages'
 import { siteOf, siteOfUrl, type Site } from '../core/site'
 import type { Handler, Sender } from '../chrome/bus'
 import type { Ledger } from './ledger'
+import type { Tracker } from './tracker'
 
 export type RouterDeps = {
-  ledger: Ledger
+  ledger: Pick<Ledger, 'setLimit' | 'snooze' | 'setPrefs'>
+  tracker: Pick<Tracker, 'presence' | 'resetToday'>
   extensionId: string
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
-  now: () => number
   openOptions: () => Promise<void>
 }
 
-// Where a request came from, and for a content script the site it runs on.
-type Context = { origin: Origin; site: Site | null }
+// Where a request came from, and for a content script the site it runs on
+// and its tab.
+type Tab = { id: number; windowId: number; doc: string; departing: boolean }
+type Context = { origin: Origin; site: Site | null; tab: Tab | null }
 
 type Handlers = { [K in MessageType]: (req: RequestOf<K>, ctx: Context) => Promise<Contract[K]['res']> }
 
@@ -42,29 +47,45 @@ function canonical(site: Site): Site {
 // so a departing document can't be a subframe running it.
 const DEPARTING = new Set(['cached', 'pending_deletion'])
 
+const isDeparting = (sender: Sender) => DEPARTING.has(sender.documentLifecycle ?? '')
+
 function isTopFrame(sender: Sender): boolean {
-  return sender.frameId === 0 || (sender.frameId !== undefined && DEPARTING.has(sender.documentLifecycle ?? ''))
+  return sender.frameId === 0 || (sender.frameId !== undefined && isDeparting(sender))
 }
 
 function classify(sender: Sender, extensionUrl: string): Context | null {
   const url = sender.url ?? ''
   if (url.startsWith(extensionUrl)) {
-    return { origin: 'extension', site: null }
+    return { origin: 'extension', site: null, tab: null }
   }
   const site = siteOfUrl(url)
-  if (typeof sender.tab?.id === 'number' && isTopFrame(sender) && site !== null) {
-    return { origin: 'content', site }
+  const tab = sender.tab
+  if (typeof tab?.id === 'number' && isTopFrame(sender) && site !== null) {
+    return {
+      origin: 'content',
+      site,
+      tab: { id: tab.id, windowId: tab.windowId ?? -1, doc: sender.documentId ?? '', departing: isDeparting(sender) },
+    }
   }
   return null
 }
 
 export function createRouter(deps: RouterDeps): Handler {
-  const { ledger } = deps
-  // Content-only handlers can rely on ctx.site: classify set it.
+  const { ledger, tracker } = deps
+  // Content-only handlers can rely on ctx.site and ctx.tab: classify set them.
   const handlers: Handlers = {
-    hello: async (_req, ctx) => ({ site: ctx.site! }),
-    addElapsed: async (req, ctx) => ({ total: await ledger.addElapsed(ctx.site!, req.spans, req.media) }),
-    resetToday: (req) => ledger.resetToday(canonical(req.site)),
+    presence: ({ visible, focused, media, blocked }, ctx) => {
+      const tab = ctx.tab!
+      return tracker.presence(
+        tab.id,
+        { site: ctx.site!, windowId: tab.windowId, doc: tab.doc },
+        { visible: visible && !tab.departing, focused, media, blocked }
+      )
+    },
+    resetToday: async (req) => {
+      await tracker.resetToday(canonical(req.site))
+      return null
+    },
     setLimit: (req) =>
       ledger.setLimit(
         req.scope === 'global'
@@ -84,7 +105,7 @@ export function createRouter(deps: RouterDeps): Handler {
     if (sender.id !== deps.extensionId) {
       return { ok: false, error: 'forbidden' }
     }
-    const req = parseRequest(raw, deps.now())
+    const req = parseRequest(raw)
     if (!req) {
       return { ok: false, error: 'bad_request' }
     }

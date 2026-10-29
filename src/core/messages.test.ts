@@ -1,37 +1,22 @@
 import { describe, it, expect } from 'vitest'
-import {
-  appendSpan,
-  batchSpans,
-  parseRequest,
-  spanTimeSince,
-  MAX_CLOCK_SKEW_MS,
-  MAX_REPORT_MS,
-  MAX_SPANS,
-  MAX_SPAN_AGE_MS,
-  SENDERS,
-  type Span,
-} from './messages'
+import { parsePresence, parseRequest, parseStatePush, SENDERS, type TabState } from './messages'
 
-const NOW = new Date(2026, 5, 10, 12).getTime()
 const MIN = 60_000
-const parse = (raw: unknown) => parseRequest(raw, NOW)
+const parse = (raw: unknown) => parseRequest(raw)
+
+const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 
 describe('parseRequest', () => {
   it.each([
-    [{ type: 'hello' }, { type: 'hello' }],
     [{ type: 'snooze' }, { type: 'snooze' }],
     [{ type: 'openOptions' }, { type: 'openOptions' }],
     [
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]] },
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
+      { type: 'presence', ...PRESENT },
+      { type: 'presence', ...PRESENT },
     ],
     [
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: true },
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: true },
-    ],
-    [
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
-      { type: 'addElapsed', spans: [[NOW - 5000, NOW - 1000]], media: false },
+      { type: 'presence', visible: false, focused: false, media: true, blocked: true },
+      { type: 'presence', visible: false, focused: false, media: true, blocked: true },
     ],
     [
       { type: 'resetToday', site: 'reddit.com' },
@@ -59,29 +44,17 @@ describe('parseRequest', () => {
 
   it.each([
     null,
-    'hello',
+    'presence',
     [],
     { type: 'mystery' },
     { type: 'resetKey', key: 'limits' },
-    { spans: [[1, 2]] },
-    { type: 'addElapsed' },
-    { type: 'addElapsed', spans: [] },
-    { type: 'addElapsed', spans: [[NOW - 1000]] },
-    { type: 'addElapsed', spans: [[NOW - 1000, NOW - 1000]] },
-    { type: 'addElapsed', spans: [[NOW, NOW - 1000]] },
-    { type: 'addElapsed', spans: [['1', NOW]] },
-    { type: 'addElapsed', spans: [[NOW - 1000, Infinity]] },
-    { type: 'addElapsed', spans: [[NOW - MAX_REPORT_MS - 1, NOW]] },
-    { type: 'addElapsed', spans: [[NOW - MAX_SPAN_AGE_MS - 1, NOW - MAX_SPAN_AGE_MS + 1000]] },
-    { type: 'addElapsed', spans: [[NOW, NOW + MAX_CLOCK_SKEW_MS + 1]] },
-    {
-      type: 'addElapsed',
-      spans: Array.from({ length: MAX_SPANS + 1 }, (_, i) => [NOW - 1000 * (i + 1), NOW - 1000 * i]),
-    },
-    { type: 'addElapsed', delta: 1000 },
-    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: 'yes' },
-    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: 1 },
-    { type: 'addElapsed', spans: [[NOW - 1000, NOW]], media: null },
+    { type: 'hello' },
+    { type: 'addElapsed', spans: [[1, 2]] },
+    { type: 'presence' },
+    { type: 'presence', ...PRESENT, visible: 'yes' },
+    { type: 'presence', ...PRESENT, focused: 1 },
+    { type: 'presence', ...PRESENT, media: null },
+    { type: 'presence', visible: true, focused: true, media: false },
     { type: 'resetToday' },
     { type: 'resetToday', site: '' },
     { type: 'resetToday', site: 'Reddit.com' },
@@ -103,98 +76,67 @@ describe('parseRequest', () => {
   })
 
   it('drops fields the contract does not define, such as a site on a content report', () => {
-    expect(parse({ type: 'addElapsed', spans: [[NOW - 1000, NOW]], site: 'other.com', key: 'limits' })).toEqual({
-      type: 'addElapsed',
-      spans: [[NOW - 1000, NOW]],
-      media: false,
+    expect(parse({ type: 'presence', ...PRESENT, site: 'other.com', tabId: 9, key: 'limits' })).toEqual({
+      type: 'presence',
+      ...PRESENT,
     })
-    expect(parse({ type: 'hello', site: 'other.com' })).toEqual({ type: 'hello' })
+    expect(parse({ type: 'snooze', site: 'other.com' })).toEqual({ type: 'snooze' })
     expect(parse({ type: 'setPrefs', hidden: false, limits: {} })).toEqual({ type: 'setPrefs', hidden: false })
   })
+})
 
-  it('accepts a report at the bounds', () => {
-    expect(parse({ type: 'addElapsed', spans: [[NOW - MAX_REPORT_MS, NOW]] })).not.toBeNull()
-    expect(parse({ type: 'addElapsed', spans: [[NOW, NOW + MAX_CLOCK_SKEW_MS]] })).not.toBeNull()
+describe('parsePresence', () => {
+  it('keeps the four flags and nothing else', () => {
+    expect(parsePresence({ ...PRESENT, extra: 1 })).toEqual(PRESENT)
+    expect(parsePresence(undefined)).toBeNull()
+    expect(parsePresence({ ...PRESENT, blocked: 'no' })).toBeNull()
+  })
+})
+
+describe('parseStatePush', () => {
+  const state: TabState = {
+    site: 'reddit.com',
+    day: '2026-06-10',
+    asOf: 1000,
+    today: 5000,
+    globalToday: 9000,
+    running: true,
+    blockAt: 61_000,
+    limit: { scope: 'site', ms: 60_000 },
+  }
+
+  it('accepts a well-formed state, rebuilt from its fields', () => {
+    expect(parseStatePush({ type: 'state', state: { ...state, extra: 1 } })).toEqual(state)
+    expect(parseStatePush({ type: 'state', state: { ...state, blockAt: null, limit: null } })).toEqual({
+      ...state,
+      blockAt: null,
+      limit: null,
+    })
+  })
+
+  it.each([
+    null,
+    { type: 'other', state },
+    { type: 'state' },
+    { type: 'state', state: { ...state, site: 1 } },
+    { type: 'state', state: { ...state, day: 'today' } },
+    { type: 'state', state: { ...state, asOf: '1' } },
+    { type: 'state', state: { ...state, today: NaN } },
+    { type: 'state', state: { ...state, globalToday: undefined } },
+    { type: 'state', state: { ...state, running: 1 } },
+    { type: 'state', state: { ...state, blockAt: 'soon' } },
+    { type: 'state', state: { ...state, limit: { scope: 'week', ms: 1 } } },
+    { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } } },
+    { type: 'state', state: { ...state, limit: 5 } },
+  ])('rejects %j', (raw) => {
+    expect(parseStatePush(raw)).toBeNull()
   })
 })
 
 describe('SENDERS', () => {
-  it('lets only content scripts report time, and only extension pages reset or set limits', () => {
-    expect(SENDERS.addElapsed).toEqual(['content'])
-    expect(SENDERS.hello).toEqual(['content'])
+  it('lets only content scripts report presence, and only extension pages reset or set limits', () => {
+    expect(SENDERS.presence).toEqual(['content'])
     expect(SENDERS.resetToday).toEqual(['extension'])
     expect(SENDERS.setLimit).toEqual(['extension'])
-  })
-})
-
-describe('appendSpan', () => {
-  it('extends the last span when the new time continues it', () => {
-    const spans: Span[] = []
-    appendSpan(spans, 2000, 1000)
-    appendSpan(spans, 3000, 1000)
-    appendSpan(spans, 3500, 500)
-    expect(spans).toEqual([[1000, 3500]])
-  })
-
-  it('starts a new span after a gap, and ignores nothing-credited', () => {
-    const spans: Span[] = []
-    appendSpan(spans, 2000, 1000)
-    appendSpan(spans, 9000, 1000)
-    appendSpan(spans, 9500, 0)
-    expect(spans).toEqual([
-      [1000, 2000],
-      [8000, 9000],
-    ])
-  })
-})
-
-describe('spanTimeSince', () => {
-  it('counts only the part of each span at or after the cut', () => {
-    expect(
-      spanTimeSince(
-        [
-          [0, 100],
-          [150, 300],
-          [400, 500],
-        ],
-        200
-      )
-    ).toBe(200)
-  })
-})
-
-describe('batchSpans', () => {
-  it('sends a few spans as one request', () => {
-    const spans: Span[] = [
-      [NOW - 5000, NOW - 4000],
-      [NOW - 2000, NOW],
-    ]
-    expect(batchSpans(spans, NOW)).toEqual([spans])
-  })
-
-  it('splits long or many spans into requests parseRequest accepts', () => {
-    const long: Span = [NOW - 25 * MIN, NOW]
-    const many: Span[] = Array.from({ length: 100 }, (_, i) => [
-      NOW - 30 * MIN - 2000 * (i + 1),
-      NOW - 30 * MIN - 2000 * i - 1000,
-    ])
-    const batches = batchSpans([...many.reverse(), long], NOW)
-    for (const spans of batches) {
-      expect(parseRequest({ type: 'addElapsed', spans }, NOW)).not.toBeNull()
-    }
-    const total = (s: Span[]) => s.reduce((t, [a, b]) => t + b - a, 0)
-    expect(batches.reduce((t, b) => t + total(b), 0)).toBe(25 * MIN + 100 * 1000)
-  })
-
-  it('drops time too old to be accepted', () => {
-    const spans: Span[] = [
-      [NOW - MAX_SPAN_AGE_MS - 5000, NOW - MAX_SPAN_AGE_MS + 1000],
-      [NOW - MAX_SPAN_AGE_MS - 9000, NOW - MAX_SPAN_AGE_MS - 8000],
-    ]
-    expect(batchSpans(spans, NOW)).toEqual([[[NOW - MAX_SPAN_AGE_MS, NOW - MAX_SPAN_AGE_MS + 1000]]])
-  })
-
-  it('sends nothing for no spans', () => {
-    expect(batchSpans([], NOW)).toEqual([])
   })
 })

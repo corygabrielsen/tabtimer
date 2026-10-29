@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   applyLimit,
+  blockAt,
   evaluateLimits,
   normalizeLimits,
   parseLimitMinutes,
@@ -107,5 +108,38 @@ describe('applyLimit', () => {
   it('does not modify its input', () => {
     applyLimit(base, { scope: 'site', site: 'a.com', ms: null })
     expect(base.perSite).toEqual({ 'a.com': minutesToMs(10) })
+  })
+})
+
+describe('blockAt', () => {
+  const MIN = 60_000
+  const T = 1_000_000
+
+  it('is when the tighter limit is reached, if the page keeps accruing', () => {
+    expect(blockAt(limits, 'reddit.com', 20 * MIN, 25 * MIN, T, true, 0)).toEqual({
+      at: T + 10 * MIN,
+      scope: 'site',
+      limit: 30 * MIN,
+    })
+    expect(blockAt(limits, 'reddit.com', 20 * MIN, 55 * MIN, T, true, 0)).toEqual({
+      at: T + 5 * MIN,
+      scope: 'global',
+      limit: 60 * MIN,
+    })
+  })
+
+  it('names the site when both limits are reached at once', () => {
+    expect(blockAt(limits, 'reddit.com', 30 * MIN, 60 * MIN, T, false, 0)).toMatchObject({ at: T, scope: 'site' })
+  })
+
+  it('is now when already over, running or not; never while under and not accruing', () => {
+    expect(blockAt(limits, 'reddit.com', 31 * MIN, 31 * MIN, T, false, 0)?.at).toBe(T)
+    expect(blockAt(limits, 'reddit.com', 10 * MIN, 10 * MIN, T, false, 0)).toBeNull()
+    expect(blockAt(DEFAULT_LIMITS, 'reddit.com', 600 * MIN, 600 * MIN, T, true, 0)).toBeNull()
+  })
+
+  it('waits for a snooze to end', () => {
+    expect(blockAt(limits, 'reddit.com', 40 * MIN, 40 * MIN, T, false, T + 5 * MIN)?.at).toBe(T + 5 * MIN)
+    expect(blockAt(limits, 'reddit.com', 20 * MIN, 20 * MIN, T, true, T + MIN)?.at).toBe(T + 10 * MIN)
   })
 })

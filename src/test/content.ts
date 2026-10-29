@@ -72,3 +72,9 @@ export function seedToday(sites: Record<string, number>, date = new Date()): voi
 
 export const minutes = (n: number) => n * 60_000
 export const seconds = (n: number) => n * 1000
+
+// Timers the page itself runs: every fake timer but the service worker's
+// alarms.
+export function pageTimers(): number {
+  return vi.getTimerCount() - fakeChrome().alarmTimers.size
+}

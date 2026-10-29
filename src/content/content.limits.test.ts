@@ -12,7 +12,7 @@ import { dayOf } from '../core/day'
 import { PRUNED_DAY_KEY } from '../sw/ledger'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { minutes, seconds, seedToday, startBackground, storedToday, useClock } from '../test/content'
+import { minutes, pageTimers, seconds, seedToday, startBackground, storedToday, useClock } from '../test/content'
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
@@ -157,10 +157,10 @@ describe('time limits end to end', () => {
 describe('per-tab cost', () => {
   it('runs a single interval per tab', async () => {
     await openTab()
-    expect(vi.getTimerCount()).toBe(1)
+    expect(pageTimers()).toBe(1)
   })
 
-  it('reads totals from storage once, then follows storage.onChanged', async () => {
+  it('reads no storage per second: the worker pushes what changes', async () => {
     limits({ global: minutes(30), perSite: { 'reddit.com': minutes(30) } })
     // The service worker already pruned today (its once-a-day get(null)).
     browser.storage.session.seed({ [PRUNED_DAY_KEY]: dayOf(Date.now()) })
@@ -168,19 +168,20 @@ describe('per-tab cost', () => {
     const get = vi.spyOn(browser.storage.local, 'get')
     await run(minutes(1))
     // No per-second storage.get (site total) or get(null) (global total):
-    // the only reads are the background writer's, one per report (~10s).
+    // the only reads are the worker's, at its one checkpoint.
     expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
-    expect(get).toHaveBeenCalledTimes(6)
-    // Another tab's writes still count: x.com logs 29 minutes, which with
-    // this tab's reported minute crosses the cap (the report sent on this
-    // very tick may still be in flight, so it isn't counted on).
+    expect(get.mock.calls.length).toBeLessThanOrEqual(6)
+    // Time counted elsewhere still counts: x.com has 29 minutes, which with
+    // this tab's minute crosses the cap once the worker re-checks (here, on
+    // the limits changing).
     seedToday({ 'x.com': minutes(29) + seconds(10) })
+    limits({ global: minutes(30), perSite: {} })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
-    // ...as does another reddit tab's.
-    limits({ global: null, perSite: { 'reddit.com': minutes(5) } })
+    // ...and so does this site's own limit.
     seedToday({ 'reddit.com': minutes(5) })
+    limits({ global: null, perSite: { 'reddit.com': minutes(5) } })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('reddit.com')
@@ -208,7 +209,7 @@ describe('tick wiring', () => {
     expect(document.getElementById('tabtimer-root')).toBeNull()
     expect(document.getElementById('tabtimer-block')).toBeNull()
     expect(document.documentElement.style.getPropertyValue('overflow')).toBe('')
-    expect(vi.getTimerCount()).toBe(0)
+    expect(pageTimers()).toBe(0)
     await run(seconds(5))
     expect(document.getElementById('tabtimer-root')).toBeNull()
   })

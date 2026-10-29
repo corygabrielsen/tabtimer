@@ -7,6 +7,8 @@ import { SCHEMA } from '../core/schema'
 
 let browser: FakeChrome
 
+const PRESENT = { visible: true, focused: true, media: false, blocked: false }
+
 beforeEach(async () => {
   browser = fakeChrome()
   vi.resetModules()
@@ -26,7 +28,6 @@ describe('storage on install and startup', () => {
       limits: { global: null, perSite: {} },
       prefs: { hidden: false, scale: 1 },
       snoozeUntil: 0,
-      idleState: 'active',
     })
   })
 
@@ -41,7 +42,6 @@ describe('storage on install and startup', () => {
     expect(browser.storage.local.data).toEqual({
       schema: SCHEMA,
       limits: { global: 60_000, perSite: {} },
-      idleState: 'active',
     })
   })
 })
@@ -54,24 +54,28 @@ describe('idle', () => {
     await import('./background')
     await flush()
     expect(browser.idle.setDetectionInterval).toHaveBeenCalledWith(300)
-    expect(browser.storage.local.data.idleState).toBe('locked')
+    const away = () => (browser.storage.session.data.away as { state: string }).state
+    expect(away()).toBe('locked')
     browser.setIdleState('active')
     await flush()
-    expect(browser.storage.local.data.idleState).toBe('active')
+    expect(away()).toBe('active')
   })
 })
 
 describe('messages', () => {
   it('serves the contract to this extension', async () => {
     browser.sender = { id: browser.runtime.id, url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
-    await expect(bus.send('hello', {})).resolves.toEqual({ ok: true, value: { site: 'reddit.com' } })
+    await expect(bus.send('presence', PRESENT)).resolves.toMatchObject({
+      ok: true,
+      value: { site: 'reddit.com', running: true },
+    })
     await expect(bus.send('openOptions', {})).resolves.toEqual({ ok: true, value: null })
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
   })
 
   it('refuses other senders', async () => {
     browser.sender = { id: 'someone-else', url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
-    await expect(bus.send('hello', {})).resolves.toEqual({ ok: false, error: 'forbidden' })
+    await expect(bus.send('presence', PRESENT)).resolves.toEqual({ ok: false, error: 'forbidden' })
   })
 })
 

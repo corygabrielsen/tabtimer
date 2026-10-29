@@ -33,6 +33,38 @@ export function evaluateLimits(
   return null
 }
 
+// The limit a site's time is measured against, and when it is reached.
+export type BlockAt = { at: number; scope: BlockScope; limit: number }
+
+// When this site's page must block, as of `now`: the moment the tighter of
+// its own limit and the all-sites cap is reached if it keeps accruing
+// (`running`), or `now` if it is already over (null: not before something
+// changes). A snooze running past that moment moves it to the snooze's end.
+export function blockAt(
+  limits: Limits,
+  site: string,
+  siteToday: number,
+  globalToday: number,
+  now: number,
+  running: boolean,
+  snoozeUntil: number
+): BlockAt | null {
+  const candidates: Array<{ scope: BlockScope; limit: number; left: number }> = []
+  const siteLimit = limits.perSite[site]
+  if (typeof siteLimit === 'number' && siteLimit > 0) {
+    candidates.push({ scope: 'site', limit: siteLimit, left: Math.max(0, siteLimit - siteToday) })
+  }
+  if (typeof limits.global === 'number' && limits.global > 0) {
+    candidates.push({ scope: 'global', limit: limits.global, left: Math.max(0, limits.global - globalToday) })
+  }
+  // Earliest first; the per-site limit wins a tie (it names the cause).
+  const first = candidates.sort((a, b) => a.left - b.left)[0]
+  if (!first || (first.left > 0 && !running)) {
+    return null
+  }
+  return { at: Math.max(now + first.left, snoozeUntil), scope: first.scope, limit: first.limit }
+}
+
 const isLimit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
 
 export function normalizeLimits(value: unknown): Limits {

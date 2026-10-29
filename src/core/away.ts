@@ -2,17 +2,22 @@
 // (screen lock or screensaver). Pure: no chrome, no DOM.
 //
 // The service worker records every away period it learns of from
-// chrome.idle, and credits a site only the part of each reported span that
-// falls outside them:
+// chrome.idle, and credits a site only the part of each closed interval
+// (core/tracker.ts) that falls outside them:
 //   - locked always pauses;
-//   - idle pauses unless the reporting page is playing media (watching a
-//     video or listening is using the site without touching the input).
+//   - idle pauses unless the page was playing media (watching a video or
+//     listening is using the site without touching the input).
 //
 // Idle is detected late by construction: Chrome reports it only once there
 // has been no input for IDLE_DETECTION_S. The period is therefore dated
 // back to the last input (now - IDLE_DETECTION_MS), and time already
 // credited since then is taken back (the debit returned by observe()).
-import { MAX_SPAN_AGE_MS, type Span } from './messages'
+
+// A stretch of time, [start, end) in epoch ms.
+export type Span = [start: number, end: number]
+
+// How far back a credited span can reach: older periods can't matter.
+export const MAX_SPAN_AGE_MS = 24 * 3600_000
 
 export type IdleState = 'active' | 'idle' | 'locked'
 
@@ -46,8 +51,8 @@ export type AwayState = {
 
 export const AWAY_KEY = 'away'
 
-// Bounds on what storage.session holds. Periods older than any span
-// parseRequest accepts can't matter; credits older than one detection
+// Bounds on what storage.session holds. Periods ended more than
+// MAX_SPAN_AGE_MS ago can't matter; credits older than one detection
 // interval can't be reached by a back-dated period.
 export const MAX_PERIODS = 512
 export const MAX_RECENT = 256

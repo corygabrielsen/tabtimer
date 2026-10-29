@@ -5,23 +5,37 @@
 // Requests are untrusted input: the service worker accepts only what
 // parseRequest returns. A content script never names the site it reports
 // for; the service worker derives it from the sender's URL.
-import type { LimitEdit, Limits } from './limits'
+import type { DayStamp } from './day'
+import type { BlockScope, LimitEdit, Limits } from './limits'
 import { MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
 import type { Site } from './site'
-
-// A stretch of active time, [start, end) in epoch ms.
-export type Span = [start: number, end: number]
+import type { Presence } from './tracker'
 
 type Empty = Record<never, never>
 
+// What a tracked page shows and enforces, as the service worker sees it at
+// `asOf`. The page keeps the display ticking from there: while `running`
+// (this tab's interval is open) both totals grow with the clock.
+export type TabState = {
+  site: Site
+  // The local day the totals are for.
+  day: DayStamp
+  asOf: number
+  // This site's time today, and every tracked site's combined.
+  today: number
+  globalToday: number
+  running: boolean
+  // When the page must block (epoch ms; null: not before something
+  // changes), and the limit that then applies.
+  blockAt: number | null
+  limit: { scope: BlockScope; ms: number } | null
+}
+
 export type Contract = {
-  // content: which site this page counts under.
-  hello: { req: Empty; res: { site: Site } }
-  // content: credit active time to the sender's site. The service worker
-  // assigns it to local days and hours, minus time away from the computer
-  // (core/away.ts). `media`: the page is playing audio or video, which keeps
-  // idle (but not locked) time counting. Replies with the site's total today.
-  addElapsed: { req: { spans: Span[]; media: boolean }; res: { total: number } }
+  // content: the page's visibility, focus, media and block screen changed
+  // (or it was asked). The service worker decides which one tab accrues
+  // time and replies with this tab's state.
+  presence: { req: Presence; res: TabState }
   // extension pages: zero one site's time today.
   resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
@@ -33,6 +47,11 @@ export type Contract = {
   // content: open the options page.
   openOptions: { req: Empty; res: null }
 }
+
+// The service worker's message to a tracked page (chrome.tabs.sendMessage):
+// its new state. The page replies with its Presence, which is how the worker
+// asks a page to report again.
+export type StatePush = { type: 'state'; state: TabState }
 
 export type MessageType = keyof Contract
 
@@ -49,23 +68,13 @@ export type Response<K extends MessageType> = { ok: true; value: Contract[K]['re
 export type Origin = 'content' | 'extension'
 
 export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
-  hello: ['content'],
-  addElapsed: ['content'],
+  presence: ['content'],
   resetToday: ['extension'],
   setLimit: ['extension'],
   snooze: ['content', 'extension'],
   setPrefs: ['content', 'extension'],
   openOptions: ['content', 'extension'],
 }
-
-// Bounds on one addElapsed request. A content script reports about every
-// 10 s; these leave room for retries after the worker was unreachable.
-export const MAX_SPANS = 64
-export const MAX_REPORT_MS = 10 * 60_000
-// How far back a span may start (older time is dropped), and how far ahead
-// of the worker's clock it may end.
-export const MAX_SPAN_AGE_MS = 24 * 3600_000
-export const MAX_CLOCK_SKEW_MS = 5_000
 
 export const MAX_LIMIT_MS = 1440 * 60_000
 
@@ -80,27 +89,57 @@ function isSiteString(v: unknown): v is Site {
   return typeof v === 'string' && v.length > 0 && v.length <= 253 && /^[a-z0-9.\-[\]:]+$/.test(v)
 }
 
-function parseSpans(v: unknown, now: number): Span[] | null {
-  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_SPANS) {
+// A Presence: four booleans, nothing else kept. null = reject.
+export function parsePresence(raw: unknown): Presence | null {
+  if (!isObject(raw)) {
     return null
   }
-  let total = 0
-  const spans: Span[] = []
-  for (const span of v) {
-    if (!Array.isArray(span) || span.length !== 2) {
-      return null
-    }
-    const [start, end] = span as unknown[]
-    if (!isFiniteNumber(start) || !isFiniteNumber(end) || end <= start) {
-      return null
-    }
-    if (start < now - MAX_SPAN_AGE_MS || end > now + MAX_CLOCK_SKEW_MS) {
-      return null
-    }
-    total += end - start
-    spans.push([start, end])
+  const { visible, focused, media, blocked } = raw
+  if (
+    typeof visible !== 'boolean' ||
+    typeof focused !== 'boolean' ||
+    typeof media !== 'boolean' ||
+    typeof blocked !== 'boolean'
+  ) {
+    return null
   }
-  return total <= MAX_REPORT_MS ? spans : null
+  return { visible, focused, media, blocked }
+}
+
+// A pushed TabState, checked field by field (content scripts trust only
+// this extension, but a malformed state must not break the page).
+export function parseStatePush(raw: unknown): TabState | null {
+  if (!isObject(raw) || raw.type !== 'state' || !isObject(raw.state)) {
+    return null
+  }
+  const s = raw.state
+  if (typeof s.site !== 'string' || typeof s.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s.day)) {
+    return null
+  }
+  if (!isFiniteNumber(s.asOf) || !isFiniteNumber(s.today) || !isFiniteNumber(s.globalToday)) {
+    return null
+  }
+  if (typeof s.running !== 'boolean' || (s.blockAt !== null && !isFiniteNumber(s.blockAt))) {
+    return null
+  }
+  let limit: TabState['limit'] = null
+  if (s.limit !== null) {
+    const l = s.limit
+    if (!isObject(l) || (l.scope !== 'site' && l.scope !== 'global') || !isFiniteNumber(l.ms)) {
+      return null
+    }
+    limit = { scope: l.scope, ms: l.ms }
+  }
+  return {
+    site: s.site,
+    day: s.day as DayStamp,
+    asOf: s.asOf,
+    today: s.today,
+    globalToday: s.globalToday,
+    running: s.running,
+    blockAt: s.blockAt,
+    limit,
+  }
 }
 
 function parseLimitMs(v: unknown): number | null | undefined {
@@ -129,26 +168,19 @@ function parsePrefs(raw: Raw): Partial<Prefs> | null {
 
 // Validate an incoming message against the contract. The result is rebuilt
 // from the checked fields only, so anything else in the payload (a `site` on
-// a content request, say) is dropped. `now` bounds addElapsed spans.
-// null = reject.
-export function parseRequest(raw: unknown, now: number): Request | null {
+// a content request, say) is dropped. null = reject.
+export function parseRequest(raw: unknown): Request | null {
   if (!isObject(raw)) {
     return null
   }
   switch (raw.type) {
-    case 'hello':
-      return { type: 'hello' }
     case 'snooze':
       return { type: 'snooze' }
     case 'openOptions':
       return { type: 'openOptions' }
-    case 'addElapsed': {
-      const spans = parseSpans(raw.spans, now)
-      // `media` is optional on the wire (absent = no media playing).
-      if (!spans || (raw.media !== undefined && typeof raw.media !== 'boolean')) {
-        return null
-      }
-      return { type: 'addElapsed', spans, media: raw.media === true }
+    case 'presence': {
+      const presence = parsePresence(raw)
+      return presence ? { type: 'presence', ...presence } : null
     }
     case 'resetToday':
       return isSiteString(raw.site) ? { type: 'resetToday', site: raw.site } : null
@@ -172,55 +204,4 @@ export function parseRequest(raw: unknown, now: number): Request | null {
     default:
       return null
   }
-}
-
-// Add `ms` of active time ending at `end` to a list of spans, extending the
-// last span when the new one continues it (the usual tick-after-tick case).
-export function appendSpan(spans: Span[], end: number, ms: number): void {
-  if (ms <= 0) {
-    return
-  }
-  const last = spans.at(-1)
-  if (last && Math.abs(end - ms - last[1]) <= 1) {
-    last[1] += ms
-  } else {
-    spans.push([end - ms, end])
-  }
-}
-
-// Total time in `spans` that falls at or after `from`.
-export function spanTimeSince(spans: Iterable<Span>, from: number): number {
-  let total = 0
-  for (const [start, end] of spans) {
-    total += Math.max(0, end - Math.max(start, from))
-  }
-  return total
-}
-
-// Group spans into addElapsed requests within the bounds parseRequest
-// enforces at `now`: time too old to be accepted is dropped, and spans too
-// long for one request are cut.
-export function batchSpans(spans: Span[], now: number): Span[][] {
-  const batches: Span[][] = []
-  let batch: Span[] = []
-  let batchMs = 0
-  const oldest = now - MAX_SPAN_AGE_MS
-  for (const [rawStart, end] of spans) {
-    let start = Math.max(rawStart, oldest)
-    while (start < end) {
-      if (batch.length === MAX_SPANS || batchMs === MAX_REPORT_MS) {
-        batches.push(batch)
-        batch = []
-        batchMs = 0
-      }
-      const cut = Math.min(end, start + (MAX_REPORT_MS - batchMs))
-      batch.push([start, cut])
-      batchMs += cut - start
-      start = cut
-    }
-  }
-  if (batch.length > 0) {
-    batches.push(batch)
-  }
-  return batches
 }

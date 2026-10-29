@@ -20,7 +20,7 @@ limit you set for it.
 - **Honest counting** — time only counts while the tab is visible and focused.
   It pauses after 5 minutes without keyboard or mouse input and while the
   screen is locked (playing video or audio keeps counting), and sleep never
-  counts.
+  counts. Only one tab in one window counts at a time.
 - **At a glance** — a small timer at the top of tracked pages (click to switch
   between today, this visit and time open), and a popup showing today's time
   against the limit.

@@ -1,16 +1,7 @@
 import type FocusTracker from './FocusTracker'
-import { chromeStore } from '../chrome/store'
 import { bus as chromeBus } from '../chrome/bus'
-import {
-  DEFAULT_LIMITS,
-  SNOOZE_MS,
-  evaluateLimits,
-  normalizeLimits,
-  type BlockReason,
-  type Limits,
-} from '../core/limits'
-import { LIMITS_KEY, SNOOZE_KEY, normalizeSnooze } from '../core/schema'
-import type { Bus, Store, StoreChanges } from '../ports'
+import { SNOOZE_MS, type BlockReason } from '../core/limits'
+import type { Bus } from '../ports'
 import { formatTime } from '../format'
 import { t } from '../i18n'
 
@@ -138,11 +129,8 @@ export default class BlockScreen {
   private detailLine: HTMLDivElement
   private snoozeButton: HTMLButtonElement
   private manageButton: HTMLButtonElement
-  private site = ''
-  private limits: Limits = DEFAULT_LIMITS
-  private unsubscribeStore: () => void
-  private snoozeUntil = 0
   private blocked = false
+  private unsubscribeState: () => void
   // Where focus was before blocking, restored on dismissal.
   private previousFocus: Element | null = null
   // The page's own inline overflow on <html> and <body>, saved only while this
@@ -154,9 +142,8 @@ export default class BlockScreen {
   private frozenElements = new Map<Element, ScrollPosition>()
 
   constructor(
-    private tracker: FocusTracker,
-    private bus: Bus = chromeBus,
-    private store: Store = chromeStore('local')
+    private tracker: Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'onState'>,
+    private bus: Bus = chromeBus
   ) {
     document.getElementById(HOST_ID)?.remove()
     this.host = document.createElement('div')
@@ -201,7 +188,7 @@ export default class BlockScreen {
     this.snoozeButton.textContent = t('blockSnooze', String(Math.round(SNOOZE_MS / 60_000)))
     this.snoozeButton.addEventListener('click', () => {
       this.unblock()
-      void this.bus.send('snooze', {})
+      void this.tracker.snooze()
     })
 
     this.manageButton = document.createElement('button')
@@ -217,36 +204,16 @@ export default class BlockScreen {
     this.shadow.append(style, this.dialog)
     document.body.appendChild(this.host)
 
-    void this.refresh()
-    this.unsubscribeStore = this.store.onChanged(this.handleStorageChange)
+    // A new state from the service worker may block or lift the block.
+    this.unsubscribeState = tracker.onState(() => this.tick())
+    this.tick()
   }
 
-  // Re-read limits and snooze state, then re-evaluate.
-  async refresh(): Promise<void> {
-    const [limits, snoozeUntil] = await Promise.all([
-      this.store.get(LIMITS_KEY).catch(() => undefined),
-      this.store.get(SNOOZE_KEY).catch(() => undefined),
-    ])
-    this.limits = normalizeLimits(limits)
-    this.snoozeUntil = normalizeSnooze(snoozeUntil)
-    await this.tick()
-  }
-
-  // Called each second by the controller (visible tab only) and on pref change.
-  async tick(): Promise<void> {
-    const hasAny = this.limits.global !== null || Object.keys(this.limits.perSite).length > 0
-    if (!hasAny || Date.now() < this.snoozeUntil) {
-      this.unblock()
-      return
-    }
-    // The site and totals come from the service worker and storage; until
-    // they can be read there is nothing to compare against.
-    const totals = await this.tracker.readTotals().catch(() => null)
-    if (!totals) {
-      return
-    }
-    this.site = totals.site ?? ''
-    const reason = evaluateLimits(this.limits, this.site, totals.siteToday, totals.globalToday)
+  // Called each second by content.ts (visible tab only) and whenever the
+  // service worker's state for the tab changes. The worker decides when the
+  // page blocks (TabState.blockAt); until it has answered, nothing does.
+  tick(): void {
+    const reason = this.tracker.blockReason()
     if (reason) {
       this.block(reason)
     } else {
@@ -255,7 +222,7 @@ export default class BlockScreen {
   }
 
   private block(reason: BlockReason) {
-    this.hostLine.textContent = reason.scope === 'site' ? this.site : t('blockAllSites')
+    this.hostLine.textContent = reason.scope === 'site' ? (this.tracker.site ?? '') : t('blockAllSites')
     this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
     if (this.blocked) {
       return
@@ -292,12 +259,12 @@ export default class BlockScreen {
   }
 
   destroy() {
+    this.unsubscribeState()
     if (this.blocked) {
       this.blocked = false
       this.tracker.setBlocked(false)
       this.removePageListeners()
     }
-    this.unsubscribeStore()
     this.restoreScroll()
     this.host.remove()
     this.restoreFocus()
@@ -513,21 +480,6 @@ export default class BlockScreen {
     const current = order.indexOf(this.shadow.activeElement as HTMLButtonElement)
     const next = current === -1 ? this.snoozeButton : order[(current + 1) % order.length]!
     next.focus({ preventScroll: true })
-  }
-
-  private handleStorageChange = (changes: StoreChanges) => {
-    let dirty = false
-    if (changes[LIMITS_KEY]) {
-      this.limits = normalizeLimits(changes[LIMITS_KEY].newValue)
-      dirty = true
-    }
-    if (changes[SNOOZE_KEY]) {
-      this.snoozeUntil = normalizeSnooze(changes[SNOOZE_KEY].newValue)
-      dirty = true
-    }
-    if (dirty) {
-      void this.tick()
-    }
   }
 }
 

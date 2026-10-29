@@ -64,7 +64,7 @@ export function resetPageState(): void {
 
 // Drain pending microtasks (the fake chrome delivers callbacks/events as
 // microtasks, and the code chains several promises per operation).
-export async function flush(rounds = 50): Promise<void> {
+export async function flush(rounds = 200): Promise<void> {
   for (let i = 0; i < rounds; i++) {
     await Promise.resolve()
   }

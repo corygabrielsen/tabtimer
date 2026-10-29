@@ -1,20 +1,72 @@
 import { chromeStore } from '../chrome/store'
-import { serveRouter } from '../chrome/bus'
+import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
+import { CHECKPOINT_MS } from '../core/tracker'
+import { LIMITS_KEY, SNOOZE_KEY } from '../core/schema'
+import { siteOfUrl } from '../core/site'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
 import { createRouter } from './router'
 import { installTestHook } from './testHook'
+import { createTracker } from './tracker'
 
-const ledger = createLedger(chromeStore('local'), chromeStore('session'), systemClock)
+const CHECKPOINT_ALARM = 'checkpoint'
+
+const session = chromeStore('session')
+const ledger = createLedger(chromeStore('local'), session, systemClock)
+
+// The checkpoint alarm runs only while an interval is open, so the worker
+// sleeps while nothing is being counted. Created only if missing: creating
+// it again would push its next run back.
+async function alarm(on: boolean): Promise<void> {
+  const existing = await chrome.alarms.get(CHECKPOINT_ALARM)
+  if (on && !existing) {
+    await chrome.alarms.create(CHECKPOINT_ALARM, { periodInMinutes: CHECKPOINT_MS / 60_000 })
+  } else if (!on && existing) {
+    await chrome.alarms.clear(CHECKPOINT_ALARM)
+  }
+}
+
+const tracker = createTracker({ ledger, session, send: sendState, alarm })
+
+// Every listener is registered synchronously at the top level, as MV3
+// requires: any of these events can be what starts the worker.
+const dispatch = (event: Parameters<typeof tracker.dispatch>[0]) => void tracker.dispatch(event).catch(() => undefined)
+
+chrome.tabs.onActivated.addListener(({ tabId, windowId }) => dispatch({ kind: 'activated', tabId, windowId }))
+chrome.tabs.onRemoved.addListener((tabId) => dispatch({ kind: 'removed', tabId }))
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  // The URL is visible only on granted sites; a load whose URL can't be
+  // seen went to a site that isn't tracked.
+  if (change.url !== undefined || change.status === 'loading' || change.discarded) {
+    const url = change.discarded ? undefined : (change.url ?? tab.url)
+    dispatch({ kind: 'navigated', tabId, site: url === undefined ? null : siteOfUrl(url) })
+  }
+})
+chrome.windows.onFocusChanged.addListener((windowId) =>
+  dispatch({ kind: 'windowFocus', windowId: windowId === chrome.windows.WINDOW_ID_NONE ? null : windowId })
+)
+chrome.alarms.onAlarm.addListener(({ name }) => {
+  if (name === CHECKPOINT_ALARM) {
+    dispatch({ kind: 'checkpoint' })
+  }
+})
+// Limits and the snooze decide when pages block: tell them of a change,
+// whoever made it.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && (LIMITS_KEY in changes || SNOOZE_KEY in changes)) {
+    void tracker.refresh().catch(() => undefined)
+  }
+})
 
 // Time away from the computer (idle or locked) isn't counted. The state is
 // read again on every worker start; changes arrive as events.
-watchIdle(ledger)
-void syncIdle(ledger).catch(() => undefined)
+watchIdle(tracker)
+void syncIdle(tracker).catch(() => undefined)
+void tracker.resume().catch(() => undefined)
 if (__TABTIMER_E2E__) {
-  installTestHook(ledger)
+  installTestHook(tracker)
 }
 
 // Storage first (a different schema is cleared, expired days pruned), then
@@ -22,8 +74,6 @@ if (__TABTIMER_E2E__) {
 async function boot(): Promise<void> {
   await ledger.ensureSchema().catch(() => false)
   await ledger.prune().catch(() => undefined)
-  // A cleared store lost the mirrored idle state.
-  await syncIdle(ledger).catch(() => undefined)
   await syncContentScripts()
 }
 
@@ -43,9 +93,9 @@ chrome.permissions.onRemoved.addListener(() => void syncContentScripts())
 serveRouter(
   createRouter({
     ledger,
+    tracker,
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
-    now: () => systemClock.now(),
     openOptions: () => chrome.runtime.openOptionsPage(),
   })
 )
