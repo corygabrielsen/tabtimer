@@ -27,6 +27,27 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el
 }
 
+// Make `nodes` the children of `parent`, in order, without moving the child
+// that holds focus: a moved or removed node loses focus (and fires blur),
+// which would end an edit in progress there. Its siblings move around it.
+export function placeChildren(parent: Element, nodes: Node[]): void {
+  const active = document.activeElement
+  const kept = nodes.find((node) => node.parentNode === parent && active !== null && node.contains(active)) as
+    ChildNode | undefined
+  if (!kept) {
+    parent.replaceChildren(...nodes)
+    return
+  }
+  for (const child of [...parent.childNodes]) {
+    if (!nodes.includes(child)) {
+      child.remove()
+    }
+  }
+  const at = nodes.indexOf(kept)
+  kept.before(...nodes.slice(0, at))
+  kept.after(...nodes.slice(at + 1))
+}
+
 export function byId<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null
 }

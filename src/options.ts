@@ -16,7 +16,7 @@ import { chromeStore, loadThenPatch } from './chrome/store'
 import type { StoreChanges } from './ports'
 import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
-import { h, byId, firstDayOfWeek, flashSaved, formatDuration, setDocumentLang, uiLocale } from './ui'
+import { h, byId, firstDayOfWeek, flashSaved, formatDuration, placeChildren, setDocumentLang, uiLocale } from './ui'
 import {
   createLimitPicker,
   createSiteLimitPicker,
@@ -141,7 +141,8 @@ function paintToday(el: HTMLElement, host: string): void {
   el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
 }
 
-function stopButton(host: string, name: string, origins: string[]): HTMLButtonElement {
+// `origins`: the row's grants as of the latest render.
+function stopButton(host: string, name: string, origins: () => string[]): HTMLButtonElement {
   const stop = h(
     'button',
     { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', name), 'data-host': host },
@@ -149,12 +150,12 @@ function stopButton(host: string, name: string, origins: string[]): HTMLButtonEl
   )
   stop.addEventListener('click', () => {
     pendingFocus = { list: 'tracked', host }
-    void disable(origins)
+    void disable(origins())
   })
   return stop
 }
 
-function siteRow(host: string, origins: string[]): HTMLLIElement {
+function siteRow(host: string, origins: () => string[]): HTMLLIElement {
   const label = LABELS.get(host)
   const name = h(
     'div',
@@ -172,7 +173,7 @@ function siteRow(host: string, origins: string[]): HTMLLIElement {
 // row, with nothing to count or limit apart.
 const ALL_SITES = '*'
 
-function allSitesRow(origins: string[]): HTMLLIElement {
+function allSitesRow(origins: () => string[]): HTMLLIElement {
   const name = t('optionsGlobalLimit')
   return h(
     'li',
@@ -225,6 +226,24 @@ function restoreFocus(prevOrder: { tracked: string[]; suggested: string[] }) {
 
 let order = { tracked: [] as string[], suggested: [] as string[] }
 
+// The rows and chips, by host, kept across renders: a grant change updates
+// the list around them, so a limit being edited in a row is never rebuilt
+// or moved (that blurs it, and a blur saves what was typed so far).
+const rows = new Map<string, HTMLLIElement>()
+const rowOrigins = new Map<string, string[]>()
+const chips = new Map<string, HTMLLIElement>()
+
+function rowFor(host: string, origins: string[]): HTMLLIElement {
+  rowOrigins.set(host, origins)
+  let li = rows.get(host)
+  if (!li) {
+    const current = () => rowOrigins.get(host) ?? []
+    li = host === ALL_SITES ? allSitesRow(current) : siteRow(host, current)
+    rows.set(host, li)
+  }
+  return li
+}
+
 // Grant changes can arrive back to back; only the newest render may paint, or
 // a slower, older one would restore rows that were just removed.
 let renderSeq = 0
@@ -251,29 +270,41 @@ async function render() {
   if (openLimitHost !== null && !tracked.includes(openLimitHost)) {
     openLimitHost = null
   }
-  rowLimits.clear()
-  const rows = tracked.map((host) => siteRow(host, sites.get(host)!))
-  if (grants.all.length > 0) {
-    rows.push(allSitesRow(grants.all))
+  const hosts = grants.all.length > 0 ? [...tracked, ALL_SITES] : tracked
+  for (const host of rows.keys()) {
+    if (!hosts.includes(host)) {
+      rows.delete(host)
+      rowOrigins.delete(host)
+      rowLimits.delete(host)
+    }
   }
-  trackedUl.replaceChildren(...rows)
-  byId('tracked-empty')?.toggleAttribute('hidden', rows.length > 0)
+  const items = hosts.map((host) => rowFor(host, host === ALL_SITES ? grants.all : sites.get(host)!))
+  placeChildren(trackedUl, items)
+  byId('tracked-empty')?.toggleAttribute('hidden', items.length > 0)
   const count = byId('tracked-count')
   if (count) {
-    count.textContent = rows.length > 0 ? String(rows.length) : ''
+    count.textContent = items.length > 0 ? String(items.length) : ''
   }
-  document.querySelector('.cols')?.toggleAttribute('hidden', rows.length === 0)
+  document.querySelector('.cols')?.toggleAttribute('hidden', items.length === 0)
 
   // Every site granted: nothing left to suggest.
   const untracked = grants.all.length > 0 ? [] : SUGGESTED_SITES.filter((s) => !sites.has(s.host))
-  suggestedUl.replaceChildren(...untracked.map((s) => suggestionChip(s.label, s.host)))
+  const chipFor = (label: string, host: string) => {
+    const chip = chips.get(host) ?? suggestionChip(label, host)
+    chips.set(host, chip)
+    return chip
+  }
+  placeChildren(
+    suggestedUl,
+    untracked.map((s) => chipFor(s.label, s.host))
+  )
   // Every suggestion tracked: no Suggested section at all.
   document.querySelector('.suggest-head')?.toggleAttribute('hidden', untracked.length === 0)
   suggestedUl.hidden = untracked.length === 0
 
   const prev = order
   order = {
-    tracked: grants.all.length > 0 ? [...tracked, ALL_SITES] : tracked,
+    tracked: hosts,
     suggested: untracked.map((s) => s.host),
   }
   restoreFocus(prev)

@@ -312,6 +312,35 @@ describe('a selected site', () => {
     expect(row('reddit.com').querySelector('.site-meter')).toBeNull()
   })
 
+  // U1: each render rebuilt the list and moved the picker into a new row;
+  // the move blurred the custom field, whose blur saved the "4" typed on
+  // the way to "45" and blocked the site.
+  it('U1: keeps a custom limit being typed through a live update', async () => {
+    click(row('reddit.com'))
+    const panel = $('site-panel')
+    const custom = [...$('site-panel').querySelectorAll<HTMLElement>('[role="radio"]')].at(-1)!
+    click(custom)
+    const input = $<HTMLInputElement>('usage-limit-custom')
+    const blurs = vi.fn()
+    input.addEventListener('blur', blurs)
+    input.value = '4'
+    input.dispatchEvent(new Event('input'))
+    browser.storage.local.set(day('2026-10-28', { 'reddit.com': { 9: 11, 14: 38 }, 'zzz.com': { 16: 90 } }))
+    await flush()
+    expect(row('reddit.com').textContent).toContain('49 min')
+    // Not moved (happy-dom doesn't blur a moved node; Chromium does).
+    expect($('site-panel')).toBe(panel)
+    expect(panel.closest('li')).toBe(row('reddit.com').closest('li'))
+    expect(blurs).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(input)
+    expect(input.closest('[hidden]')).toBeNull()
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 30 } })
+    input.value = '45'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flush()
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ perSite: { 'reddit.com': 45 } })
+  })
+
   it('stays listed in a period it had no time in', () => {
     click(row('youtube.com'))
     click($('prev'))

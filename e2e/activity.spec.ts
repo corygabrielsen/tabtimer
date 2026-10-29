@@ -1,5 +1,17 @@
 import type { BrowserContext, Page, Worker } from '@playwright/test'
-import { test, expect, seed, today, todayKey, openPopup, clickInShadow, LIMITS_KEY, BLOCK_ID, MINUTE } from './fixtures'
+import {
+  test,
+  expect,
+  seed,
+  read,
+  today,
+  todayKey,
+  openPopup,
+  clickInShadow,
+  LIMITS_KEY,
+  BLOCK_ID,
+  MINUTE,
+} from './fixtures'
 
 // The activity page: reached from the popup, the settings and the block
 // screen, and usable on its own (periods, a site's limit, the table, the
@@ -132,6 +144,29 @@ test('a selected site shows its limit, and a new limit there blocks and unblocks
 
   await page.getByRole('button', { name: 'Show all sites' }).click()
   await expect(page.locator('#filter')).toBeHidden()
+})
+
+// U1: a live update re-rendered the list and moved the picker; Chromium
+// blurs a moved field, and the blur saved the "4" typed on the way to "45".
+test('U1: a live update keeps a custom limit being typed', async ({ context, serviceWorker, extensionId }) => {
+  await seedUsage(serviceWorker)
+  const page = await activity(context, extensionId)
+  await page.locator(`[data-site="${SITE_A}"]`).click()
+  const picker = page.getByRole('radiogroup', { name: `Daily limit for ${SITE_A}` })
+  await picker.getByRole('radio', { name: 'Custom' }).click()
+  const field = page.locator('#usage-limit-custom')
+  await expect(field).toBeFocused()
+  await field.pressSequentially('4')
+  // Time recorded meanwhile, enough to reorder the list.
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 21 * MINUTE, [SITE_B]: 30 * MINUTE }))
+  await expect(page.locator(`[data-site="${SITE_A}"]`)).toContainText('21 min')
+  await expect(page.locator('#site-list .site-btn').first()).toHaveAttribute('data-site', SITE_B)
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue('4')
+  expect(await read(serviceWorker, LIMITS_KEY)).toBeUndefined()
+  await field.pressSequentially('5')
+  await field.press('Enter')
+  await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toMatchObject({ perSite: { [SITE_A]: 45 } })
 })
 
 test('shows the chart as a table', async ({ context, serviceWorker, extensionId }) => {

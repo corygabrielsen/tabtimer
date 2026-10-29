@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest'
 import { MAX_LIMIT_MINUTES } from './core/limits'
-import { h, firstDayOfWeek, formatDuration, uiLocale, validateMinutes, flashSaved } from './ui'
+import { h, firstDayOfWeek, formatDuration, placeChildren, uiLocale, validateMinutes, flashSaved } from './ui'
 
 describe('h', () => {
   it('builds an element with attributes and text children, never parsing HTML', () => {
@@ -12,6 +12,31 @@ describe('h', () => {
     expect(el.hasAttribute('data-on')).toBe(false)
     expect(el.textContent).toBe('a <b>c')
     expect(el.querySelector('b')).toBeNull()
+  })
+})
+
+describe('placeChildren', () => {
+  it('orders the children around the one holding focus, which never moves', () => {
+    const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((id) => h('li', { id }, h('input', { id: `${id}-in` })))
+    const list = h('ul', {}, a!, b!, c!)
+    document.body.replaceChildren(list)
+    document.getElementById('b-in')!.focus()
+    const blurs = vi.fn()
+    document.getElementById('b-in')!.addEventListener('blur', blurs)
+    const moved = vi.spyOn(b!, 'remove')
+    placeChildren(list, [d!, c!, b!])
+    expect([...list.children].map((li) => li.id)).toEqual(['d', 'c', 'b'])
+    expect(moved).not.toHaveBeenCalled()
+    expect(document.activeElement?.id).toBe('b-in')
+    expect(blurs).not.toHaveBeenCalled()
+  })
+
+  it('replaces them outright when focus is elsewhere', () => {
+    const [a, b] = ['a', 'b'].map((id) => h('li', { id }))
+    const list = h('ul', {}, a!)
+    document.body.replaceChildren(list)
+    placeChildren(list, [b!, a!])
+    expect([...list.children].map((li) => li.id)).toEqual(['b', 'a'])
   })
 })
 
