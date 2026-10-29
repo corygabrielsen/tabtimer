@@ -47,7 +47,12 @@ pnpm typecheck
 pnpm lint
 pnpm format       # or format:check
 pnpm test         # vitest
+pnpm test:e2e     # Playwright: built extension in real Chromium
 ```
+
+`pnpm test:e2e` builds a test variant to `dist-e2e/` (pre-granted access to
+local fixture hosts) and loads it unpacked in Chromium. First run needs
+`pnpm exec playwright install chromium`.
 
 These also run in CI on every push and pull request. See
 [CONTRIBUTING.md](CONTRIBUTING.md).

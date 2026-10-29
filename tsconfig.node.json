@@ -1,0 +1,17 @@
+{
+  // Node-side code: build/test configs and the Playwright e2e suite. Kept apart
+  // from tsconfig.json so Node globals don't leak into the extension sources.
+  // chrome types stay for the code e2e tests evaluate in the service worker.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "chrome"]
+  },
+  "include": [
+    "e2e/**/*",
+    "build.e2e.ts",
+    "playwright.config.ts",
+    "vite.config.ts",
+    "vite.content.config.ts",
+    "vitest.config.ts"
+  ]
+}
