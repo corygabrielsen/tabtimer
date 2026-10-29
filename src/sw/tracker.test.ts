@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createTracker, type TrackerDeps } from './tracker'
-import { createLedger } from './ledger'
+import { createLedger, WORKER_KEY } from './ledger'
 import { chromeStore } from '../chrome/store'
 import { bus } from '../chrome/bus'
 import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY } from '../core/schema'
-import { CHECKPOINT_MS, TRACKER_KEY, type Presence } from '../core/tracker'
+import { CHECKPOINT_MS, type Presence } from '../core/tracker'
 import type { StatePush } from '../core/messages'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
@@ -29,7 +29,6 @@ function worker() {
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), { now: () => now })
   return createTracker({
     ledger,
-    session: chromeStore('session'),
     send: (tabId, doc, push) => {
       sent.push([tabId, doc, push])
       return replies.has(tabId) ? Promise.resolve(replies.get(tabId)) : Promise.reject(new Error('no page'))
@@ -39,7 +38,8 @@ function worker() {
 }
 
 const stored = (site = 'a.com') => siteTotal(normalizeDay(browser.storage.local.data['day:2026-06-10']), site)
-const open = () => (browser.storage.session.data[TRACKER_KEY] as { open: unknown } | undefined)?.open ?? null
+const open = () =>
+  (browser.storage.session.data[WORKER_KEY] as { tracker: { open: unknown } } | undefined)?.tracker.open ?? null
 
 beforeEach(() => {
   browser = fakeChrome()
@@ -67,6 +67,15 @@ describe('presence', () => {
     await expect(tracker.presence(1, { ...PAGE, ...HIDDEN })).resolves.toMatchObject({ today: 30 * S, running: false })
     expect(alarm).toHaveBeenLastCalledWith(false)
     expect(stored()).toBe(30 * S)
+  })
+
+  it('touches the alarm only when the interval opens or closes', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now += 5 * S
+    await tracker.presence(1, { ...PAGE, ...SHOWN, media: true })
+    await tracker.dispatch({ kind: 'checkpoint' })
+    expect(alarm.mock.calls).toEqual([[true]])
   })
 
   it('counts the open interval’s uncredited time in the state it gives', async () => {
@@ -264,7 +273,8 @@ describe('background wiring', () => {
     return response
   }
 
-  const tracked = () => (browser.storage.session.data[TRACKER_KEY] as { open: { tabId: number } | null }).open
+  const tracked = () =>
+    (browser.storage.session.data[WORKER_KEY] as { tracker: { open: { tabId: number } | null } }).tracker.open
 
   beforeEach(async () => {
     vi.useFakeTimers({ now: NOON })

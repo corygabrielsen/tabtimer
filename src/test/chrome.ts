@@ -53,6 +53,8 @@ export class FakeStorageArea {
     return this.complete(this.error, () => snapshot, callback)
   }
 
+  getKeys = (): Promise<string[]> => this.complete(this.error, () => Object.keys(this.data))
+
   set = (items: Record<string, unknown>, callback?: () => void): Promise<void> => {
     const error = this.error
     return this.complete(

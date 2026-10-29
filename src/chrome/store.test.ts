@@ -16,10 +16,18 @@ describe('chromeStore', () => {
     const store = chromeStore('local')
     await store.set({ a: 1, b: 2, c: 3 })
     await expect(store.getAll()).resolves.toEqual({ a: 1, b: 2, c: 3 })
+    await expect(store.keys()).resolves.toEqual(['a', 'b', 'c'])
     await store.remove(['a', 'b'])
     await expect(store.getAll()).resolves.toEqual({ c: 3 })
     await store.clear()
     await expect(store.getAll()).resolves.toEqual({})
+  })
+
+  it('lists keys by reading everything where getKeys is missing (before Chrome 130)', async () => {
+    const area = fakeChrome().storage.local as { getKeys?: unknown; seed: (items: object) => void }
+    delete area.getKeys
+    area.seed({ a: 1, b: 2 })
+    await expect(chromeStore('local').keys()).resolves.toEqual(['a', 'b'])
   })
 
   it('rejects when the storage call fails', async () => {

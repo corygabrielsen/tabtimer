@@ -63,10 +63,8 @@ export type Open = {
   checkpoint: number
 }
 
-// storage.session TRACKER_KEY. `tabs` is keyed by tab id.
+// Kept in storage.session by the service worker. `tabs` is keyed by tab id.
 export type TrackerState = { tabs: Record<string, Attest>; open: Open | null }
-
-export const TRACKER_KEY = 'tracker'
 
 export type TrackerEvent =
   | { kind: 'presence'; tabId: number; attest: Attest }

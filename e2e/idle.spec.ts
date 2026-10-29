@@ -32,7 +32,9 @@ test('headless Chromium reports the user as active, so only the hook moves the s
   await expect
     .poll(() =>
       serviceWorker.evaluate(() =>
-        chrome.storage.session.get('away').then(({ away }) => (away as { state?: string } | undefined)?.state)
+        chrome.storage.session
+          .get('worker')
+          .then(({ worker }) => (worker as { away?: { state?: string } } | undefined)?.away?.state)
       )
     )
     .toBe('active')

@@ -49,7 +49,7 @@ describe('idle', () => {
     await import('./background')
     await flush()
     expect(browser.idle.setDetectionInterval).toHaveBeenCalledWith(300)
-    const away = () => (browser.storage.session.data.away as { state: string }).state
+    const away = () => (browser.storage.session.data.worker as { away: { state: string } }).away.state
     expect(away()).toBe('locked')
     browser.setIdleState('active')
     await flush()

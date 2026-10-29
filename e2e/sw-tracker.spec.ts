@@ -122,8 +122,11 @@ test('two visible windows never count at once: only the focused one does', async
       .poll(() =>
         serviceWorker.evaluate(() =>
           chrome.storage.session
-            .get('tracker')
-            .then(({ tracker }) => (tracker as { open?: { windowId: number } } | undefined)?.open?.windowId ?? null)
+            .get('worker')
+            .then(
+              ({ worker }) =>
+                (worker as { tracker?: { open?: { windowId: number } } } | undefined)?.tracker?.open?.windowId ?? null
+            )
         )
       )
       .toBe(windowId)

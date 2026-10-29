@@ -50,7 +50,6 @@ beforeEach(() => {
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
   const tracker = createTracker({
     ledger,
-    session: chromeStore('session'),
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
   })
@@ -128,17 +127,19 @@ describe('sender policy', () => {
     await handle(presence, content(undefined, { documentId: 'new' }))
     const late = content(undefined, { frameId: 4, documentId: 'old', documentLifecycle: 'pending_deletion' })
     await expect(handle(hidden, late)).resolves.toMatchObject({ ok: true, value: { running: true } })
-    expect(browser.storage.session.data.tracker).toMatchObject({ open: { doc: 'new' } })
+    expect(browser.storage.session.data.worker).toMatchObject({ tracker: { open: { doc: 'new' } } })
   })
 
   it('identifies the tab, its window and its document', async () => {
     await handle(presence, content(undefined, { tab: { id: 3, windowId: 9 }, documentId: 'doc-a' }))
-    expect(browser.storage.session.data.tracker).toMatchObject({
-      open: { tabId: 3, windowId: 9, doc: 'doc-a', site: 'reddit.com' },
+    expect(browser.storage.session.data.worker).toMatchObject({
+      tracker: { open: { tabId: 3, windowId: 9, doc: 'doc-a', site: 'reddit.com' } },
     })
     // A tab without a window id still reports (as window -1).
     await handle(presence, content(undefined, { tab: { id: 4 } }))
-    expect(browser.storage.session.data.tracker).toMatchObject({ open: { tabId: 4, windowId: -1, doc: '' } })
+    expect(browser.storage.session.data.worker).toMatchObject({
+      tracker: { open: { tabId: 4, windowId: -1, doc: '' } },
+    })
   })
 
   it('reserves resets and limits for extension pages (closes key injection)', async () => {
@@ -208,7 +209,9 @@ describe('handlers', () => {
 
   it('take the page’s media flag: while idle, only a page playing media accrues', async () => {
     browser.storage.session.seed({
-      away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
+      worker: {
+        away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
+      },
     })
     await expect(handle(presence, content())).resolves.toMatchObject({ ok: true, value: { running: false } })
     await expect(handle({ ...presence, media: true }, content())).resolves.toMatchObject({

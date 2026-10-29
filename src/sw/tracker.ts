@@ -2,7 +2,7 @@
 // pure reducer (core/tracker.ts) inside the ledger's queue, credits what it
 // closes, and tells pages their new state.
 //
-// No globals: the tracker state lives in storage.session (TRACKER_KEY), so
+// No globals: the tracker state lives in storage.session (sw/ledger.ts), so
 // a worker stopped at any moment resumes where it was on the next event.
 // Pages are told their state by message; a page's reply is its presence,
 // which is how the worker asks a page to report again (`probe`).
@@ -11,21 +11,11 @@ import { blockAt } from '../core/limits'
 import { parsePresence, type StatePush, type TabState } from '../core/messages'
 import { dayTotal, siteTotal, type DayUsage } from '../core/schema'
 import type { Site } from '../core/site'
-import {
-  normalizeTracker,
-  creditEnd,
-  step,
-  TRACKER_KEY,
-  type Attest,
-  type TrackerEvent,
-  type TrackerState,
-} from '../core/tracker'
-import type { Store } from '../ports'
+import { creditEnd, step, type Attest, type TrackerEvent, type TrackerState } from '../core/tracker'
 import type { Ledger, Tx } from './ledger'
 
 export type TrackerDeps = {
   ledger: Pick<Ledger, 'transaction'>
-  session: Store
   // Send a page its state; resolves with its reply (undefined if none).
   // `doc` targets that document ('' = the tab's top frame).
   send: (tabId: number, doc: string, push: StatePush) => Promise<unknown>
@@ -35,14 +25,11 @@ export type TrackerDeps = {
 
 export type Tracker = ReturnType<typeof createTracker>
 
-type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[] }
+// `toggled`: an interval opened where none was, or the reverse.
+type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[]; toggled: boolean }
 
 export function createTracker(deps: TrackerDeps) {
-  const { ledger, session } = deps
-
-  async function load(): Promise<TrackerState> {
-    return normalizeTracker(await session.get(TRACKER_KEY))
-  }
+  const { ledger } = deps
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
@@ -74,13 +61,14 @@ export function createTracker(deps: TrackerDeps) {
   // build a state for besides those the step changed.
   function run(event: TrackerEvent | null, tell: (s: TrackerState) => number[] = () => []): Promise<Outcome> {
     return ledger.transaction(async (tx) => {
-      let state = await load()
+      let state = tx.tracker
+      const wasOpen = state.open !== null
       if (event?.kind === 'idle') {
         await tx.observeIdle(event.state)
       } else if (event?.kind === 'reset') {
         await tx.resetToday(event.site)
       }
-      const idle = await tx.idleState()
+      const idle = tx.idleState()
       const push = new Set<number>()
       const apply = async (e: TrackerEvent) => {
         const result = step(state, e, tx.now, idle)
@@ -101,7 +89,7 @@ export function createTracker(deps: TrackerDeps) {
           await apply({ kind: 'overLimit', tabId: open.tabId })
         }
       }
-      await session.set({ [TRACKER_KEY]: state })
+      tx.tracker = state
       const states = new Map<number, TabState>()
       for (const id of new Set([...push, ...probe, ...tell(state)])) {
         const attest = state.tabs[String(id)]
@@ -109,15 +97,18 @@ export function createTracker(deps: TrackerDeps) {
           states.set(id, await stateOf(id, attest, state))
         }
       }
-      return { state, states, probe }
+      return { state, states, probe, toggled: wasOpen !== (state.open !== null) }
     })
   }
 
-  // Apply an outcome outside the queue: the alarm, then the messages.
-  // Probed pages that reply report their presence, which runs as an event
-  // of its own (and is then told its state).
+  // Apply an outcome outside the queue: the alarm (only when the interval
+  // opened or closed; resume() puts it right on every worker start), then
+  // the messages. Probed pages that reply report their presence, which runs
+  // as an event of its own (and is then told its state).
   async function settle(outcome: Outcome, skip: number | null = null): Promise<void> {
-    await deps.alarm(outcome.state.open !== null).catch(() => undefined)
+    if (outcome.toggled) {
+      await deps.alarm(outcome.state.open !== null).catch(() => undefined)
+    }
     const probes = new Set(outcome.probe)
     await Promise.all(
       [...outcome.states].map(async ([tabId, state]) => {
@@ -162,8 +153,8 @@ export function createTracker(deps: TrackerDeps) {
 
     // The worker started: put the checkpoint alarm in line with the state.
     resume: async (): Promise<void> => {
-      const state = await ledger.transaction(() => load())
-      await deps.alarm(state.open !== null).catch(() => undefined)
+      const { open } = await ledger.transaction(async (tx) => tx.tracker)
+      await deps.alarm(open !== null).catch(() => undefined)
     },
   }
 }

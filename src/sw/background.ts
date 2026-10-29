@@ -15,8 +15,7 @@ import { createTracker } from './tracker'
 const CHECKPOINT_ALARM = 'checkpoint'
 const ACTIVITY_PAGE = 'usage.html'
 
-const session = chromeStore('session')
-const ledger = createLedger(chromeStore('local'), session, systemClock)
+const ledger = createLedger(chromeStore('local'), chromeStore('session'), systemClock)
 
 // The checkpoint alarm runs only while an interval is open, so the worker
 // sleeps while nothing is being counted. Created only if missing: creating
@@ -30,7 +29,7 @@ async function alarm(on: boolean): Promise<void> {
   }
 }
 
-const tracker = createTracker({ ledger, session, send: sendState, alarm })
+const tracker = createTracker({ ledger, send: sendState, alarm })
 
 // Every listener is registered synchronously at the top level, as MV3
 // requires: any of these events can be what starts the worker.
