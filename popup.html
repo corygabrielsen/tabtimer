@@ -26,6 +26,10 @@
             <span id="today">00:00:00</span>
           </p>
           <div id="meter" class="meter" role="meter" aria-valuemin="0" hidden></div>
+          <div class="timeline">
+            <div id="strip" class="strip" role="img"></div>
+            <div id="strip-axis" class="strip-axis" aria-hidden="true"></div>
+          </div>
           <p id="summary" class="summary" aria-live="polite"></p>
         </div>
 
@@ -55,6 +59,9 @@
 
         <div class="actions">
           <button id="reset-btn" type="button" class="btn btn-quiet" data-i18n="popupResetToday">Reset today</button>
+          <a id="activity-link" class="link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
+            >See all activity</a
+          >
         </div>
       </section>
 

@@ -105,6 +105,70 @@ body {
   color: var(--ink-2);
 }
 
+/* Today on this site as a timeline: quiet bars on a baseline, faint marks
+   every six hours named below, and a short tick where now falls. Set apart
+   from the meter above and drawn in a lighter ink, so the two don't read as
+   one control. */
+.timeline {
+  --strip-on: var(--ink-3);
+  --strip-rule: var(--rule);
+  margin-top: var(--s-5);
+}
+
+.strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  align-items: end;
+  gap: 2px;
+  height: 16px;
+  border-bottom: 1px solid var(--strip-rule);
+}
+
+.strip span {
+  height: calc(var(--v, 0) * 100%);
+  border-radius: 1px 1px 0 0;
+  background: var(--strip-on);
+}
+
+.strip span[data-on] {
+  min-height: 2px;
+}
+
+.strip .mark,
+.strip .now {
+  position: absolute;
+  width: 1px;
+}
+
+.strip .mark {
+  top: 0;
+  bottom: 0;
+  background: var(--strip-rule);
+}
+
+.strip .now {
+  bottom: -4px;
+  height: 7px;
+  margin-left: -0.5px;
+  background: var(--ink-2);
+}
+
+.strip-axis {
+  position: relative;
+  height: 14px;
+  margin-top: 3px;
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.strip-axis span {
+  position: absolute;
+  top: 0;
+  white-space: nowrap;
+}
+
 /* Over the limit: the face inverts. The only emphatic device in the UI. */
 .hero[data-state='over'] {
   --meter-on: var(--paper);
@@ -115,8 +179,18 @@ body {
 }
 
 .hero[data-state='over'] .status,
-.hero[data-state='over'] .summary {
+.hero[data-state='over'] .summary,
+.hero[data-state='over'] .strip-axis {
   color: var(--paper);
+}
+
+.hero[data-state='over'] .timeline {
+  --strip-on: var(--paper);
+  --strip-rule: var(--ink-2);
+}
+
+.hero[data-state='over'] .strip .now {
+  background: var(--paper);
 }
 
 /* Snoozed: still over, but blocking is paused. Dashed = temporary. */
@@ -176,8 +250,18 @@ body {
 
 .actions {
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  justify-content: space-between;
   margin: var(--s-2) 0 0 calc(-1 * var(--s-2));
+}
+
+.link {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.link:hover {
+  color: var(--ink);
 }
 
 #reset-btn[data-armed] {

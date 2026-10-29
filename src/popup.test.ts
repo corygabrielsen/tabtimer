@@ -143,6 +143,44 @@ describe('popup on a tracked site', () => {
     expect($('today').textContent).toBe('01:00:00')
   })
 
+  it('shows today on this site by hour, and links to all activity', async () => {
+    const at = (hour: number) => new Date(new Date().setHours(hour, 0, 0, 0))
+    seedToday({ 'reddit.com': 20 * MIN }, at(9))
+    seedToday({ 'youtube.com': 5 * MIN }, at(10))
+    await openReddit()
+    const strip = $('strip')
+    expect(strip.getAttribute('role')).toBe('img')
+    expect(strip.getAttribute('aria-label')).toBe('Today on reddit.com, by hour')
+    const bars = [...strip.querySelectorAll<HTMLElement>('span')]
+    expect(bars).toHaveLength(24)
+    expect(bars[9]!.style.getPropertyValue('--v')).toBe('1')
+    expect(bars[9]!.hasAttribute('data-on')).toBe(true)
+    expect(bars[10]!.style.getPropertyValue('--v')).toBe('0')
+    expect(bars[10]!.hasAttribute('data-on')).toBe(false)
+    const link = $<HTMLAnchorElement>('activity-link')
+    expect(link.textContent).toBe('See all activity')
+    expect(link.getAttribute('href')).toBe('usage.html')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('reads as a timeline: hour marks, their names, and now', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['Date'] })
+    await openReddit()
+    const marks = [...$('strip').querySelectorAll<HTMLElement>('.mark')].map((m) => m.style.left)
+    expect(marks).toEqual(['0%', '25%', '50%', '75%'])
+    const axis = $('strip-axis')
+    expect(axis.getAttribute('aria-hidden')).toBe('true')
+    expect([...axis.children].map((l) => l.textContent)).toEqual(['12 AM', '6 AM', '12 PM', '6 PM'])
+    expect([...axis.children].map((l) => (l as HTMLElement).style.left)).toEqual(['0%', '25%', '50%', '75%'])
+    expect($('strip').querySelector<HTMLElement>('.now')?.style.left).toBe('62.5%')
+  })
+
+  it('scales a quiet day’s strip to a floor, not its one busy minute', async () => {
+    seedToday({ 'reddit.com': 2 * MIN }, new Date(new Date().setHours(9, 0, 0, 0)))
+    await openReddit()
+    expect($('strip').querySelectorAll<HTMLElement>('span')[9]!.style.getPropertyValue('--v')).toBe('0.2')
+  })
+
   it('treats a granted subdomain visit as the same tracked site', async () => {
     await openPopup({ id: 1, url: 'https://new.reddit.com/r/x' })
     expect(visibleSection()).toEqual(['tracked'])
