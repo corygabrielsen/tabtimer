@@ -4,6 +4,28 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-10-28
+
+### Changed
+
+- Redesigned popup: the current site's time leads, with a meter toward its
+  limit, how much time is left, and a clear state (tracking, limit reached,
+  snoozed, not tracked, or a page that can't be tracked) with the one action
+  that state needs.
+- Redesigned settings page, grouped into Sites, Daily limits, On-page timer and
+  Privacy. Changes save as you make them, with inline validation; suggested
+  sites are one-tap chips, and the tracked sites table shows today's time.
+- Light and dark themes follow the system setting, and all text meets WCAG AA
+  contrast, including the on-page timer and block screen.
+- "Reset today" in the popup asks for a second click to confirm.
+
+### Fixed
+
+- Typing a limit in the popup no longer saves each keystroke (typing "30"
+  briefly set a 1-minute limit and could block the page at once).
+- The settings page no longer briefly shows sites you just removed after
+  quick back-to-back changes.
+
 ## [1.1.1] - 2026-10-28
 
 ### Fixed
@@ -57,6 +79,7 @@ All notable changes to Tab Timer. The format follows
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.2.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/corygabrielsen/tabtimer/releases/tag/v1.0.0
