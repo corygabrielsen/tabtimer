@@ -1,5 +1,5 @@
-import type Model from './Model'
-import { baseHost } from './storage'
+import type Model from './FocusTracker'
+import { baseHost } from '../storage'
 import {
   SNOOZE_MS,
   evaluateLimits,
@@ -11,10 +11,10 @@ import {
   BLOCK_SNOOZE_KEY,
   type BlockReason,
   type Limits,
-} from './limits'
-import { sendMessage } from './messages'
-import { formatTime } from './format'
-import { t } from './i18n'
+} from '../core/limits'
+import { sendMessage } from '../messages'
+import { formatTime } from '../format'
+import { t } from '../i18n'
 
 const HOST_ID = 'tabtimer-block'
 const MAX_Z_INDEX = 2147483647

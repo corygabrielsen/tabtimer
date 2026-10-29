@@ -1,7 +1,7 @@
 // Shared fixtures for content-script tests: a fake clock, the real background
 // single-writer, and teardown for Models.
 import { vi } from 'vitest'
-import Model from '../Model'
+import Model from '../content/FocusTracker'
 import { todayKeyForHost } from '../storage'
 import { fakeChrome } from './chrome'
 import { resetPageState } from './dom'
@@ -10,7 +10,7 @@ import { resetPageState } from './dom'
 // in storage exactly as in the extension.
 export async function startBackground(): Promise<void> {
   vi.resetModules()
-  await import('../background')
+  await import('../sw/background')
 }
 
 export function useClock(now: Date): void {

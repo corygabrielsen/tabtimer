@@ -31,7 +31,7 @@
     "open_in_tab": true
   },
   "background": {
-    "service_worker": "src/background.ts",
+    "service_worker": "src/sw/background.ts",
     "type": "module"
   },
   "permissions": ["storage", "scripting", "activeTab"],

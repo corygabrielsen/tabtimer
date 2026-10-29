@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://old.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Blocker from './Blocker'
-import Model from './Model'
-import { LIMITS_KEY, BLOCK_SNOOZE_KEY, SNOOZE_MS, type Limits } from './limits'
-import { todayKeyForHost } from './storage'
-import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, text, trackShadowRoots } from './test/dom'
-import { disposeModels, minutes, startBackground, trackModel, useClock } from './test/content'
+import Blocker from './BlockScreen'
+import Model from './FocusTracker'
+import { LIMITS_KEY, BLOCK_SNOOZE_KEY, SNOOZE_MS, type Limits } from '../core/limits'
+import { todayKeyForHost } from '../storage'
+import { fakeChrome, type FakeChrome } from '../test/chrome'
+import { click, flush, text, trackShadowRoots } from '../test/dom'
+import { disposeModels, minutes, startBackground, trackModel, useClock } from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 

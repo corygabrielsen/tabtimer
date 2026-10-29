@@ -1,6 +1,6 @@
 import Timer, { TimerState, TimerType } from './Timer'
-import { storage, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost } from './storage'
-import { sendMessage } from './messages'
+import { storage, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost } from '../storage'
+import { sendMessage } from '../messages'
 
 export type ElapsedEntry = {
   elapsed: number

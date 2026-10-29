@@ -1,5 +1,5 @@
-import { storage } from './storage'
-import type { Message, MessageResponse } from './messages'
+import { storage } from '../storage'
+import type { Message, MessageResponse } from '../messages'
 
 // --- Dynamic content-script registration -------------------------------------
 // The extension ships no static content scripts, so installing it requests no

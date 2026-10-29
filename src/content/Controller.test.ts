@@ -5,15 +5,15 @@
 // a page, with the real background writer behind the fake chrome.* — only the
 // clock advances; the Model's single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Blocker from './Blocker'
+import Blocker from './BlockScreen'
 import Controller from './Controller'
-import Model from './Model'
-import View from './View'
-import { LIMITS_KEY, SNOOZE_MS, type Limits } from './limits'
-import { todayKeyForHost } from './storage'
-import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, setPageState, trackShadowRoots } from './test/dom'
-import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from './test/content'
+import Model from './FocusTracker'
+import View from './Overlay'
+import { LIMITS_KEY, SNOOZE_MS, type Limits } from '../core/limits'
+import { todayKeyForHost } from '../storage'
+import { fakeChrome, type FakeChrome } from '../test/chrome'
+import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
+import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from '../test/content'
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot

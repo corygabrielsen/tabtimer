@@ -1,7 +1,7 @@
-import Blocker from './Blocker'
+import Blocker from './BlockScreen'
 import Controller from './Controller'
-import Model from './Model'
-import View from './View'
+import Model from './FocusTracker'
+import View from './Overlay'
 
 // content.js can run more than once in the same page: the popup's "Enable"
 // injects it into an open tab that may still be running an instance from an

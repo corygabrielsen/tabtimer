@@ -1,4 +1,4 @@
-import { storage } from './storage'
+import { storage } from '../storage'
 
 // Daily time limits (all values in milliseconds, matching the stored "today"
 // focus totals). null / absent means no limit.

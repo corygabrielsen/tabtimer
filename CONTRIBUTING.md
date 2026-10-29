@@ -51,7 +51,7 @@ pre-commit install
   user-visible overlay/block behaviour.
 - Tracked sites are chosen at runtime: each is an optional host permission the
   user grants, and the content script is registered for the granted hosts
-  (see `src/sites.ts` and `src/background.ts`).
+  (see `src/sites.ts` and `src/sw/background.ts`).
 
 ## Versioning
 

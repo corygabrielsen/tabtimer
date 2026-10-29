@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://www.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import Model from './Model'
+import Model from './FocusTracker'
 import { TimerState } from './Timer'
-import { todayKeyForHost } from './storage'
-import { sendMessage } from './messages'
-import { fakeChrome, type FakeChrome } from './test/chrome'
-import { flush, setPageState } from './test/dom'
-import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from './test/content'
+import { todayKeyForHost } from '../storage'
+import { sendMessage } from '../messages'
+import { fakeChrome, type FakeChrome } from '../test/chrome'
+import { flush, setPageState } from '../test/dom'
+import { disposeModels, minutes, seconds, startBackground, storedToday, trackModel, useClock } from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 

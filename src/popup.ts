@@ -12,7 +12,7 @@ import {
   LIMITS_KEY,
   BLOCK_SNOOZE_KEY,
   type Limits,
-} from './limits'
+} from './core/limits'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, setDocumentLang } from './ui'
 import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'

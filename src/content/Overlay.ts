@@ -1,8 +1,8 @@
-import type Model from './Model'
-import type { ElapsedState } from './Model'
-import { formatTime } from './format'
-import { storage, HIDDEN_KEY, SCALE_KEY } from './storage'
-import { t } from './i18n'
+import type Model from './FocusTracker'
+import type { ElapsedState } from './FocusTracker'
+import { formatTime } from '../format'
+import { storage, HIDDEN_KEY, SCALE_KEY } from '../storage'
+import { t } from '../i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
 const MAX_Z_INDEX = 2147483647

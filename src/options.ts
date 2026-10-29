@@ -7,7 +7,7 @@ import {
   minutesToMs,
   LIMITS_KEY,
   type Limits,
-} from './limits'
+} from './core/limits'
 import { storage, todayKeyForHost, HIDDEN_KEY, SCALE_KEY, ELAPSED_KEY_PREFIX } from './storage'
 import { localizeDom, t } from './i18n'
 import { h, byId, flashSaved, formatDuration, setDocumentLang } from './ui'

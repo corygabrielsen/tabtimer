@@ -1,6 +1,6 @@
-import type Model from './Model'
-import type View from './View'
-import type Blocker from './Blocker'
+import type Model from './FocusTracker'
+import type View from './Overlay'
+import type Blocker from './BlockScreen'
 
 // Drives the overlay and the block screen off the Model's tick, so a tab has
 // a single per-second interval.
