@@ -8,10 +8,10 @@
 // which is how the worker asks a page to report again (`probe`).
 import { dayOf, startOfDay } from '../core/day'
 import { blockAt, type Limits } from '../core/limits'
-import { parsePresence, type StatePush, type TabState } from '../core/messages'
+import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, type DayUsage, type Prefs } from '../core/schema'
 import type { Site } from '../core/site'
-import { creditEnd, step, type Attest, type TrackerEvent, type TrackerState } from '../core/tracker'
+import { creditEnd, step, type Attest, type Open, type TrackerEvent, type TrackerState } from '../core/tracker'
 import type { Ledger, Tx } from './ledger'
 
 export type TrackerDeps = {
@@ -28,6 +28,11 @@ export type Tracker = ReturnType<typeof createTracker>
 
 type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[] }
 
+// The open interval's uncredited part, today's share of it.
+function uncredited(open: Open, now: number): number {
+  return Math.max(0, creditEnd(open, now) - Math.max(open.since, startOfDay(now)))
+}
+
 export function createTracker(deps: TrackerDeps) {
   const { ledger } = deps
 
@@ -38,9 +43,7 @@ export function createTracker(deps: TrackerDeps) {
       ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs()])
       const [usage, limits, prefs] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
-      // The open interval's uncredited part, today's share of it.
-      const end = open ? creditEnd(open, tx.now) : 0
-      const extra = open ? Math.max(0, end - Math.max(open.since, startOfDay(tx.now))) : 0
+      const extra = open ? uncredited(open, tx.now) : 0
       const today = siteTotal(usage, attest.site) + extra
       const globalToday = dayTotal(usage) + extra
       const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null)
@@ -87,7 +90,7 @@ export function createTracker(deps: TrackerDeps) {
       const openAttest = open ? state.tabs[String(open.tabId)] : undefined
       if (open && openAttest) {
         const s = await stateOf(open.tabId, openAttest, state)
-        if (s.blockAt !== null && s.blockAt <= tx.now) {
+        if (overAt(s, tx.now, 'holds')) {
           await apply({ kind: 'overLimit', tabId: open.tabId })
         }
       }
@@ -151,6 +154,22 @@ export function createTracker(deps: TrackerDeps) {
         const s = tx.tracker
         const known = s.tabs[String(tabId)]?.site === site
         return stater(tx)(tabId, { site }, known ? s : { ...s, open: null })
+      }),
+
+    // An extension page's question: every site's time today, the open
+    // interval's included.
+    todayTotals: (): Promise<TodayTotals> =>
+      ledger.transaction(async (tx) => {
+        const usage = await tx.today()
+        const sites: Record<Site, number> = {}
+        for (const site of Object.keys(usage)) {
+          sites[site] = siteTotal(usage, site)
+        }
+        const open = tx.tracker.open
+        if (open) {
+          sites[open.site] = (sites[open.site] ?? 0) + uncredited(open, tx.now)
+        }
+        return { day: dayOf(tx.now), asOf: tx.now, seq: tx.seq, running: open?.site ?? null, sites }
       }),
 
     // A browser event (tab, window, idle, alarm).

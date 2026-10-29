@@ -11,6 +11,7 @@ import {
   summarize,
   type History,
 } from './core/usage'
+import { siteTodayAt, type TodayTotals } from './core/messages'
 import { normalizePrefs, siteTotal, snapScale, DEFAULT_PREFS, LIMITS_KEY, PREFS_KEY, type Prefs } from './core/schema'
 import { chromeStore, loadThenPatch } from './chrome/store'
 import type { StoreChanges } from './ports'
@@ -49,10 +50,13 @@ const local = chromeStore('local')
 let limits: Limits = DEFAULT_LIMITS
 let history: History = new Map()
 let prefs: Prefs = DEFAULT_PREFS
+// Today's times as the worker sees them, the open interval's included (null:
+// it hasn't answered; storage's are shown).
+let totals: TodayTotals | null = null
 const loaded = loadThenPatch(
   local,
   async () => {
-    const items = await local.getAll().catch(() => ({}) as Record<string, unknown>)
+    const [items] = await Promise.all([local.getAll().catch(() => ({}) as Record<string, unknown>), askTotals()])
     limits = normalizeLimits(items[LIMITS_KEY])
     history = historyOf(items)
     prefs = normalizePrefs(items[PREFS_KEY])
@@ -60,8 +64,21 @@ const loaded = loadThenPatch(
   (changes) => onStorageChange(changes)
 )
 
+// A later worker transaction's answer is never replaced by an earlier one.
+async function askTotals(): Promise<void> {
+  const res = await bus.send('todayTotals', {})
+  if (!res.ok) {
+    totals = null
+  } else if (totals === null || res.value.seq >= totals.seq) {
+    totals = res.value
+  }
+}
+
 // A site's time today.
-const todayOf = (host: string): number => siteTotal(history.get(dayOf(Date.now())) ?? {}, host)
+function todayOf(host: string): number {
+  const now = Date.now()
+  return totals ? siteTodayAt(totals, host, now) : siteTotal(history.get(dayOf(now)) ?? {}, host)
+}
 
 // --- Tracked site rows -------------------------------------------------------
 
@@ -475,14 +492,24 @@ function onStorageChange(changes: StoreChanges): void {
     paintPrefs(prefs)
   }
   // A new limit can flip a row to over.
-  if (LIMITS_KEY in changes || days.includes(dayOf(Date.now()))) {
+  if (LIMITS_KEY in changes) {
     refreshTodays()
+  }
+  if (days.includes(dayOf(Date.now()))) {
+    void askTotals().then(refreshTodays)
   }
   const week = thisWeek().days
   if (days.some((day) => week.includes(day))) {
     renderWeek()
   }
 }
+
+// The running site's time runs on while the page is open.
+window.setInterval(() => {
+  if (totals?.running) {
+    refreshTodays()
+  }
+}, 1000)
 
 setDocumentLang()
 localizeDom()

@@ -146,6 +146,26 @@ describe('tabState (an extension page asks)', () => {
   })
 })
 
+describe('todayTotals (an extension page asks)', () => {
+  it('gives every site’s time today, the open interval’s included, telling no page', async () => {
+    browser.storage.local.seed({ 'day:2026-06-10': { 'b.com': emptyBuckets().fill(1000, 0, 20) } })
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now += 40 * S
+    sent = []
+    await expect(tracker.todayTotals()).resolves.toMatchObject({
+      day: '2026-06-10',
+      asOf: now,
+      running: 'a.com',
+      sites: { 'a.com': 40 * S, 'b.com': 20 * S },
+    })
+    expect(sent).toEqual([])
+    expect(stored()).toBe(0)
+    await tracker.presence(1, { ...PAGE, ...HIDDEN })
+    await expect(tracker.todayTotals()).resolves.toMatchObject({ running: null, sites: { 'a.com': 40 * S } })
+  })
+})
+
 describe('failures', () => {
   it('a failing alarm doesn’t fail the report', async () => {
     alarm.mockRejectedValue(new Error('alarms'))

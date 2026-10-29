@@ -40,27 +40,49 @@ export type TabState = {
   prefs: Prefs
 }
 
-// A state's totals at `now`: as of `asOf`, plus the time since while
+// `ms` as of `asOf` on `day`, read at `now`: plus the time since while
 // running. Past midnight, only the running time since midnight.
-export function totalsAt(s: TabState, now: number): { siteToday: number; globalToday: number } {
+function grownAt(ms: number, s: { day: DayStamp; asOf: number; running: boolean }, now: number): number {
   if (dayOf(now) !== s.day) {
-    const since = s.running ? Math.max(0, now - Math.max(s.asOf, startOfDay(now))) : 0
-    return { siteToday: since, globalToday: since }
+    return s.running ? Math.max(0, now - Math.max(s.asOf, startOfDay(now))) : 0
   }
-  const running = s.running ? Math.max(0, now - s.asOf) : 0
-  return { siteToday: s.today + running, globalToday: s.globalToday + running }
+  return ms + (s.running ? Math.max(0, now - s.asOf) : 0)
 }
 
-// The limit a state is over at `now`, or null. Over is not yet blocking:
-// a snooze moves blockAt past `now`. A state from before midnight is over
-// nothing.
-export function overAt(s: TabState, now: number): BlockReason | null {
+// A state's totals at `now`.
+export function totalsAt(s: TabState, now: number): { siteToday: number; globalToday: number } {
+  return { siteToday: grownAt(s.today, s, now), globalToday: grownAt(s.globalToday, s, now) }
+}
+
+// Every site's time today as the service worker sees it at `asOf`: what
+// storage holds plus the open interval's uncredited part, which is the
+// `running` site's (null: none open).
+export type TodayTotals = {
+  day: DayStamp
+  asOf: number
+  seq: number
+  running: Site | null
+  sites: Record<Site, number>
+}
+
+// One site's time today at `now`.
+export function siteTodayAt(t: TodayTotals, site: Site, now: number): number {
+  return grownAt(t.sites[site] ?? 0, { ...t, running: t.running === site }, now)
+}
+
+// The limit a state is over at `now`, or null: the one rule for the block
+// screen, the worker's backstop and the popup. The worker moves blockAt
+// past `now` for a snooze; while the snooze 'holds' the state is over
+// nothing until blockAt, and 'ignored' it is over from the moment it
+// reaches its limit. A state from before midnight is over nothing.
+export function overAt(s: TabState, now: number, snooze: 'holds' | 'ignored'): BlockReason | null {
   if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day) {
     return null
   }
   const totals = totalsAt(s, now)
   const elapsed = s.limit.scope === 'site' ? totals.siteToday : totals.globalToday
-  return elapsed >= s.limit.ms || now >= s.blockAt ? { scope: s.limit.scope, limit: s.limit.ms, elapsed } : null
+  const over = now >= s.blockAt || (snooze === 'ignored' && elapsed >= s.limit.ms)
+  return over ? { scope: s.limit.scope, limit: s.limit.ms, elapsed } : null
 }
 
 export type Contract = {
@@ -70,6 +92,8 @@ export type Contract = {
   presence: { req: Presence; res: TabState }
   // extension pages: the state a tab on `site` is told (the popup's face).
   tabState: { req: { tabId: number; site: Site }; res: TabState }
+  // extension pages: every site's time today (the settings page's figures).
+  todayTotals: { req: Empty; res: TodayTotals }
   // extension pages: zero one site's time today.
   resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
@@ -110,6 +134,7 @@ export type Origin = 'content' | 'extension'
 export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   presence: ['content'],
   tabState: ['extension'],
+  todayTotals: ['extension'],
   resetToday: ['extension'],
   setLimit: ['extension'],
   snooze: ['content'],

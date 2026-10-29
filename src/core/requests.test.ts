@@ -29,6 +29,7 @@ describe('parseRequest', () => {
       { type: 'tabState', tabId: 4, site: 'reddit.com', extra: 1 },
       { type: 'tabState', tabId: 4, site: 'reddit.com' },
     ],
+    [{ type: 'todayTotals', site: 'reddit.com' }, { type: 'todayTotals' }],
     [
       { type: 'resetToday', site: 'reddit.com' },
       { type: 'resetToday', site: 'reddit.com' },

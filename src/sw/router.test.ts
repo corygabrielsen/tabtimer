@@ -207,6 +207,16 @@ describe('handlers', () => {
     })
   })
 
+  it('tell an extension page every site’s time today, and only an extension page', async () => {
+    await handle(presence, content())
+    NOW += 3000
+    await expect(handle({ type: 'todayTotals' }, page())).resolves.toMatchObject({
+      ok: true,
+      value: { running: 'reddit.com', sites: { 'reddit.com': 3000 } },
+    })
+    await expect(handle({ type: 'todayTotals' }, content())).resolves.toEqual({ ok: false, error: 'forbidden' })
+  })
+
   it('set a limit', async () => {
     await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 }, page())).resolves.toEqual({
       ok: true,

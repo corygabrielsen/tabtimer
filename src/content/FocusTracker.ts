@@ -2,7 +2,7 @@ import { bus as chromeBus, pushes as chromePushes } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { dayOf, startOfDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
-import { totalsAt, type TabState } from '../core/messages'
+import { overAt, totalsAt, type TabState } from '../core/messages'
 import type { Prefs } from '../core/schema'
 import type { Presence } from '../core/tracker'
 import type { Bus, Clock, Pushes } from '../ports'
@@ -312,20 +312,10 @@ export default class FocusTracker {
     }
   }
 
-  // Why the page must block now, or null. The worker said when (blockAt);
-  // a snooze being asked for, or a state from before midnight, never blocks.
+  // Why the page must block now, or null (core/messages.ts overAt). A
+  // snooze being asked for never blocks.
   blockReason(): BlockReason | null {
-    const s = this.state
-    const now = this.clock.now()
-    if (!s || this.snoozing || s.blockAt === null || s.limit === null || now < s.blockAt || dayOf(now) !== s.day) {
-      return null
-    }
-    const totals = this.readTotals()
-    return {
-      scope: s.limit.scope,
-      limit: s.limit.ms,
-      elapsed: s.limit.scope === 'site' ? totals.siteToday : totals.globalToday,
-    }
+    return this.state && !this.snoozing ? overAt(this.state, this.clock.now(), 'holds') : null
   }
 
   // The block screen is up (or down): blocked time is not counted.
