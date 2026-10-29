@@ -173,21 +173,31 @@ export function niceScale(max: number): { step: number; top: number } {
 // Formatted in UTC from the slot's own number, so an hour is named by its
 // wall-clock position even on a DST day, where that hour may not exist.
 
+// Building a formatter is the costly part, so each is built once.
+const formats = new Map<string, Intl.DateTimeFormat>()
+
+function utcFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${locale} ${JSON.stringify(options)}`
+  let format = formats.get(key)
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' })
+    formats.set(key, format)
+  }
+  return format
+}
+
 // "2 PM" for hour 14.
 export function hourLabel(hour: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { hour: 'numeric', timeZone: 'UTC' }).format(Date.UTC(2000, 0, 1, hour))
+  return utcFormat(locale, { hour: 'numeric' }).format(Date.UTC(2000, 0, 1, hour))
 }
 
 export function dayLabel(day: DayStamp, locale: string, options: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(utcOf(day))
+  return utcFormat(locale, options).format(utcOf(day))
 }
 
 // "Oct 11 – 17", "Sep 27 – Oct 3".
 export function rangeLabel(from: DayStamp, to: DayStamp, locale: string): string {
-  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' }).formatRange(
-    utcOf(from),
-    utcOf(to)
-  )
+  return utcFormat(locale, { month: 'short', day: 'numeric' }).formatRange(utcOf(from), utcOf(to))
 }
 
 // --- Periods -----------------------------------------------------------------
