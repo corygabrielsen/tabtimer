@@ -84,6 +84,23 @@ export function siteTodayAt(t: TodayTotals, site: Site, now: number): number {
   return grownAt(t.sites[site] ?? 0, { ...t, running: t.running === site }, now)
 }
 
+// Whether `site`'s time today has reached its own `limit` (ms; null: none)
+// at `now`, by the worker's totals: overAt's rule with the snooze ignored
+// (the popup's), for a page that shows every site.
+export function siteOverAt(t: TodayTotals, site: Site, limit: number | null, now: number): boolean {
+  const s = { ...t, running: t.running === site }
+  return limit !== null && dayOf(now) === t.day && !stale(s, now) && siteTodayAt(t, site, now) >= limit
+}
+
+// The totals to keep after asking the worker: its answer, unless an earlier
+// transaction's (a lower seq) than `kept`; null when it doesn't answer.
+export function latestTotals(kept: TodayTotals | null, res: Response<'todayTotals'>): TodayTotals | null {
+  if (!res.ok) {
+    return null
+  }
+  return kept === null || res.value.seq >= kept.seq ? res.value : kept
+}
+
 // The limit a state is over at `now`, or null: the one rule for the block
 // screen, the worker's backstop and the popup. The worker moves blockAt
 // past `now` for a snooze; while the snooze 'holds' the state is over

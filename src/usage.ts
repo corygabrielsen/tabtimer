@@ -1,9 +1,11 @@
 // The activity page: a day by hour or a week by day, stacked by site, with
-// each site's time and limit below. Reads storage directly; the one write
-// (a site's limit) goes to the service worker as setLimit.
+// each site's time and limit below. Reads storage directly, and today's
+// times from the service worker (todayTotals); the one write (a site's
+// limit) goes to the service worker as setLimit.
 import { chromeStore, loadThenPatch } from './chrome/store'
 import { dayOf, type DayStamp } from './core/day'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
+import { siteOverAt } from './core/messages'
 import { LIMITS_KEY } from './core/schema'
 import {
   barTotal,
@@ -23,8 +25,10 @@ import {
   type Mode,
   type Period,
   type Summary,
+  withUncredited,
 } from './core/usage'
 import { localizeDom, t } from './i18n'
+import { liveToday } from './liveToday'
 import { createSiteLimitPicker, formatChipMinutes, type LimitPicker } from './limitPicker'
 import { byId, firstDayOfWeek, formatDuration, h, placeChildren, setDocumentLang, uiLocale } from './ui'
 
@@ -61,6 +65,17 @@ const firstDay = firstDayOfWeek(locale)
 let selectedRow: { site: string; row: HTMLLIElement; picker: LimitPicker } | null = null
 
 const today = (): DayStamp => dayOf(Date.now())
+
+// Today's times as the worker sees them, the open interval's included: drawn
+// when the period shows today, or once "Today" is a new day.
+const live = liveToday(
+  () => state.history.get(today()) ?? {},
+  () => {
+    if (today() !== shown || periodOf(state.mode, state.offset, today(), firstDay).days.includes(today())) {
+      render()
+    }
+  }
+)
 
 // A site's limit, in ms (null: none).
 const siteLimit = (site: string): number | null => limitsFor(state.limits, site).site
@@ -279,12 +294,16 @@ function selectedRowOf(site: string, button: HTMLButtonElement): HTMLLIElement {
   return selectedRow.row
 }
 
-function siteRow(period: Period, site: string, ms: number, days: number): HTMLLIElement {
+function siteRow(period: Period, site: string, ms: number, days: number, now: number): HTMLLIElement {
   const limit = siteLimit(site)
   const selected = state.site === site
   // A daily limit compares against a day: the day's time, or the week's
-  // daily average.
+  // daily average. Today is over by the worker's rule.
   const used = period.mode === 'day' ? ms : ms / Math.max(1, days)
+  const over =
+    period.mode === 'day' && period.days[0] === dayOf(now)
+      ? siteOverAt(live.totals(), site, limit, now)
+      : limit !== null && used >= limit
   const button = h(
     'button',
     {
@@ -294,7 +313,7 @@ function siteRow(period: Period, site: string, ms: number, days: number): HTMLLI
       'aria-pressed': String(selected),
       'aria-controls': selected ? 'site-panel' : undefined,
       'data-site': site,
-      'data-over': limit !== null && used >= limit,
+      'data-over': over,
     },
     h('span', { class: 'site-name' }, site),
     h('span', { class: 'site-time' }, formatDuration(ms))
@@ -323,9 +342,11 @@ let shown = today()
 
 function render(): void {
   const focused = document.activeElement?.id || null
-  const day = today()
+  const now = Date.now()
+  const day = dayOf(now)
   shown = day
-  const empty = !hasAnyUsage(state.history, day)
+  const history = withUncredited(state.history, live.totals(), now)
+  const empty = !hasAnyUsage(history, day)
   byId('empty')!.hidden = !empty
   byId('report')!.hidden = empty
   byId('mode')!.hidden = empty
@@ -335,8 +356,8 @@ function render(): void {
 
   const period = periodOf(state.mode, state.offset, day, firstDay)
   state.offset = period.offset
-  const now = new Date()
-  const summary = summarize(state.history, period, day, state.site, now.getHours() + now.getMinutes() / 60)
+  const clock = new Date(now)
+  const summary = summarize(history, period, day, state.site, clock.getHours() + clock.getMinutes() / 60)
   const week = period.mode === 'week'
 
   byId('period-label')!.textContent = periodLabel(period)
@@ -379,7 +400,7 @@ function render(): void {
   }
   placeChildren(
     byId('site-list')!,
-    sites.map((s) => siteRow(period, s.site, s.ms, summary.days))
+    sites.map((s) => siteRow(period, s.site, s.ms, summary.days, now))
   )
   byId('sites-h')!.parentElement!.hidden = sites.length === 0
 
@@ -392,7 +413,7 @@ function render(): void {
 }
 
 async function load(): Promise<void> {
-  const items = await local.getAll().catch(() => ({}) as Record<string, unknown>)
+  const [items] = await Promise.all([local.getAll().catch(() => ({}) as Record<string, unknown>), live.ready])
   state.history = historyOf(items)
   state.limits = normalizeLimits(items[LIMITS_KEY])
   render()
@@ -442,12 +463,6 @@ function init(): void {
       render()
     }
   })
-  // At midnight "Today" is a new day, with or without a write.
-  window.setInterval(() => {
-    if (today() !== shown) {
-      render()
-    }
-  }, 1000)
 }
 
 init()

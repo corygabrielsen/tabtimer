@@ -4,7 +4,7 @@ import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
-import { hourLabel } from './core/usage'
+import { hourLabel, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
@@ -197,8 +197,15 @@ function renderTracked(tabId: number, base: string, focus = false) {
   let hidden = false
   const snapshot = (): Snapshot => ({ tab, limits, now: Date.now() })
   const drawFace = () => renderFace(base, snapshot())
+  // Today's hours with the time not yet stored in the current one.
+  const drawStrip = () => {
+    const now = Date.now()
+    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today } }
+    const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
+    renderStrip(base, usage[base] ?? emptyBuckets())
+  }
   const draw = () => {
-    renderStrip(base, day[base] ?? emptyBuckets())
+    drawStrip()
     drawFace()
     syncLimitField(limits)
   }
@@ -297,6 +304,9 @@ function renderTracked(tabId: number, base: string, focus = false) {
         }
         draw()
       })
+    }
+    if (tab?.running) {
+      drawStrip()
     }
     moveNow()
     drawFace()

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { addDays, daysBetween, type DayStamp } from './day'
-import { emptyBuckets, oldestKept, LIMITS_KEY, RETENTION_DAYS } from './schema'
+import { emptyBuckets, oldestKept, LIMITS_KEY, RETENTION_DAYS, type DayUsage } from './schema'
 import {
   barTotal,
   change,
@@ -25,9 +25,11 @@ import {
   topSites,
   weekdayOf,
   weekStartOf,
+  withUncredited,
   type Bar,
   type History,
 } from './usage'
+import type { TodayTotals } from './messages'
 
 const MIN = 60_000
 const d = (s: string) => s as DayStamp
@@ -306,5 +308,53 @@ describe('summarize', () => {
     expect(s.top).toEqual([])
     expect(s.total).toBe(40 * MIN)
     expect(s.change).toBeCloseTo(-0.2)
+  })
+})
+
+describe('withUncredited', () => {
+  const NOW = new Date(2026, 9, 28, 14, 30).getTime()
+  const DAY: DayStamp = '2026-10-28'
+  const at = (hours: Record<number, number>) => {
+    const buckets = emptyBuckets()
+    for (const [hour, ms] of Object.entries(hours)) {
+      buckets[Number(hour)] = ms
+    }
+    return buckets
+  }
+  const stored: History = new Map<DayStamp, DayUsage>([
+    ['2026-10-27', { 'a.com': at({ 9: 5000 }) }],
+    [DAY, { 'a.com': at({ 9: 1000, 14: 2000 }), 'b.com': at({ 10: 4000 }) }],
+  ])
+  const totals: TodayTotals = {
+    day: DAY,
+    asOf: NOW - 10_000,
+    seq: 3,
+    running: 'a.com',
+    sites: { 'a.com': 3000 + 20_000, 'b.com': 4000, 'c.com': 7000 },
+  }
+
+  it('adds what storage lacks to the current hour, in a copy', () => {
+    const shown = withUncredited(stored, totals, NOW)
+    expect(shown.get(DAY)).toEqual({
+      'a.com': at({ 9: 1000, 14: 2000 + 20_000 + 10_000 }),
+      'b.com': at({ 10: 4000 }),
+      'c.com': at({ 14: 7000 }),
+    })
+    expect(shown.get('2026-10-27')).toBe(stored.get('2026-10-27'))
+    expect(stored.get(DAY)!['a.com']).toEqual(at({ 9: 1000, 14: 2000 }))
+    expect(stored.get(DAY)!['c.com']).toBeUndefined()
+  })
+
+  it('leaves history as it is when storage has it all, or more', () => {
+    const behind: TodayTotals = { ...totals, running: null, sites: { 'a.com': 1000, 'b.com': 4000 } }
+    expect(withUncredited(stored, behind, NOW)).toBe(stored)
+  })
+
+  it('past midnight, adds only the running time since', () => {
+    const midnight = new Date(2026, 9, 29).getTime()
+    const late: TodayTotals = { ...totals, asOf: midnight - 5000 }
+    const shown = withUncredited(stored, late, midnight + 3000)
+    expect(shown.get('2026-10-29')).toEqual({ 'a.com': at({ 0: 3000 }) })
+    expect(shown.get(DAY)).toBe(stored.get(DAY))
   })
 })

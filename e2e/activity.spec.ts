@@ -7,6 +7,9 @@ import {
   today,
   todayKey,
   openPopup,
+  openInterval,
+  advance,
+  readToday,
   clickInShadow,
   LIMITS_KEY,
   BLOCK_ID,
@@ -167,6 +170,33 @@ test('U1: a live update keeps a custom limit being typed', async ({ context, ser
   await field.pressSequentially('5')
   await field.press('Enter')
   await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toMatchObject({ perSite: { [SITE_A]: 45 } })
+})
+
+// The page read today from storage alone, without the open interval's
+// uncredited part: it lagged the popup by up to a checkpoint.
+test('shows the popup’s minute for a running site before a checkpoint', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 9 * MINUTE }))
+  const tab = await context.newPage()
+  await tab.goto(site(SITE_A))
+  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
+  await advance(serviceWorker, 70_000)
+
+  // In a window of its own, unfocused, so the site's tab stays in use.
+  const url = `chrome-extension://${extensionId}/usage.html`
+  const page = await opens(context, () =>
+    serviceWorker.evaluate((url) => chrome.windows.create({ url, focused: false }).then(() => undefined), url)
+  )
+  await expect(page.locator(`[data-site="${SITE_A}"] .site-time`)).toHaveText('10 min')
+  await expect(page.locator('#total')).toHaveText('10 min')
+  // Not yet credited.
+  expect(await readToday(serviceWorker, SITE_A)).toBe(9 * MINUTE)
+  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
+  await expect(popup.locator('#today')).toHaveText(/^00:10:/)
 })
 
 test('shows the chart as a table', async ({ context, serviceWorker, extensionId }) => {

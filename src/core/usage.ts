@@ -3,12 +3,15 @@
 //
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
-import { addDays, daysBetween, utcOf, type DayStamp } from './day'
+import { addDays, dayOf, daysBetween, hourOf, utcOf, type DayStamp } from './day'
+import { siteTodayAt, type TodayTotals } from './messages'
 import {
   dayOfKey,
+  emptyBuckets,
   isKept,
   normalizeDay,
   oldestKept,
+  siteTotal,
   sumBuckets,
   RETENTION_DAYS,
   HOURS_PER_DAY,
@@ -56,6 +59,26 @@ export function patchHistory(history: History, changes: Record<string, { newValu
     }
   }
   return days
+}
+
+// `history` as the worker's `totals` see today at `now`: each site's time
+// not yet stored goes into the current hour. For display; `history` is left
+// as it is.
+export function withUncredited(history: History, totals: TodayTotals, now: number): History {
+  const day = dayOf(now)
+  const stored = history.get(day) ?? {}
+  const usage: DayUsage = { ...stored }
+  let added = false
+  for (const site of Object.keys(totals.sites)) {
+    const ms = siteTodayAt(totals, site, now) - siteTotal(stored, site)
+    if (ms > 0) {
+      const buckets = [...(stored[site] ?? emptyBuckets())]
+      buckets[hourOf(now)]! += ms
+      usage[site] = buckets
+      added = true
+    }
+  }
+  return added ? new Map(history).set(day, usage) : history
 }
 
 // --- Weeks -------------------------------------------------------------------

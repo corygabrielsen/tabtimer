@@ -170,6 +170,21 @@ describe('tracked sites', () => {
       }
     })
 
+    it('NEW-2: counts it in this week too', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+      try {
+        grant('reddit.com')
+        seedToday({ 'reddit.com': 4 * MIN + 20_000 })
+        await inUse(40_000)
+        await openOptions()
+        expect(text($('week-total'))).toBe('5 min')
+        vi.advanceTimersByTime(40_000)
+        expect(text($('week-total'))).toBe('6 min')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('shows storage’s time when the worker doesn’t answer', async () => {
       grant('reddit.com')
       seedToday({ 'reddit.com': 5 * MIN })

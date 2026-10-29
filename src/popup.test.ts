@@ -391,6 +391,22 @@ describe('popup on a tracked site', () => {
       }
     })
 
+    it('NEW-3: draws the time not yet credited in the strip’s current hour', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+      try {
+        await inUse(30_000)
+        await openReddit()
+        const hour = () => $('strip').querySelectorAll<HTMLElement>('span')[new Date().getHours()]!
+        expect(storedToday('reddit.com')).toBe(0)
+        expect(hour().hasAttribute('data-on')).toBe(true)
+        expect(hour().style.getPropertyValue('--v')).toBe('0.05')
+        vi.advanceTimersByTime(30_000)
+        expect(hour().style.getPropertyValue('--v')).toBe('0.1')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('counts another tab’s running time only as that tab’s page is told', async () => {
       await inUse(30_000)
       await openPopup({ id: 2, url: 'https://www.reddit.com/' })
