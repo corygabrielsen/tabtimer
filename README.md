@@ -11,6 +11,10 @@ you choose — as an unobtrusive on-page overlay and a toolbar popup.
 - **On-page overlay** — a small pill at the top of tracked sites showing the
   running time; expand it for Today / Focus / Session, or hide it.
 - **Popup** — the active site's time today, with a reset and a show/hide toggle.
+- **Daily limits** — optional per-site and all-sites caps (off by default), set
+  from the options page or popup. Once a cap is hit, the page is covered by a
+  block screen showing today's time against the limit, with a **5 more minutes**
+  snooze; it lifts at the midnight reset.
 - **Private by design** — everything stays in `chrome.storage.local`; nothing is
   ever sent off your device. See [PRIVACY.md](PRIVACY.md).
 

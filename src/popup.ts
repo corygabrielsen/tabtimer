@@ -2,6 +2,7 @@ import { storage, todayKeyForHost, HIDDEN_KEY, baseHost } from './storage'
 import { sendMessage } from './messages'
 import { formatTime } from './format'
 import { originsForHost } from './sites'
+import { readLimits, setPerSiteLimit, msToMinutes, parseLimitMinutes } from './limits'
 import { localizeDom, t } from './i18n'
 
 type ActiveTab = { id: number; hostname: string }
@@ -74,6 +75,20 @@ function renderTracked(tab: ActiveTab, base: string) {
     await storage.set(HIDDEN_KEY, !hidden, 'local').catch(() => undefined)
     await renderToggle()
   })
+
+  const limitInput = byId<HTMLInputElement>('site-limit')
+  if (limitInput) {
+    limitInput.setAttribute('aria-label', t('popupLimitAria', base))
+    void readLimits().then((limits) => {
+      const ms = limits.perSite[base]
+      if (typeof ms === 'number') {
+        limitInput.value = String(msToMinutes(ms))
+      }
+    })
+    limitInput.addEventListener('input', () => {
+      void setPerSiteLimit(base, parseLimitMinutes(limitInput.value))
+    })
+  }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') {

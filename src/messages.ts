@@ -2,7 +2,8 @@
 
 export type AddElapsedMessage = { type: 'addElapsed'; key: string; delta: number }
 export type ResetKeyMessage = { type: 'resetKey'; key: string }
-export type Message = AddElapsedMessage | ResetKeyMessage
+export type OpenOptionsMessage = { type: 'openOptions' }
+export type Message = AddElapsedMessage | ResetKeyMessage | OpenOptionsMessage
 
 export type MessageResponse = { ok: true; total: number } | { ok: false; error: string }
 
