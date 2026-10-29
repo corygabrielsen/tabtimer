@@ -100,6 +100,16 @@ describe('time limits end to end', () => {
     expect(blocked()).toBe(true)
   })
 
+  it('B10: stops counting while blocked, so the global allowance is not consumed', async () => {
+    limits({ global: minutes(30), perSite: { 'reddit.com': minutes(1) } })
+    await openTab()
+    await run(minutes(1))
+    expect(blocked()).toBe(true)
+    await run(minutes(10))
+    expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
+    expect(storedToday()).toBe(minutes(1))
+  })
+
   it('enforces the global cap across every tracked site', async () => {
     limits({ global: minutes(31) })
     browser.storage.local.seed({

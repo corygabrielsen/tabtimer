@@ -44,6 +44,10 @@ export default class Model {
   // the very first report fires immediately.
   private previousStorageUpdateTime: number = 0
   private host: string
+  // Focus time accrues only while the window has focus, the tab is visible
+  // and the block screen is not up.
+  private windowFocused = false
+  private blocked = false
 
   // Cached stored total for this site today, loaded once per day and then
   // kept current from storage.onChanged (rather than read every second).
@@ -85,12 +89,11 @@ export default class Model {
 
     // A tab can load already hidden (opened in the background, or restored
     // on browser start) or visible-but-unfocused. No visibilitychange/blur
-    // event fires for that initial state, so pause the focus timer up front
-    // and let handleFocus/handleVisibilityChange resume it. Without this, a
+    // event fires for that initial state, so sample it up front and let
+    // handleFocus/handleVisibilityChange resume the timer. Without this, a
     // never-focused tab accrues focus time.
-    if (document.hidden || !document.hasFocus()) {
-      this.focusTimer.pause()
-    }
+    this.windowFocused = document.hasFocus()
+    this.updateFocusTimer()
 
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('blur', this.handleBlur)
@@ -377,22 +380,46 @@ export default class Model {
     }
   }
 
+  // The block screen is up (or down). Blocked time is not focus time: the
+  // page can't be used, and counting it would keep consuming the global
+  // allowance on behalf of a site that is already over its limit.
+  setBlocked(blocked: boolean): void {
+    this.blocked = blocked
+    this.updateFocusTimer()
+  }
+
+  // Run the focus timer iff unblocked AND visible AND focused.
+  private updateFocusTimer(): void {
+    if (this.focusTimer.state === TimerState.NOT_STARTED) {
+      return
+    }
+    if (!this.blocked && !document.hidden && this.windowFocused) {
+      this.focusTimer.unpause()
+    } else {
+      this.credit(this.focusTimer.pause())
+    }
+  }
+
   handleBlur = () => {
-    this.credit(this.focusTimer.pause())
+    this.windowFocused = false
+    this.updateFocusTimer()
   }
 
   handleFocus = () => {
-    this.focusTimer.unpause()
+    this.windowFocused = true
+    this.updateFocusTimer()
   }
 
   handleVisibilityChange = () => {
     if (document.hidden) {
-      this.credit(this.focusTimer.pause())
+      this.updateFocusTimer()
       // Hidden fires before pagehide and is the last event reliably delivered
       // on mobile and when a tab is discarded, so persist pending time now.
       this.flush()
     } else {
-      this.focusTimer.unpause()
+      // Focus may have moved while the tab was hidden.
+      this.windowFocused = document.hasFocus()
+      this.updateFocusTimer()
     }
   }
 

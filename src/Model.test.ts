@@ -133,6 +133,52 @@ describe('focus time accrual', () => {
   })
 })
 
+describe('B10: while the block screen is up', () => {
+  it('does not accrue focus time', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    model.setBlocked(true)
+    await vi.advanceTimersByTimeAsync(minutes(10))
+    const state = await model.readElapsed()
+    expect(state.today.elapsed).toBe(seconds(5))
+    expect(state.focus.state).toBe(TimerState.PAUSED)
+    // The pending seconds are still reported.
+    await vi.advanceTimersByTimeAsync(seconds(10))
+    expect(storedToday()).toBe(seconds(5))
+  })
+
+  it('resumes only once unblocked, visible and focused', async () => {
+    const model = started()
+    model.setBlocked(true)
+    setPageState({ focused: false })
+    model.setBlocked(false) // still unfocused
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(0)
+
+    model.setBlocked(true)
+    setPageState({ focused: true }) // focused, but still blocked
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(0)
+
+    setPageState({ hidden: true })
+    model.setBlocked(false) // unblocked, but hidden
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(0)
+
+    setPageState({ hidden: false })
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(seconds(5))
+  })
+
+  it('is remembered when set before the timers start', async () => {
+    const model = trackModel(new Model())
+    model.setBlocked(true)
+    model.start()
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(0)
+  })
+})
+
 describe('reporting to the background writer', () => {
   it('reports immediately, then at most every 10 seconds', async () => {
     const deltas = addElapsedReports()

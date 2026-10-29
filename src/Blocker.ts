@@ -196,6 +196,7 @@ export default class Blocker {
     this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
     if (!this.blocked) {
       this.blocked = true
+      this.model.setBlocked(true)
       this.host.style.setProperty('display', 'block', 'important')
       document.documentElement.style.setProperty('overflow', 'hidden', 'important')
     }
@@ -206,11 +207,15 @@ export default class Blocker {
       return
     }
     this.blocked = false
+    this.model.setBlocked(false)
     this.host.style.setProperty('display', 'none', 'important')
     document.documentElement.style.removeProperty('overflow')
   }
 
   destroy() {
+    if (this.blocked) {
+      this.model.setBlocked(false)
+    }
     chrome.storage.onChanged.removeListener(this.handleStorageChange)
     document.documentElement.style.removeProperty('overflow')
     this.host.remove()
