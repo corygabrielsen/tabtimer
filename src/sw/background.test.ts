@@ -71,6 +71,8 @@ describe('messages', () => {
     })
     await expect(bus.send('openOptions', {})).resolves.toEqual({ ok: true, value: null })
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
+    await expect(bus.send('openActivity', {})).resolves.toEqual({ ok: true, value: null })
+    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
   })
 
   it('refuses other senders', async () => {

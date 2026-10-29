@@ -21,6 +21,7 @@ export type RouterDeps = {
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
   openOptions: () => Promise<void>
+  openActivity: () => Promise<void>
 }
 
 // Where a request came from, and for a content script the site it runs on
@@ -97,6 +98,10 @@ export function createRouter(deps: RouterDeps): Handler {
       ledger.setPrefs({ ...(hidden === undefined ? {} : { hidden }), ...(scale === undefined ? {} : { scale }) }),
     openOptions: async () => {
       await deps.openOptions()
+      return null
+    },
+    openActivity: async () => {
+      await deps.openActivity()
       return null
     },
   }

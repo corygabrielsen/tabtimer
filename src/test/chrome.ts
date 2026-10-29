@@ -305,6 +305,7 @@ export class FakeChrome {
     sendMessage: vi.fn((...[tabId, message]: [number, unknown, { documentId?: string; frameId?: number }?]) =>
       this.sendToTab(tabId, message)
     ),
+    create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, ...props })),
     onActivated: new FakeEvent<[{ tabId: number; windowId: number }]>(),
     onRemoved: new FakeEvent<[number]>(),
     onUpdated: new FakeEvent<[number, { url?: string; status?: string; discarded?: boolean }, { url?: string }]>(),

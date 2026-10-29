@@ -12,6 +12,7 @@ import { installTestHook } from './testHook'
 import { createTracker } from './tracker'
 
 const CHECKPOINT_ALARM = 'checkpoint'
+const ACTIVITY_PAGE = 'usage.html'
 
 const session = chromeStore('session')
 const ledger = createLedger(chromeStore('local'), session, systemClock)
@@ -97,5 +98,8 @@ serveRouter(
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
     openOptions: () => chrome.runtime.openOptionsPage(),
+    openActivity: async () => {
+      await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+    },
   })
 )
