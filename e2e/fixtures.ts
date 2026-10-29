@@ -8,6 +8,7 @@ export const EXTENSION_PATH = path.resolve(import.meta.dirname, '..', 'dist-e2e'
 // Mirrors src/core/schema.ts (schema 3). Kept literal so a change to the
 // storage layout also fails these tests.
 export const SCHEMA_KEY = 'schema'
+export const SCHEMA = 3
 export const LIMITS_KEY = 'limits'
 export const OVERLAY_ID = 'tabtimer-root'
 export const BLOCK_ID = 'tabtimer-block'
@@ -117,15 +118,23 @@ export function launch(userDataDir: string, extensionPath = EXTENSION_PATH): Pro
   })
 }
 
-// The extension's service worker, once it has finished starting up: the
-// content script registration comes last (after storage is checked), so the
-// first navigation is already covered.
+// The extension's service worker, once it has finished starting up: storage
+// checked (the schema is written last, after any other layout is cleared),
+// so a seed isn't cleared after it, and the content script registered, so
+// the first navigation is already covered. The registration alone doesn't
+// say storage is checked: a new extension context registers it on its own.
 export async function extensionWorker(context: BrowserContext): Promise<Worker> {
   const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
   await test
     .expect(async () => {
-      const n = await sw.evaluate(() => chrome.scripting.getRegisteredContentScripts().then((s) => s.length))
-      test.expect(n).toBe(1)
+      const ready = await sw.evaluate(
+        async (key) => ({
+          scripts: (await chrome.scripting.getRegisteredContentScripts()).length,
+          schema: (await chrome.storage.local.get(key))[key],
+        }),
+        SCHEMA_KEY
+      )
+      test.expect(ready).toEqual({ scripts: 1, schema: SCHEMA })
     })
     .toPass()
   return sw
