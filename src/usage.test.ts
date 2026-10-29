@@ -140,6 +140,34 @@ describe('day view', () => {
     expect(text('period-label')).toBe('Wednesday, September 30')
   })
 
+  // U6: the step button pressed into the end of the range was disabled
+  // with focus on it, and focus fell to <body>.
+  it('U6: keeps focus on the period when a step button runs out', () => {
+    $('prev').focus()
+    for (let i = 0; i < 42; i++) {
+      click($('prev'))
+    }
+    expect($<HTMLButtonElement>('prev').disabled).toBe(true)
+    expect(document.activeElement).toBe($('period-label'))
+    $('next').focus()
+    click($('next'))
+    expect(document.activeElement).toBe($('next'))
+    for (let i = 0; i < 41; i++) {
+      click($('next'))
+    }
+    expect($<HTMLButtonElement>('next').disabled).toBe(true)
+    expect(document.activeElement).toBe($('period-label'))
+  })
+
+  // U7: open over midnight, "Today" kept showing yesterday until a write.
+  it('U7: starts the new day at midnight without a write', () => {
+    vi.setSystemTime(new Date(2026, 9, 28, 23, 59, 59))
+    vi.advanceTimersByTime(2000)
+    expect(text('period-label')).toBe('Today')
+    expect(text('total')).toBe('0 min')
+    expect(document.querySelector('.none')?.textContent).toBe('No activity.')
+  })
+
   it('says so on a day with no usage', () => {
     click($('prev'))
     click($('prev'))

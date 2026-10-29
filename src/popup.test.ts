@@ -102,6 +102,14 @@ describe('popup on a site not yet tracked', () => {
     expect(visibleSection()).toEqual(['tracked'])
   })
 
+  it('moves focus into the tracked view it switches to', async () => {
+    await openPopup({ id: 7, url: 'https://old.reddit.com/r/all' })
+    $('enable-btn').focus()
+    click($('enable-btn'))
+    await flush()
+    expect(document.activeElement).toBe(limitChip('Off'))
+  })
+
   it('falls back to offering tracking if the permission check fails', async () => {
     browser.permissions.getAll.mockImplementation(() => Promise.reject(new Error('nope')))
     await openPopup({ id: 7, url: 'https://reddit.com/' })
@@ -320,6 +328,24 @@ describe('popup on a tracked site', () => {
     })
   })
 
+  // U7: open over midnight, the strip kept yesterday's bars as today's until
+  // the new day's first write.
+  it('U7: starts the new day at midnight without a write', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 23, 59, 58), toFake: ['setInterval', 'Date'] })
+    try {
+      seedToday({ 'reddit.com': 40 * MIN }, new Date(2026, 9, 28, 23))
+      await openReddit()
+      const on = () => $('strip').querySelectorAll('span[data-on]').length
+      expect(on()).toBe(1)
+      vi.advanceTimersByTime(3000)
+      await flush()
+      expect(on()).toBe(0)
+      expect($('today').textContent).toBe('00:00:00')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('moves the now mark while open, without redrawing the strip', async () => {
     vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['setInterval', 'Date'] })
     try {
@@ -459,6 +485,16 @@ describe('popup on a tracked site', () => {
       expect(storedToday('reddit.com')).toBe(65_000)
     })
 
+    it('shows the time again when the reset fails', async () => {
+      await openReddit()
+      browser.storage.local.error = 'quota'
+      click($('reset-btn'))
+      click($('reset-btn'))
+      expect($('today').textContent).toBe('00:00:00') // optimistic
+      await flush()
+      expect($('today').textContent).toBe('00:01:05')
+    })
+
     it('disarms by itself after a few seconds', async () => {
       vi.useFakeTimers()
       try {
@@ -534,6 +570,29 @@ describe('popup on a tracked site', () => {
       expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 45 }, snoozeUntil: 0 })
       expect(checkedChip()?.textContent).toBe('45m')
       expect(text('site-limit-saved')).toBe('Saved')
+    })
+
+    // U3: closing the popup mid-edit (a click back in the page) dropped the
+    // typed value.
+    it('U3: saves an open custom edit when the popup closes', async () => {
+      await openReddit()
+      click(limitChip('Custom'))
+      customField().value = '45'
+      const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+      document.dispatchEvent(new Event('visibilitychange'))
+      visibility.mockRestore()
+      await flush()
+      expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 45 }, snoozeUntil: 0 })
+    })
+
+    // U4/X6: "Saved" showed, and the chip stayed, when the write failed.
+    it('U4: a failed save shows no Saved notice and keeps the stored limit', async () => {
+      await openReddit()
+      browser.storage.local.error = 'quota'
+      click(limitChip('2h'))
+      await flush()
+      expect(text('site-limit-saved')).toBe('')
+      expect(checkedChip()?.textContent).toBe('30m')
     })
 
     it.each(['abc', '0', '-5', '2.5', '1441'])('rejects %s without saving', async (bad) => {

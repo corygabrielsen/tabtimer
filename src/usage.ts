@@ -318,9 +318,13 @@ function siteRow(period: Period, site: string, ms: number, days: number): HTMLLI
 
 // --- Render -------------------------------------------------------------------
 
+// The day the page last drew.
+let shown = today()
+
 function render(): void {
   const focused = document.activeElement?.id || null
   const day = today()
+  shown = day
   const empty = !hasAnyUsage(state.history, day)
   byId('empty')!.hidden = !empty
   byId('report')!.hidden = empty
@@ -380,7 +384,10 @@ function render(): void {
   byId('sites-h')!.parentElement!.hidden = sites.length === 0
 
   if (focused) {
-    byId(focused)?.focus()
+    const el = byId<HTMLElement>(focused)
+    // A step button at the end of the range is disabled: focus the period
+    // it stepped to instead.
+    ;(el instanceof HTMLButtonElement && el.disabled ? byId('period-label') : el)?.focus()
   }
 }
 
@@ -435,6 +442,12 @@ function init(): void {
       render()
     }
   })
+  // At midnight "Today" is a new day, with or without a write.
+  window.setInterval(() => {
+    if (today() !== shown) {
+      render()
+    }
+  }, 1000)
 }
 
 init()

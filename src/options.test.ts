@@ -214,6 +214,43 @@ describe('tracked sites', () => {
     expect(chip('reddit.com')).toBeDefined()
   })
 
+  // U5: a declined prompt left its focus target set; the next render (an
+  // approved add) moved focus out of the Add field to the declined chip.
+  it('U5: a declined prompt leaves no focus target behind', async () => {
+    browser.acceptPermissionPrompts = false
+    await openOptions()
+    click(chip('youtube.com'))
+    await flush()
+    browser.acceptPermissionPrompts = true
+    $('add-input').focus()
+    submitAdd('example.co')
+    await flush()
+    expect(trackedHosts()).toEqual(['example.co'])
+    expect(document.activeElement).toBe($('add-input'))
+  })
+
+  it('a failed stop leaves no focus target behind', async () => {
+    grant('reddit.com')
+    browser.permissions.remove.mockImplementation(() => Promise.reject(new Error('nope')))
+    await openOptions()
+    click(stopButton('reddit.com'))
+    await flush()
+    $('add-input').focus()
+    browser.grant(originsForSite('x.com'))
+    await flush()
+    expect(trackedHosts()).toEqual(['reddit.com', 'x.com'])
+    expect(document.activeElement).toBe($('add-input'))
+  })
+
+  it('tracking every suggestion keeps focus on the page', async () => {
+    await openOptions()
+    $('enable-suggested').focus()
+    click($('enable-suggested'))
+    await flush()
+    expect($('enable-suggested').closest('[hidden]')).not.toBeNull()
+    expect(document.activeElement).toBe($('add-input'))
+  })
+
   it('stops tracking a site and moves focus to the next row', async () => {
     grant('reddit.com', 'x.com', 'alpha.org')
     await openOptions()
@@ -487,6 +524,29 @@ describe('limits', () => {
     expect(storedLimits()).toEqual({ global: null, perSite: {}, snoozeUntil: 0 })
   })
 
+  // U4/X6: "Saved" showed, and the new cap stayed, when the write failed.
+  it('U4: a failed save shows no Saved notice and keeps the stored cap', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
+    await openOptions()
+    browser.storage.local.error = 'quota'
+    click(radio(globalPicker(), '3h'))
+    await flush()
+    expect(text($('global-limit-saved'))).toBe('')
+    expect(checkedRadio(globalPicker())).toBe('1h')
+  })
+
+  it('U4: a failed site limit save reverts the row', async () => {
+    grant('x.com')
+    await openOptions()
+    browser.storage.local.error = 'quota'
+    click(limitToggle('x.com'))
+    click(radio(limitPanel('x.com'), '15m'))
+    await flush()
+    expect(text(limitToggle('x.com'))).toBe('Off')
+    expect(checkedRadio(limitPanel('x.com'))).toBe('Off')
+    expect(text(limitPanel('x.com')?.querySelector('.saved'))).toBe('')
+  })
+
   it('follows a cap changed elsewhere', async () => {
     await openOptions()
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 45, perSite: {} } })
@@ -533,6 +593,21 @@ describe('on-page timer', () => {
     click($('overlay-switch'))
     await flush()
     expect(prefs()?.hidden).toBe(false)
+  })
+
+  // U4/X6: the switch flipped and "Saved" showed when the write failed.
+  it('U4: a failed save reverts the switch and the size, without Saved', async () => {
+    await openOptions()
+    browser.storage.local.error = 'quota'
+    click($('overlay-switch'))
+    await flush()
+    expect($('overlay-switch').getAttribute('aria-checked')).toBe('true')
+    const small = sizes().find((r) => r.value === '0.5')!
+    small.checked = true
+    small.dispatchEvent(new Event('change'))
+    await flush()
+    expect(checkedSize()).toBe('1')
+    expect(text($('overlay-saved'))).toBe('')
   })
 
   it('sets the timer size', async () => {
@@ -645,6 +720,25 @@ describe('this week', () => {
     browser.storage.local.writeDuringNextRead(dayEntry({ 'reddit.com': 30 * MIN }, at(28)))
     await openOptions()
     expect(text($('week-total'))).toBe('30 min')
+  })
+
+  // U7: left open over midnight with nothing running, the page kept
+  // yesterday's figures as today's until a write.
+  it('U7: starts the new day and week at midnight without a write', async () => {
+    grant('reddit.com')
+    vi.useFakeTimers({ now: new Date(2026, 9, 31, 23, 59, 58), toFake: ['setInterval', 'Date'] })
+    browser.storage.local.seed({
+      [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 },
+      ...dayEntry({ 'reddit.com': 40 * MIN }, new Date(2026, 9, 31, 12)),
+    })
+    await openOptions()
+    expect(todayCell('reddit.com')?.textContent).toBe('40 min (over)')
+    expect(text($('week-total'))).toBe('40 min')
+    vi.advanceTimersByTime(3000)
+    await flush()
+    expect(todayCell('reddit.com')?.textContent).toBe('0 min')
+    expect(todayCell('reddit.com')?.hasAttribute('data-over')).toBe(false)
+    expect(text($('week-total'))).toBe('0 min')
   })
 
   it('leaves the week alone when a day outside it changes', async () => {

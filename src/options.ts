@@ -166,8 +166,7 @@ function stopButton(host: string, name: string, origins: () => string[]): HTMLBu
     t('optionsStop')
   )
   stop.addEventListener('click', () => {
-    pendingFocus = { list: 'tracked', host }
-    void disable(origins())
+    awaitFocus({ list: 'tracked', host }, disable(origins()))
   })
   return stop
 }
@@ -209,15 +208,26 @@ function suggestionChip(label: string, host: string): HTMLLIElement {
     label
   )
   btn.addEventListener('click', () => {
-    pendingFocus = { list: 'suggested', host }
-    void enable([host])
+    awaitFocus({ list: 'suggested', host }, enable([host]))
   })
   return h('li', {}, btn)
 }
 
 // After a row disappears (stop / track), keep keyboard focus nearby instead of
 // dropping it to <body>.
-let pendingFocus: { list: 'tracked' | 'suggested'; host: string } | null = null
+type FocusTarget = { list: 'tracked' | 'suggested'; host: string }
+let pendingFocus: FocusTarget | null = null
+
+// Where focus goes once a grant change re-renders; dropped if the change
+// didn't happen (no render follows to use it).
+function awaitFocus(target: FocusTarget, changed: Promise<boolean>): void {
+  pendingFocus = target
+  void changed.then((ok) => {
+    if (!ok && pendingFocus === target) {
+      pendingFocus = null
+    }
+  })
+}
 
 function restoreFocus(prevOrder: { tracked: string[]; suggested: string[] }) {
   if (!pendingFocus) {
@@ -393,9 +403,7 @@ async function initGlobalLimit() {
     saved: byId('global-limit-saved'),
     // The service worker applies each edit to the latest stored limits, so
     // edits from here and the popup both survive.
-    commit: async (minutes) => {
-      await bus.send('setLimit', { scope: 'global', minutes })
-    },
+    commit: async (minutes) => (await bus.send('setLimit', { scope: 'global', minutes })).ok,
   })
   mount.replaceWith(picker.el)
   globalPicker = picker
@@ -419,17 +427,17 @@ async function initOverlay() {
   await loaded
   paintPrefs(prefs)
 
+  // Saved once the worker confirms; otherwise back to the stored prefs.
+  const confirm = (ok: boolean) => (ok ? flashSaved(saved) : paintPrefs(prefs))
   sw?.addEventListener('click', async () => {
     const next = sw.getAttribute('aria-checked') === 'true' // checked -> hide
     sw.setAttribute('aria-checked', String(!next))
-    await bus.send('setPrefs', { hidden: next })
-    flashSaved(saved)
+    confirm((await bus.send('setPrefs', { hidden: next })).ok)
   })
   for (const r of radios) {
     r.addEventListener('change', async () => {
       if (r.checked) {
-        await bus.send('setPrefs', { scale: Number(r.value) })
-        flashSaved(saved)
+        confirm((await bus.send('setPrefs', { scale: Number(r.value) })).ok)
       }
     })
   }
@@ -469,7 +477,8 @@ function renderWeek() {
 // --- Boot -----------------------------------------------------------------------
 
 byId('enable-suggested')?.addEventListener('click', () => {
-  void enable(SUGGESTED_SITES.map((s) => s.host))
+  // The button goes with the last suggestion.
+  awaitFocus({ list: 'suggested', host: '' }, enable(SUGGESTED_SITES.map((s) => s.host)))
 })
 
 // Re-render whenever a grant changes (including the prompts above).
@@ -504,9 +513,16 @@ function onStorageChange(changes: StoreChanges): void {
   }
 }
 
-// The running site's time runs on while the page is open.
+// The running site's time runs on while the page is open, and at midnight
+// today's figures and the week start over without waiting for a write.
+let shownDay = dayOf(Date.now())
 window.setInterval(() => {
-  if (totals?.running) {
+  const day = dayOf(Date.now())
+  if (day !== shownDay) {
+    shownDay = day
+    void askTotals().then(refreshTodays)
+    renderWeek()
+  } else if (totals?.running) {
     refreshTodays()
   }
 }, 1000)

@@ -36,9 +36,12 @@ export type LimitPickerOptions = {
   fieldLabel: string // the custom minutes field's accessible name
   value: number | null
   saved: HTMLElement | null // "Saved" live region
-  commit: (minutes: number | null) => Promise<void>
+  commit: (minutes: number | null) => Promise<boolean> // true: stored
   onChange?: (minutes: number | null) => void
   onEscape?: () => void // Escape on a chip (not in the field)
+  // The page closes once hidden (the action popup): an open edit is saved
+  // then, not only on pagehide.
+  closesWhenHidden?: boolean
 }
 
 export type LimitPicker = {
@@ -54,6 +57,10 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
   const choices: Choice[] = [null, ...opts.presets, 'custom']
   const customIdx = choices.length - 1
   let value = opts.value
+  // The value storage holds, as last confirmed; a failed save reverts to it.
+  let stored = opts.value
+  // The latest commit's number: only its outcome is shown.
+  let commits = 0
   let editing = false
   let pending: { minutes: number | null; timer: number } | null = null
   // The chip shown as checked: the stored value's chip, or a pending/editing one.
@@ -84,6 +91,13 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
     ...chips
   )
   group.addEventListener('keydown', onGroupKey)
+  // A press on a chip mid-edit keeps focus in the field: the field's blur
+  // would save what was typed, then the click the chip.
+  group.addEventListener('mousedown', (e) => {
+    if (editing) {
+      e.preventDefault()
+    }
+  })
 
   const errorId = `${opts.id}-error`
   const hintId = `${opts.id}-hint`
@@ -118,8 +132,10 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
       showError(!customValid())
     }
   })
+  // Saves only when focus moves elsewhere in the page: a tab or window
+  // switch blurs the field too, but it keeps focus.
   input.addEventListener('blur', () => {
-    if (!editing) {
+    if (!editing || document.activeElement === input || !document.hasFocus()) {
       return
     }
     if (input.value.trim() === '') {
@@ -150,10 +166,33 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
     checkedIdx = indexFor(minutes)
     if (minutes !== value) {
       value = minutes
-      void opts.commit(minutes).then(() => flashSaved(opts.saved))
+      const n = ++commits
+      void opts.commit(minutes).then((ok) => {
+        if (ok) {
+          stored = minutes
+        }
+        if (n !== commits) {
+          return
+        }
+        if (ok) {
+          flashSaved(opts.saved)
+        } else {
+          revert()
+        }
+      })
       opts.onChange?.(minutes)
     }
     paint()
+  }
+
+  // The save failed: show the stored value again.
+  function revert() {
+    value = stored
+    if (!editing && !pending) {
+      checkedIdx = indexFor(value)
+    }
+    paint()
+    opts.onChange?.(value)
   }
 
   function cancelPending() {
@@ -163,37 +202,53 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
     }
   }
 
-  // The page is going away (a popup closes as focus leaves it): save the
-  // choice shown as checked now, not after a delay that won't come.
-  function flushPending() {
+  // The page is hidden or going away (a popup closes as focus leaves it):
+  // save the choice shown as checked now, not after a delay that won't come.
+  // An open edit is saved only once the page is going away.
+  function flush(gone: boolean) {
     if (!el.isConnected) {
       document.removeEventListener('visibilitychange', onHide)
-      window.removeEventListener('pagehide', flushPending)
+      window.removeEventListener('pagehide', onPageHide)
     }
     if (pending) {
       const { minutes } = pending
       cancelPending()
       save(minutes)
     }
+    if (gone && editing && customValid() !== null) {
+      saveCustom(false)
+    }
   }
   function onHide() {
     if (document.visibilityState === 'hidden') {
-      flushPending()
+      flush(opts.closesWhenHidden === true)
     }
   }
+  function onPageHide() {
+    flush(true)
+  }
   document.addEventListener('visibilitychange', onHide)
-  window.addEventListener('pagehide', flushPending)
+  window.addEventListener('pagehide', onPageHide)
 
   function choose(i: number) {
     cancelPending()
     if (i === customIdx) {
-      openField()
+      if (editing) {
+        input.focus()
+      } else {
+        openField()
+      }
       return
     }
+    const wasEditing = editing
     if (editing) {
       closeField(false)
     }
     save(choices[i] as number | null)
+    if (wasEditing) {
+      // The field held focus (see mousedown) and is now hidden.
+      chips[i]!.focus()
+    }
   }
 
   function onGroupKey(e: KeyboardEvent) {
@@ -301,6 +356,7 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
   return {
     el,
     set(minutes) {
+      stored = minutes
       if (editing || pending) {
         return
       }
@@ -314,7 +370,10 @@ export function createLimitPicker(opts: LimitPickerOptions): LimitPicker {
   }
 }
 
-export type SiteLimitPickerOptions = Pick<LimitPickerOptions, 'id' | 'value' | 'saved' | 'onChange' | 'onEscape'> & {
+export type SiteLimitPickerOptions = Pick<
+  LimitPickerOptions,
+  'id' | 'value' | 'saved' | 'onChange' | 'onEscape' | 'closesWhenHidden'
+> & {
   site: string
   label?: string // default: "Daily limit for <site>"
 }
@@ -327,8 +386,6 @@ export function createSiteLimitPicker({ site, label, ...opts }: SiteLimitPickerO
     presets: SITE_PRESETS,
     label: label ?? t('popupLimitAria', site),
     fieldLabel: t('limitCustomSiteAria', site),
-    commit: async (minutes) => {
-      await bus.send('setLimit', { scope: 'site', site, minutes })
-    },
+    commit: async (minutes) => (await bus.send('setLimit', { scope: 'site', site, minutes })).ok,
   })
 }
