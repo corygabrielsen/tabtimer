@@ -2,197 +2,97 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Tab Timer</title>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-      }
-      body {
-        width: 264px;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        background: #0e1016;
-        color: #e5e7eb;
-      }
-      .card {
-        padding: 14px 16px 12px;
-      }
-      .brand {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 11px;
-        color: #8a8a8a;
-        margin-bottom: 12px;
-      }
-      .site {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 12px;
-        color: #9aa0ad;
-        margin-bottom: 6px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .metric {
-        display: flex;
-        align-items: baseline;
-        justify-content: space-between;
-        margin-bottom: 14px;
-      }
-      .metric-label {
-        font-size: 12px;
-        color: #c7c9d1;
-      }
-      .metric-value {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 24px;
-        font-weight: 700;
-        color: #fff;
-        font-variant-numeric: tabular-nums;
-      }
-      .limitrow {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 12px;
-      }
-      .limit-label {
-        font-size: 12px;
-        color: #c7c9d1;
-      }
-      .limitfield {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .limitfield input {
-        width: 52px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 5px 7px;
-        font: inherit;
-        font-size: 12px;
-        background: #161922;
-        color: #e5e7eb;
-        text-align: right;
-      }
-      .limitfield input:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 0;
-      }
-      .unit {
-        font-size: 11px;
-        color: #5f5f5f;
-      }
-      .actions {
-        display: flex;
-        gap: 8px;
-      }
-      .btn {
-        flex: 1;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 7px 10px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        color: #f5f5f5;
-      }
-      .btn:hover {
-        background: rgba(255, 255, 255, 0.14);
-      }
-      .btn.ghost {
-        background: transparent;
-        color: #c7c9d1;
-      }
-      .btn.ghost:hover {
-        background: rgba(255, 255, 255, 0.06);
-      }
-      .btn:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 2px;
-      }
-      .empty {
-        font-size: 13px;
-        color: #9aa0ad;
-        margin: 6px 0 12px;
-      }
-      .link {
-        display: block;
-        width: 100%;
-        margin-top: 10px;
-        padding: 6px;
-        border: 0;
-        background: transparent;
-        color: #9aa0ad;
-        font: inherit;
-        font-size: 12px;
-        text-align: center;
-        cursor: pointer;
-        border-radius: 6px;
-      }
-      .link:hover {
-        color: #e5e7eb;
-        background: rgba(255, 255, 255, 0.06);
-      }
-      .link:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 1px;
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="appName">Tab Timer</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/popup.css" />
   </head>
   <body>
-    <main class="card">
-      <div class="brand" data-i18n="overlayLabel">Tab Timer</div>
+    <header class="bar">
+      <span class="brand" data-i18n="appName">Tab Timer</span>
+      <button id="manage-btn" type="button" class="btn btn-quiet" data-i18n="popupSettings">Settings</button>
+    </header>
 
-      <section id="tracked" hidden>
-        <div class="site" id="site"></div>
-        <div class="metric">
-          <span class="metric-label" data-i18n="labelToday" data-i18n-attr="title=tooltipToday">Today</span>
-          <span class="metric-value" id="today">00:00:00</span>
+    <main class="body">
+      <!-- Tracked site: today's time, limit progress, state, actions. -->
+      <section id="tracked" hidden aria-labelledby="site">
+        <div id="hero" class="hero" data-state="open">
+          <div class="hero-top">
+            <h1 id="site" class="host"></h1>
+            <span id="status" class="status"></span>
+          </div>
+          <p class="readout figure" data-i18n-attr="title=tooltipToday">
+            <span class="visually-hidden" data-i18n="labelToday">Today</span>
+            <span id="today">00:00:00</span>
+          </p>
+          <div id="meter" class="meter" role="meter" aria-valuemin="0" hidden></div>
+          <p id="summary" class="summary" aria-live="polite"></p>
         </div>
-        <div class="limitrow">
-          <span class="limit-label" data-i18n="popupLimit">Daily limit</span>
-          <span class="limitfield">
-            <input
-              id="site-limit"
-              type="number"
-              min="1"
-              inputmode="numeric"
-              placeholder="off"
-              data-i18n-attr="placeholder=optionsLimitOff"
-            />
-            <span class="unit" data-i18n="optionsMinutes">min</span>
-          </span>
+
+        <p id="global-line" class="global" hidden></p>
+
+        <div class="controls">
+          <div class="control">
+            <label for="site-limit" class="control-label" data-i18n="popupLimit">Daily limit</label>
+            <span class="minutes">
+              <span id="site-limit-saved" class="saved" role="status"></span>
+              <input
+                id="site-limit"
+                class="field"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="off"
+                aria-describedby="site-limit-error"
+                data-i18n-attr="placeholder=optionsLimitOff"
+              />
+              <span class="unit" data-i18n="optionsMinutes">min</span>
+            </span>
+          </div>
+          <p id="site-limit-error" class="error control-error" hidden></p>
+
+          <div class="control">
+            <span id="overlay-label" class="control-label" data-i18n="overlaySwitchLabel">Show timer on the page</span>
+            <button
+              id="toggle-btn"
+              type="button"
+              class="switch"
+              role="switch"
+              aria-checked="true"
+              aria-labelledby="overlay-label"
+            ></button>
+          </div>
         </div>
+
         <div class="actions">
-          <button id="reset-btn" type="button" class="btn" data-i18n="popupResetToday">Reset today</button>
-          <button id="toggle-btn" type="button" class="btn ghost" data-i18n="popupHideOverlay">Hide overlay</button>
+          <button id="reset-btn" type="button" class="btn btn-quiet" data-i18n="popupResetToday">Reset today</button>
         </div>
       </section>
 
-      <section id="enable" hidden>
-        <div class="site" id="enable-site"></div>
-        <p class="empty" data-i18n="popupNotTracking">Tab Timer isn't tracking this site yet.</p>
-        <div class="actions">
-          <button id="enable-btn" type="button" class="btn" data-i18n="popupEnableSite">Enable on this site</button>
+      <!-- A website that isn't tracked yet: one primary action. -->
+      <section id="enable" hidden aria-labelledby="enable-site">
+        <div class="hero" data-state="idle">
+          <div class="hero-top">
+            <h1 id="enable-site" class="host"></h1>
+            <span class="status" data-i18n="popupNotTrackedTitle">Not tracked</span>
+          </div>
+          <p class="readout figure" aria-hidden="true">--:--:--</p>
+          <p class="summary" data-i18n="popupNotTracking">Tab Timer only counts time on sites you choose.</p>
         </div>
+        <button id="enable-btn" type="button" class="btn btn-primary wide" data-i18n="popupEnableSite">
+          Track this site
+        </button>
       </section>
 
-      <section id="untracked" hidden>
-        <p class="empty" data-i18n="popupCantTrack">Tab Timer can't track this page.</p>
+      <!-- Browser pages, the Web Store, files: extensions can't run there. -->
+      <section id="untracked" hidden aria-labelledby="untracked-title">
+        <h1 id="untracked-title" class="lead" data-i18n="popupCantTrack">This page can't be tracked</h1>
+        <p class="note" data-i18n="popupCantTrackDetail">
+          Browser pages, the Chrome Web Store and local files are off-limits to extensions. Open a website to track it.
+        </p>
       </section>
 
-      <p id="loading" class="empty" data-i18n="popupLoading">Loading…</p>
-
-      <button id="manage-btn" type="button" class="link" data-i18n="popupManage">Manage sites…</button>
+      <p id="loading" class="note" data-i18n="popupLoading">Loading…</p>
     </main>
     <script type="module" src="/src/popup.ts"></script>
   </body>

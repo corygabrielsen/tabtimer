@@ -1,0 +1,192 @@
+/* Toolbar popup: 360px, one screen, no scroll in the common case. */
+
+body {
+  width: 360px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  font-size: var(--t-xs);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.body {
+  padding: var(--s-4);
+}
+
+.host {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--t-md);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lead {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.host + .lead {
+  margin-top: var(--s-5);
+}
+
+.note {
+  margin-top: var(--s-2);
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.wide {
+  width: 100%;
+  margin-top: var(--s-4);
+  min-height: 40px;
+  font-size: var(--t-md);
+}
+
+/* --- Hero: the instrument face ------------------------------------------- */
+
+.hero {
+  --meter-on: var(--ink);
+  --meter-off: var(--rule);
+  padding: var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  transition:
+    background 0.2s var(--ease),
+    color 0.2s var(--ease);
+}
+
+.hero-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.status {
+  flex: none;
+  font-size: var(--t-xs);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.status::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 1px;
+}
+
+.readout {
+  margin: var(--s-3) 0 var(--s-4);
+  font-size: var(--t-xl);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.summary {
+  margin-top: var(--s-3);
+  color: var(--ink-2);
+}
+
+/* Over the limit: the face inverts. The only emphatic device in the UI. */
+.hero[data-state='over'] {
+  --meter-on: var(--paper);
+  --meter-off: var(--paper);
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.hero[data-state='over'] .status,
+.hero[data-state='over'] .summary {
+  color: var(--paper);
+}
+
+/* Snoozed: still over, but blocking is paused. Dashed = temporary. */
+.hero[data-state='snoozed'] {
+  border: 1px dashed var(--ink);
+}
+
+.hero[data-state='snoozed'] .status {
+  color: var(--ink);
+}
+
+.hero[data-state='open'] .status::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+
+.global {
+  margin-top: var(--s-3);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+}
+
+/* --- Controls ------------------------------------------------------------ */
+
+.controls {
+  margin-top: var(--s-4);
+  border-top: 1px solid var(--rule);
+}
+
+.control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: 48px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.control-label {
+  color: var(--ink);
+}
+
+.control-error {
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-start;
+  margin: var(--s-2) 0 0 calc(-1 * var(--s-2));
+}
+
+#reset-btn[data-armed] {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+/* Not tracked: an empty face, dashed edge, unlit readout. */
+.hero[data-state='idle'] {
+  border-style: dashed;
+  border-color: var(--rule-strong);
+}
+
+.hero[data-state='idle'] .readout {
+  margin-bottom: 0;
+  color: var(--rule-strong);
+}
+
+.hero[data-state='idle'] .status::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
