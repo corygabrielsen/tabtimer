@@ -38,7 +38,17 @@ export type Prefs = { hidden: boolean; scale: number }
 
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 1
+// The overlay's sizes are MIN_SCALE to MAX_SCALE in steps of this.
+export const SCALE_STEP = 0.25
 export const DEFAULT_PREFS: Prefs = { hidden: false, scale: 1 }
+
+// The overlay size nearest `scale`; not a number at all reads as the default.
+export function snapScale(scale: number): number {
+  if (!Number.isFinite(scale)) {
+    return DEFAULT_PREFS.scale
+  }
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.round(scale / SCALE_STEP) * SCALE_STEP))
+}
 
 export type DayKey = `${typeof DAY_KEY_PREFIX}${DayStamp}`
 

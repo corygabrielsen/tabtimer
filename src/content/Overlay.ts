@@ -3,7 +3,7 @@ import type { ElapsedState } from './FocusTracker'
 import { formatTime } from '../format'
 import { chromeStore } from '../chrome/store'
 import { bus as chromeBus } from '../chrome/bus'
-import { MAX_SCALE, MIN_SCALE, PREFS_KEY, normalizePrefs } from '../core/schema'
+import { MAX_SCALE, MIN_SCALE, PREFS_KEY, SCALE_STEP, normalizePrefs, snapScale } from '../core/schema'
 import type { Bus, Store, StoreChanges } from '../ports'
 import { t } from '../i18n'
 
@@ -11,17 +11,6 @@ import { t } from '../i18n'
 const MAX_Z_INDEX = 2147483647
 
 const HOST_ID = 'tabtimer-root'
-
-const SCALE_STEP = 0.25
-
-// Snap to a step and clamp to the allowed range; fall back to 1 on garbage.
-function clampScale(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 1
-  }
-  const snapped = Math.round(value / SCALE_STEP) * SCALE_STEP
-  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, snapped))
-}
 
 type TimerKey = 'today' | 'focus' | 'session'
 
@@ -187,7 +176,7 @@ export default class Overlay {
       .then((value) => {
         const { hidden, scale } = normalizePrefs(value)
         this.hidden = hidden
-        this.scale = clampScale(scale)
+        this.scale = snapScale(scale)
         this.applyScale()
         this.render()
       })
@@ -211,7 +200,7 @@ export default class Overlay {
   }
 
   private setScale(scale: number) {
-    const next = clampScale(scale)
+    const next = snapScale(scale)
     if (next === this.scale) {
       return
     }
@@ -467,7 +456,7 @@ export default class Overlay {
       this.needsRebuild = true
       this.render()
     }
-    const clamped = clampScale(scale)
+    const clamped = snapScale(scale)
     if (clamped !== this.scale) {
       this.scale = clamped
       this.applyScale()

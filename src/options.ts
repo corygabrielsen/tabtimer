@@ -2,7 +2,16 @@ import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } f
 import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayOf } from './core/day'
 import { dayBars, dayLabel, hasAnyUsage, historyOf, periodOf, periodTotal, summarize } from './core/usage'
-import { dayKey, normalizeDay, normalizePrefs, siteTotal, DAY_KEY_PREFIX, LIMITS_KEY, PREFS_KEY } from './core/schema'
+import {
+  dayKey,
+  normalizeDay,
+  normalizePrefs,
+  siteTotal,
+  snapScale,
+  DAY_KEY_PREFIX,
+  LIMITS_KEY,
+  PREFS_KEY,
+} from './core/schema'
 import { chromeStore } from './chrome/store'
 import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
@@ -10,7 +19,6 @@ import { h, byId, firstDayOfWeek, flashSaved, formatDuration, setDocumentLang, u
 import { createLimitPicker, createSiteLimitPicker, formatChipMinutes, GLOBAL_PRESETS } from './limitPicker'
 
 const LABELS = new Map(SUGGESTED_SITES.map((s) => [s.host, s.label]))
-const SIZES = [0.5, 0.75, 1]
 
 function enable(hosts: string[]): Promise<boolean> {
   // Must run during a user gesture — call request first, no awaits before it.
@@ -323,22 +331,14 @@ async function initGlobalLimit() {
 
 // --- On-page timer ------------------------------------------------------------
 
-function nearestSize(value: unknown): number {
-  const n = Number(value)
-  if (!Number.isFinite(n)) {
-    return 1
-  }
-  return SIZES.reduce((best, s) => (Math.abs(s - n) < Math.abs(best - n) ? s : best), 1)
-}
-
 async function initOverlay() {
   const sw = byId('overlay-switch')
   const radios = [...document.querySelectorAll<HTMLInputElement>('input[name="overlay-size"]')]
   const saved = byId('overlay-saved')
 
   const renderSwitch = (hidden: boolean) => sw?.setAttribute('aria-checked', String(!hidden))
-  const renderSize = (scale: unknown) => {
-    const v = nearestSize(scale)
+  const renderSize = (scale: number) => {
+    const v = snapScale(scale)
     for (const r of radios) {
       r.checked = Number(r.value) === v
     }

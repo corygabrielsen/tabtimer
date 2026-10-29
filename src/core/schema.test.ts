@@ -8,6 +8,7 @@ import {
   normalizeDay,
   normalizePrefs,
   siteTotal,
+  snapScale,
   sumBuckets,
   RETENTION_DAYS,
 } from './schema'
@@ -89,5 +90,14 @@ describe('normalizePrefs', () => {
     expect(normalizePrefs({ scale: 0.1 }).scale).toBe(0.5)
     expect(normalizePrefs({ scale: 7 }).scale).toBe(1)
     expect(normalizePrefs({ scale: NaN }).scale).toBe(1)
+  })
+})
+
+describe('snapScale', () => {
+  it('snaps to the nearest overlay size in range, and garbage to the default', () => {
+    expect(snapScale(0.7)).toBe(0.75)
+    expect(snapScale(0.1)).toBe(0.5)
+    expect(snapScale(3)).toBe(1)
+    expect(snapScale(NaN)).toBe(1)
   })
 })
