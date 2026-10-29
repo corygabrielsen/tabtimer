@@ -192,7 +192,7 @@ describe('popup on a tracked site', () => {
       expect(face()).toBe('open')
       expect(text('status')).toBe('Tracking')
       expect($('meter').hidden).toBe(true)
-      expect(text('summary')).toBe('No daily limit. Set one below to get blocked when time is up.')
+      expect(text('summary')).toBe('No limit')
       expect($('global-line').hidden).toBe(true)
     })
 
@@ -211,7 +211,7 @@ describe('popup on a tracked site', () => {
       expect(meter.getAttribute('aria-valuemax')).toBe('60')
       expect(meter.getAttribute('aria-valuetext')).toBe('23 min of 1 h')
       expect(meter.getAttribute('aria-label')).toBe('Time used of the daily limit for reddit.com')
-      expect(text('summary')).toBe('37 min left of your 1 h limit')
+      expect(text('summary')).toBe('37 min left of 1 h')
     })
 
     it('over the site limit: limit reached, by how much', async () => {
@@ -222,7 +222,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('over')
       expect(text('status')).toBe('Limit reached')
-      expect(text('summary')).toBe("Over this site's limit by 3 min.")
+      expect(text('summary')).toBe('3 min over limit')
       expect($('meter').getAttribute('aria-valuenow')).toBe('45') // clamped to the max
     })
 
@@ -233,7 +233,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('over')
-      expect(text('summary')).toBe('Over the all-sites limit by 5 min.')
+      expect(text('summary')).toBe('5 min over limit (all sites)')
       expect($('meter').getAttribute('aria-label')).toBe('Time used of the daily limit for all tracked sites')
     })
 
@@ -244,7 +244,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('ok')
-      expect(text('summary')).toBe('2 h left of the 3 h limit for all sites')
+      expect(text('summary')).toBe('2 h left of 3 h (all sites)')
       expect($('global-line').hidden).toBe(true)
     })
 
@@ -255,7 +255,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect($('global-line').hidden).toBe(false)
-      expect(text('global-line')).toBe('All tracked sites today: 1 h 25 min of 3 h')
+      expect(text('global-line')).toBe('All sites: 1 h 25 min of 3 h')
     })
 
     it('snoozed: still over, says when blocking resumes', async () => {
@@ -267,7 +267,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('snoozed')
       expect(text('status')).toBe('Snoozed')
-      expect(text('summary')).toBe("Over this site's limit by 3 min. Blocking resumes in 4 min.")
+      expect(text('summary')).toBe('3 min over limit. Snoozed · 4 min left')
     })
 
     it('follows limit changes made elsewhere', async () => {
@@ -290,9 +290,9 @@ describe('popup on a tracked site', () => {
         [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
-      expect(text('summary')).toContain('Blocking resumes in 4 min.')
+      expect(text('summary')).toContain('Snoozed · 4 min left')
       vi.advanceTimersByTime(2 * MIN)
-      expect(text('summary')).toContain('Blocking resumes in 2 min.')
+      expect(text('summary')).toContain('Snoozed · 2 min left')
       // Once the snooze lapses the face goes back to blocking.
       vi.advanceTimersByTime(3 * MIN)
       expect(face()).toBe('over')
@@ -402,7 +402,7 @@ describe('popup on a tracked site', () => {
       await flush()
       expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 120 * MIN } })
       expect(text('site-limit-saved')).toBe('Saved')
-      expect(text('summary')).toBe('2 h left of your 2 h limit')
+      expect(text('summary')).toBe('2 h left of 2 h')
     })
 
     it('Off clears the limit', async () => {

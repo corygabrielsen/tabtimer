@@ -26,12 +26,6 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-.lede {
-  margin-top: var(--s-2);
-  color: var(--ink-3);
-  font-size: var(--t-md);
-}
-
 /* --- This week: one card above the settings ------------------------------ */
 
 .week-card {
@@ -455,15 +449,6 @@ h1 {
 
 .setting-label {
   font-weight: 600;
-}
-
-.setting-help {
-  margin-top: 2px;
-  color: var(--ink-3);
-}
-
-.section-body > .setting-help {
-  margin-top: var(--s-3);
 }
 
 .setting-control {

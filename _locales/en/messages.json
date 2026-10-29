@@ -6,9 +6,9 @@
   "labelToday": { "message": "Today" },
   "labelFocus": { "message": "Focus" },
   "labelSession": { "message": "Session" },
-  "tooltipToday": { "message": "Time you were actively viewing this site today, across tabs." },
-  "tooltipFocus": { "message": "Time you were actively viewing this page since it loaded." },
-  "tooltipSession": { "message": "Total time this page has been open, active or not." },
+  "tooltipToday": { "message": "Today on this site" },
+  "tooltipFocus": { "message": "This page, active" },
+  "tooltipSession": { "message": "This page, open" },
   "overlayLabel": { "message": "Tab Timer" },
   "overlayPillAria": {
     "message": "Tab Timer — $label$ $time$. Activate to expand.",
@@ -66,23 +66,20 @@
   "popupStatusTracking": { "message": "Tracking" },
   "popupStatusOver": { "message": "Limit reached" },
   "popupStatusSnoozed": { "message": "Snoozed" },
-  "popupNoLimit": { "message": "No daily limit. Set one below to get blocked when time is up." },
+  "popupNoLimit": { "message": "No limit" },
   "popupLeftSite": {
-    "message": "$left$ left of your $limit$ limit",
+    "message": "$left$ left of $limit$",
     "placeholders": { "left": { "content": "$1" }, "limit": { "content": "$2" } }
   },
   "popupLeftGlobal": {
-    "message": "$left$ left of the $limit$ limit for all sites",
+    "message": "$left$ left of $limit$ (all sites)",
     "placeholders": { "left": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "popupOverSite": { "message": "Over this site's limit by $over$.", "placeholders": { "over": { "content": "$1" } } },
-  "popupOverGlobal": {
-    "message": "Over the all-sites limit by $over$.",
-    "placeholders": { "over": { "content": "$1" } }
-  },
-  "popupSnoozeResumes": { "message": "Blocking resumes in $time$.", "placeholders": { "time": { "content": "$1" } } },
+  "popupOverSite": { "message": "$over$ over limit", "placeholders": { "over": { "content": "$1" } } },
+  "popupOverGlobal": { "message": "$over$ over limit (all sites)", "placeholders": { "over": { "content": "$1" } } },
+  "popupSnoozeResumes": { "message": "Snoozed · $time$ left", "placeholders": { "time": { "content": "$1" } } },
   "popupGlobalLine": {
-    "message": "All tracked sites today: $used$ of $limit$",
+    "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
   },
   "popupUsedOf": {
@@ -104,33 +101,27 @@
     "placeholders": { "host": { "content": "$1" } }
   },
   "popupNotTrackedTitle": { "message": "Not tracked" },
-  "popupNotTracking": { "message": "Tab Timer only counts time on sites you choose." },
+  "popupNotTracking": { "message": "Not tracked" },
   "popupEnableSite": { "message": "Track this site" },
   "popupEnableSiteAria": { "message": "Track time on $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupCantTrack": { "message": "This page can't be tracked" },
-  "popupCantTrackDetail": {
-    "message": "Browser pages, the Chrome Web Store and local files are off-limits to extensions. Open a website to track it."
-  },
+  "popupCantTrackDetail": { "message": "Extensions can't run on this page." },
   "popupLoading": { "message": "Loading…" },
   "optionsDocTitle": { "message": "Tab Timer settings" },
   "optionsTitle": { "message": "Settings" },
-  "optionsIntro": { "message": "Changes save as you make them. Everything stays on this device." },
   "optionsSitesHeading": { "message": "Sites" },
-  "optionsSitesHelp": {
-    "message": "Tab Timer counts time only on the sites listed here. Chrome asks for permission the first time you add each one."
-  },
   "optionsAddHeading": { "message": "Add a site" },
   "optionsAddPlaceholder": { "message": "example.com" },
   "optionsAddButton": { "message": "Add site" },
-  "optionsAddEmpty": { "message": "Enter a domain to track, like example.com." },
-  "optionsAddInvalid": { "message": "That isn't a domain. Try something like example.com." },
+  "optionsAddEmpty": { "message": "Enter a domain." },
+  "optionsAddInvalid": { "message": "Not a valid domain." },
   "optionsAddDuplicate": { "message": "$host$ is already tracked.", "placeholders": { "host": { "content": "$1" } } },
   "optionsYourSites": { "message": "Tracking" },
   "optionsColSite": { "message": "Site" },
   "optionsColToday": { "message": "Today" },
   "optionsColLimit": { "message": "Daily limit" },
   "optionsColActions": { "message": "Actions" },
-  "optionsTrackedEmpty": { "message": "No sites yet. Add one above, or pick from the suggestions below." },
+  "optionsTrackedEmpty": { "message": "No sites yet." },
   "optionsTodayOver": { "message": "$time$ (over)", "placeholders": { "time": { "content": "$1" } } },
   "optionsTodayAria": {
     "message": "$host$: $time$ today",
@@ -140,32 +131,22 @@
   "optionsStopAria": { "message": "Stop tracking $host$", "placeholders": { "host": { "content": "$1" } } },
   "optionsSuggested": { "message": "Suggested" },
   "optionsEnableAll": { "message": "Track all suggested" },
-  "optionsSuggestedEmpty": { "message": "You're tracking every suggested site." },
   "optionsTrackAria": {
     "message": "Track $label$ ($host$)",
     "placeholders": { "label": { "content": "$1" }, "host": { "content": "$2" } }
   },
   "optionsLimitsHeading": { "message": "Daily limits" },
-  "optionsLimitsHelp": {
-    "message": "When a limit is reached, the site is covered by a full-page block. You can snooze it 5 minutes at a time."
-  },
-  "optionsGlobalLimit": { "message": "All tracked sites combined" },
-  "optionsGlobalHelp": { "message": "One budget shared by every site." },
-  "optionsPerSiteHint": { "message": "Set a limit for one site in the Sites list above." },
+  "optionsGlobalLimit": { "message": "All sites" },
   "optionsMinutes": { "message": "min" },
   "optionsSiteLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "optionsOverlayHeading": { "message": "On-page timer" },
-  "optionsOverlayHelp": {
-    "message": "A small timer at the top of tracked pages. Click it to switch between today, this visit and time open."
-  },
+  "optionsOverlayHelp": { "message": "Click the timer to switch views." },
   "optionsOverlaySize": { "message": "Size" },
   "sizeSmall": { "message": "Small" },
   "sizeMedium": { "message": "Medium" },
   "sizeLarge": { "message": "Large" },
   "optionsPrivacyHeading": { "message": "Privacy" },
-  "optionsPrivacyBody": {
-    "message": "Everything Tab Timer records stays in this browser. Nothing is sent anywhere: no accounts, no analytics, no servers."
-  },
+  "optionsPrivacyBody": { "message": "Your data stays in this browser." },
   "optionsPrivacyLink": { "message": "Privacy policy" },
   "optionsSourceLink": { "message": "Source code" },
   "usageDocTitle": { "message": "Tab Timer activity" },
@@ -234,10 +215,10 @@
   "usageShowing": { "message": "Showing $site$", "placeholders": { "site": { "content": "$1" } } },
   "usageShowAll": { "message": "Show all sites" },
   "usageEmptyTitle": { "message": "No activity yet" },
-  "usageEmptyBody": { "message": "Time you spend on tracked sites shows up here, by hour and by day." },
+  "usageEmptyBody": { "message": "No activity yet." },
   "usageEmptyLink": { "message": "Choose sites to track" },
-  "usageNoneDay": { "message": "No time on tracked sites this day." },
-  "usageNoneWeek": { "message": "No time on tracked sites this week." },
+  "usageNoneDay": { "message": "No activity." },
+  "usageNoneWeek": { "message": "No activity." },
   "usageSeeAll": { "message": "See all activity" },
   "popupStripAria": { "message": "Today on $host$, by hour", "placeholders": { "host": { "content": "$1" } } },
   "blockSeeActivity": { "message": "See activity" },

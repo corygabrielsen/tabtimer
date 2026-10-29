@@ -76,7 +76,7 @@ describe('tracked sites', () => {
     expect(text($('tracked-count'))).toBe('')
     expect(chips().map((b) => b.textContent)).toEqual(SUGGESTED_SITES.map((s) => s.label))
     expect($('enable-suggested').hidden).toBe(false)
-    expect($('suggested-empty').hidden).toBe(true)
+    expect($('suggested').hidden).toBe(false)
   })
 
   it('lists suggested sites first by name, then custom ones alphabetically', async () => {
@@ -178,14 +178,15 @@ describe('tracked sites', () => {
     expect(trackedHosts()).toEqual(['alpha.org'])
   })
 
-  it('tracks every suggested site at once, then says so', async () => {
+  it('tracks every suggested site at once, then drops the Suggested section', async () => {
     await openOptions()
+    expect(document.querySelector<HTMLElement>('.suggest-head')!.hidden).toBe(false)
     click($('enable-suggested'))
     await flush()
     expect(browser.granted).toEqual(new Set(SUGGESTED_SITES.flatMap((s) => originsForSite(s.host))))
     expect(chips()).toEqual([])
-    expect($('suggested-empty').hidden).toBe(false)
-    expect($('enable-suggested').hidden).toBe(true)
+    expect(document.querySelector<HTMLElement>('.suggest-head')!.hidden).toBe(true)
+    expect($('suggested').hidden).toBe(true)
   })
 })
 
@@ -202,8 +203,8 @@ describe('adding a site', () => {
   })
 
   it.each([
-    ['', 'Enter a domain to track, like example.com.'],
-    ['localhost', "That isn't a domain. Try something like example.com."],
+    ['', 'Enter a domain.'],
+    ['localhost', 'Not a valid domain.'],
   ])('explains why %j cannot be added', async (value, message) => {
     await openOptions()
     submitAdd(value)
@@ -348,7 +349,7 @@ describe('limits', () => {
   it('saves the all-sites cap from its presets, a custom value, or Off', async () => {
     await openOptions()
     const picker = globalPicker()
-    expect(picker.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('All tracked sites combined')
+    expect(picker.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('All sites')
     expect(radios(picker).map((c) => c.textContent)).toEqual(['Off', '1h', '2h', '3h', '4h', 'Custom'])
     expect(checkedRadio(picker)).toBe('Off')
     click(radio(picker, '3h'))

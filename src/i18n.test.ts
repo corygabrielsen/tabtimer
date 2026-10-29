@@ -38,7 +38,7 @@ describe('localizeDom', () => {
     expect(document.getElementById('a')?.textContent).toBe('Today')
     const input = document.getElementById('b')!
     expect(input.getAttribute('placeholder')).toBe('example.com')
-    expect(input.getAttribute('aria-label')).toBe('All tracked sites combined')
+    expect(input.getAttribute('aria-label')).toBe('All sites')
     expect(document.getElementById('c')?.hasAttribute('title')).toBe(false)
   })
 

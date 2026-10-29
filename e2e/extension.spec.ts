@@ -35,7 +35,7 @@ test('loads: service worker alive and options page renders', async ({ context, s
   const page = await context.newPage()
   await page.goto(`chrome-extension://${extensionId}/options.html`)
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-  await expect(page.getByRole('radiogroup', { name: 'All tracked sites combined' })).toBeVisible()
+  await expect(page.getByRole('radiogroup', { name: 'All sites' })).toBeVisible()
   // The fixture hosts are granted, so they list as tracked sites.
   await expect(page.locator('#tracked-sites')).toContainText(SITE_A)
 })
@@ -91,7 +91,7 @@ test('limits set from the options page: a preset chip and a custom value', async
   await page.goto(`chrome-extension://${extensionId}/options.html`)
 
   // All-sites cap: one tap on a preset saves it.
-  const cap = page.getByRole('radiogroup', { name: 'All tracked sites combined' })
+  const cap = page.getByRole('radiogroup', { name: 'All sites' })
   await cap.getByRole('radio', { name: '2 h' }).click()
   await expect(cap.getByRole('radio', { name: '2 h' })).toHaveAttribute('aria-checked', 'true')
   await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toEqual({ global: 120 * MINUTE, perSite: {} })

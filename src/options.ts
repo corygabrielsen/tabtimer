@@ -195,7 +195,7 @@ function restoreFocus(prevOrder: { tracked: string[]; suggested: string[] }) {
   if (next) {
     next.focus()
   } else {
-    byId(list === 'tracked' ? 'add-input' : 'enable-suggested')?.focus()
+    byId('add-input')?.focus()
   }
 }
 
@@ -238,8 +238,9 @@ async function render() {
 
   const untracked = SUGGESTED_SITES.filter((s) => !granted.has(s.host))
   suggestedUl.replaceChildren(...untracked.map((s) => suggestionChip(s.label, s.host)))
-  byId('suggested-empty')?.toggleAttribute('hidden', untracked.length > 0)
-  byId('enable-suggested')?.toggleAttribute('hidden', untracked.length === 0)
+  // Every suggestion tracked: no Suggested section at all.
+  document.querySelector('.suggest-head')?.toggleAttribute('hidden', untracked.length === 0)
+  suggestedUl.hidden = untracked.length === 0
 
   const prev = order
   order = { tracked, suggested: untracked.map((s) => s.host) }

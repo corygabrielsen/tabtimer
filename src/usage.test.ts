@@ -138,7 +138,7 @@ describe('day view', () => {
   it('says so on a day with no usage', () => {
     click($('prev'))
     click($('prev'))
-    expect(document.querySelector('.none')?.textContent).toBe('No time on tracked sites this day.')
+    expect(document.querySelector('.none')?.textContent).toBe('No activity.')
     expect(legend()).toEqual([])
     expect($('site-list').children).toHaveLength(0)
     expect($('sites-h').parentElement!.hidden).toBe(true)
@@ -212,7 +212,7 @@ describe('week view', () => {
     click($('prev'))
     expect(text('period-label')).toBe('Oct 11 – 17')
     expect(text('change')).toBe('')
-    expect(document.querySelector('.none')?.textContent).toBe('No time on tracked sites this week.')
+    expect(document.querySelector('.none')?.textContent).toBe('No activity.')
     expect(document.querySelector('.ref-average')).toBeNull()
     click($('prev'))
     click($('prev'))

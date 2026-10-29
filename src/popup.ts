@@ -203,7 +203,7 @@ function summaryText(
     const over = formatDuration(face.reason.elapsed - face.reason.limit)
     const cause = face.reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)
     if (face.state === 'snoozed') {
-      return `${cause} ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.snoozeUntil - Date.now())))}`
+      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.snoozeUntil - Date.now())))}`
     }
     return cause
   }

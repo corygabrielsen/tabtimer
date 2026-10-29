@@ -103,7 +103,7 @@ describe('expanded panel', () => {
       ['Focus', '00:00:00'],
       ['Session', '00:00:04'],
     ])
-    expect(rows()[0]?.title).toMatch(/across tabs/)
+    expect(rows()[0]?.title).toBe('Today on this site')
     expect(rows().map((r) => r.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
     await tickView(view, seconds(1))
     expect(rows()[2]?.querySelector('.time')?.textContent).toBe('00:00:05')

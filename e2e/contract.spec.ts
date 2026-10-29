@@ -38,7 +38,7 @@ test('concurrent limit edits from the popup and the options page both survive', 
   // One tap each, at the same time: this site's limit in the popup, the
   // all-sites cap in the options page.
   const sitePicker = popup.getByRole('radiogroup', { name: `Daily limit for ${SITE_A}` })
-  const cap = options.getByRole('radiogroup', { name: 'All tracked sites combined' })
+  const cap = options.getByRole('radiogroup', { name: 'All sites' })
   await Promise.all([
     sitePicker.getByRole('radio', { name: '15 min' }).click(),
     cap.getByRole('radio', { name: '2 h' }).click(),
