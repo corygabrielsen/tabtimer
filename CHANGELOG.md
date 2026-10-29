@@ -4,6 +4,14 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-10-29
+
+### Changed
+
+- Internal cleanup and faster pages. Stored time, sites and limits reset once
+  (new storage format).
+- Requires Chrome 117 or newer.
+
 ## [1.6.0] - 2026-10-29
 
 ### Added
@@ -188,6 +196,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.6.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.3.0...v1.4.0

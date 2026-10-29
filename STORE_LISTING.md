@@ -23,9 +23,9 @@ Counts your active time on chosen sites and blocks them when you reach your dail
 
 ## Permission justifications
 
-- **storage** — Persist each tracked site's daily elapsed time, the show/hide
-  preference, and any daily time limits locally in `chrome.storage.local`. No
-  data leaves the device.
+- **storage** — Persist each tracked site's daily elapsed time, the overlay
+  preferences, and any daily time limits and snooze locally in
+  `chrome.storage.local`. No data leaves the device.
 - **scripting** — Register the content script at runtime for the sites the user
   has enabled, so the overlay can render and measure active time.
 - **idle** — Pause timing while the user is away from the computer: Chrome
