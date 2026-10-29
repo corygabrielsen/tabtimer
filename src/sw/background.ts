@@ -98,9 +98,12 @@ serveRouter(
     tracker,
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
-    openOptions: () => chrome.runtime.openOptionsPage(),
-    openActivity: async () => {
-      await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+    open: async (page) => {
+      if (page === 'options') {
+        await chrome.runtime.openOptionsPage()
+      } else {
+        await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+      }
     },
   })
 )

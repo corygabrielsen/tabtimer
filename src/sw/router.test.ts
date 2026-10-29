@@ -6,6 +6,7 @@ import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
 import { LIMITS_KEY, PREFS_KEY, emptyBuckets } from '../core/schema'
 import { SNOOZE_MS } from '../core/limits'
+import type { Page } from '../core/messages'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const ID = 'tabtimer-test'
@@ -16,8 +17,7 @@ const MIN = 60_000
 let browser: FakeChrome
 let NOW = NOON
 let handle: Handler
-let openOptions: ReturnType<typeof vi.fn<() => Promise<void>>>
-let openActivity: ReturnType<typeof vi.fn<() => Promise<void>>>
+let open: ReturnType<typeof vi.fn<(page: Page) => Promise<void>>>
 
 const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = {}): Sender => ({
   id: ID,
@@ -43,8 +43,7 @@ async function visit(sender = content(), extra: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   browser = fakeChrome()
-  openOptions = vi.fn(() => Promise.resolve())
-  openActivity = vi.fn(() => Promise.resolve())
+  open = vi.fn(() => Promise.resolve())
   NOW = NOON
   const clock = { now: () => NOW }
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
@@ -54,7 +53,7 @@ beforeEach(() => {
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
   })
-  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, openOptions, openActivity })
+  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, open })
 })
 
 describe('sender policy', () => {
@@ -177,31 +176,24 @@ describe('handlers', () => {
     expect(today()?.['reddit.com']?.[12]).toBe(2000)
   })
 
-  it('set a limit and answer with all limits', async () => {
+  it('set a limit', async () => {
     await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 }, page())).resolves.toEqual({
       ok: true,
-      value: { global: null, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
+      value: null,
     })
-    await expect(handle({ type: 'setLimit', scope: 'global', minutes: 2 }, page('options.html'))).resolves.toEqual({
-      ok: true,
-      value: { global: 2, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
-    })
+    await handle({ type: 'setLimit', scope: 'global', minutes: 2 }, page('options.html'))
+    expect(browser.storage.local.data[LIMITS_KEY]).toEqual({ global: 2, perSite: { 'x.com': 1 }, snoozeUntil: 0 })
   })
 
-  it('snooze, from a tab or a page', async () => {
-    await expect(handle({ type: 'snooze' }, content())).resolves.toEqual({
-      ok: true,
-      value: { snoozeUntil: NOW + SNOOZE_MS },
-    })
+  it('snooze, from a tab only', async () => {
+    await expect(handle({ type: 'snooze' }, page())).resolves.toEqual({ ok: false, error: 'forbidden' })
+    await expect(handle({ type: 'snooze' }, content())).resolves.toEqual({ ok: true, value: null })
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: NOW + SNOOZE_MS })
   })
 
   it('set prefs, changing only the fields given', async () => {
     await handle({ type: 'setPrefs', scale: 0.5 }, content())
-    await expect(handle({ type: 'setPrefs', hidden: true }, page())).resolves.toEqual({
-      ok: true,
-      value: { hidden: true, scale: 0.5 },
-    })
+    await expect(handle({ type: 'setPrefs', hidden: true }, page())).resolves.toEqual({ ok: true, value: null })
     expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5 })
   })
 
@@ -220,15 +212,14 @@ describe('handlers', () => {
     await expect(handle({ ...presence, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
   })
 
-  it('open the options page', async () => {
-    await expect(handle({ type: 'openOptions' }, content())).resolves.toEqual({ ok: true, value: null })
-    expect(openOptions).toHaveBeenCalledOnce()
-  })
-
-  it('open the activity page', async () => {
-    await expect(handle({ type: 'openActivity' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'openActivity' }, page('usage.html'))).resolves.toEqual({ ok: true, value: null })
-    expect(openActivity).toHaveBeenCalledTimes(2)
+  it('open the options or the activity page, from a tab only', async () => {
+    await expect(handle({ type: 'open', page: 'options' }, content())).resolves.toEqual({ ok: true, value: null })
+    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({ ok: true, value: null })
+    await expect(handle({ type: 'open', page: 'activity' }, page('usage.html'))).resolves.toEqual({
+      ok: false,
+      error: 'forbidden',
+    })
+    expect(open.mock.calls).toEqual([['options'], ['activity']])
   })
 
   it('answer internal when a handler fails', async () => {

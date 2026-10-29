@@ -1,6 +1,6 @@
 // One handler per message type, behind a sender policy. Order of checks:
 //   1. the sender is this extension (sender.id), else 'forbidden';
-//   2. the payload parses (core/messages.ts parseRequest), else 'bad_request';
+//   2. the payload parses (core/requests.ts parseRequest), else 'bad_request';
 //   3. the sender may send this type (SENDERS): an extension page is
 //      recognized by its URL; a content script by a tab, the top frame and
 //      an http(s) URL, and its site is taken from that URL, never from the
@@ -8,8 +8,9 @@
 //   4. the handler runs; a throw is 'internal'.
 // A page being navigated away from may still report (its last report is
 // sent as it is hidden): it is heard as hidden, whatever it says.
-import { parseRequest, SENDERS, type Contract, type MessageType, type Origin, type RequestOf } from '../core/messages'
-import { siteOf, siteOfUrl, type Site } from '../core/site'
+import { SENDERS, type Contract, type MessageType, type Origin, type Page, type RequestOf } from '../core/messages'
+import { parseRequest } from '../core/requests'
+import { siteOfUrl, type Site } from '../core/site'
 import type { Handler, Sender } from '../chrome/bus'
 import type { Ledger } from './ledger'
 import type { Tracker } from './tracker'
@@ -20,8 +21,7 @@ export type RouterDeps = {
   extensionId: string
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
-  openOptions: () => Promise<void>
-  openActivity: () => Promise<void>
+  open: (page: Page) => Promise<void>
 }
 
 // Where a request came from, and for a content script the site it runs on
@@ -30,16 +30,6 @@ type Tab = { id: number; windowId: number; doc: string; departing: boolean }
 type Context = { origin: Origin; site: Site | null; tab: Tab | null }
 
 type Handlers = { [K in MessageType]: (req: RequestOf<K>, ctx: Context) => Promise<Contract[K]['res']> }
-
-class BadRequest extends Error {}
-
-// A site named by an extension page must already be in canonical form.
-function canonical(site: Site): Site {
-  if (siteOf(site) !== site) {
-    throw new BadRequest(site)
-  }
-  return site
-}
 
 // The tab's top frame is frame 0 while its page is the one shown. A page
 // being navigated away from (its last report is sent on pagehide) is no
@@ -83,25 +73,24 @@ export function createRouter(deps: RouterDeps): Handler {
         { visible: visible && !tab.departing, focused, media, blocked }
       )
     },
-    resetToday: async (req) => {
-      await tracker.resetToday(canonical(req.site))
+    resetToday: async ({ site }) => {
+      await tracker.resetToday(site)
       return null
     },
-    setLimit: (req) =>
-      ledger.setLimit(
-        req.scope === 'global'
-          ? { scope: 'global', minutes: req.minutes }
-          : { scope: 'site', site: canonical(req.site), minutes: req.minutes }
-      ),
-    snooze: async () => ({ snoozeUntil: await ledger.snooze() }),
-    setPrefs: ({ hidden, scale }) =>
-      ledger.setPrefs({ ...(hidden === undefined ? {} : { hidden }), ...(scale === undefined ? {} : { scale }) }),
-    openOptions: async () => {
-      await deps.openOptions()
+    setLimit: async (edit) => {
+      await ledger.setLimit(edit)
       return null
     },
-    openActivity: async () => {
-      await deps.openActivity()
+    snooze: async () => {
+      await ledger.snooze()
+      return null
+    },
+    setPrefs: async (change) => {
+      await ledger.setPrefs(change)
+      return null
+    },
+    open: async ({ page }) => {
+      await deps.open(page)
       return null
     },
   }
@@ -121,8 +110,8 @@ export function createRouter(deps: RouterDeps): Handler {
     try {
       const handler = handlers[req.type] as (req: unknown, ctx: Context) => Promise<unknown>
       return { ok: true, value: await handler(req, ctx) } as never
-    } catch (error) {
-      return { ok: false, error: error instanceof BadRequest ? 'bad_request' : 'internal' }
+    } catch {
+      return { ok: false, error: 'internal' }
     }
   }
 }

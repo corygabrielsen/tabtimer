@@ -164,26 +164,21 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
     prune: (): Promise<void> => enqueue(() => pruneNow(clock.now())),
 
-    setLimit: (edit: LimitEdit): Promise<Limits> =>
+    setLimit: (edit: LimitEdit): Promise<void> =>
       enqueue(async () => {
-        const limits = applyLimit(normalizeLimits(await local.get(LIMITS_KEY)), edit)
-        await local.set({ [LIMITS_KEY]: limits })
-        return limits
+        await local.set({ [LIMITS_KEY]: applyLimit(normalizeLimits(await local.get(LIMITS_KEY)), edit) })
       }),
 
     // Suppress all blocking for SNOOZE_MS of wall-clock time.
-    snooze: (): Promise<number> =>
+    snooze: (): Promise<void> =>
       enqueue(async () => {
-        const until = clock.now() + SNOOZE_MS
-        await local.set({ [LIMITS_KEY]: { ...normalizeLimits(await local.get(LIMITS_KEY)), snoozeUntil: until } })
-        return until
+        const snoozeUntil = clock.now() + SNOOZE_MS
+        await local.set({ [LIMITS_KEY]: { ...normalizeLimits(await local.get(LIMITS_KEY)), snoozeUntil } })
       }),
 
-    setPrefs: (change: Partial<Prefs>): Promise<Prefs> =>
+    setPrefs: (change: Partial<Prefs>): Promise<void> =>
       enqueue(async () => {
-        const prefs = normalizePrefs({ ...normalizePrefs(await local.get(PREFS_KEY)), ...change })
-        await local.set({ [PREFS_KEY]: prefs })
-        return prefs
+        await local.set({ [PREFS_KEY]: normalizePrefs({ ...normalizePrefs(await local.get(PREFS_KEY)), ...change }) })
       }),
   }
 }

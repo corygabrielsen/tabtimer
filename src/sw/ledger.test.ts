@@ -167,14 +167,11 @@ describe('setLimit', () => {
     browser.latency = 3
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 5 }, snoozeUntil: 0 } })
     // The popup sets this site's limit while the options page sets the cap.
-    const [fromPopup, fromOptions] = await Promise.all([
+    await Promise.all([
       ledger.setLimit({ scope: 'site', site: 'reddit.com', minutes: 30 }),
       ledger.setLimit({ scope: 'global', minutes: 120 }),
     ])
-    const both = { global: 120, perSite: { 'x.com': 5, 'reddit.com': 30 }, snoozeUntil: 0 }
-    expect(data()[LIMITS_KEY]).toEqual(both)
-    expect(fromPopup).toEqual({ ...both, global: null })
-    expect(fromOptions).toEqual(both)
+    expect(data()[LIMITS_KEY]).toEqual({ global: 120, perSite: { 'x.com': 5, 'reddit.com': 30 }, snoozeUntil: 0 })
   })
 
   it('clears a limit, and tolerates garbage in storage', async () => {
@@ -188,15 +185,16 @@ describe('setLimit', () => {
 describe('snooze and prefs', () => {
   it('snoozes for SNOOZE_MS from now, keeping the limits; a limit edit keeps the snooze', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
-    await expect(ledger.snooze()).resolves.toBe(NOON + SNOOZE_MS)
+    await ledger.snooze()
     expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
     await ledger.setLimit({ scope: 'global', minutes: 90 })
     expect(data()[LIMITS_KEY]).toEqual({ global: 90, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
   })
 
   it('merges a prefs change into the stored prefs', async () => {
-    await expect(ledger.setPrefs({ scale: 0.75 })).resolves.toEqual({ hidden: false, scale: 0.75 })
-    await expect(ledger.setPrefs({ hidden: true })).resolves.toEqual({ hidden: true, scale: 0.75 })
+    await ledger.setPrefs({ scale: 0.75 })
+    expect(data()[PREFS_KEY]).toEqual({ hidden: false, scale: 0.75 })
+    await ledger.setPrefs({ hidden: true })
     expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75 })
   })
 })
