@@ -23,6 +23,10 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
   const start = Date.now()
   await page.goto(site(SITE_A))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
+  const first = (await openInterval(serviceWorker))!.since
+  // A millisecond on, so any interval opened from here starts after `first`.
+  await advance(serviceWorker, 1)
 
   // The popup's "Enable on this site" path, on a page whose instance from an
   // earlier grant is still running (disable in options leaves it in place):
@@ -33,12 +37,14 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
     await chrome.scripting.executeScript({ target: { tabId: tab!.id! }, files: ['content.js'] })
   }, `http://${SITE_A}/*`)
 
-  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
+  // The old instance reports the page gone, then the new one reports it in
+  // use: a new interval.
+  await expect.poll(() => openInterval(serviceWorker).then((open) => open?.since ?? 0)).toBeGreaterThan(first)
   await advance(serviceWorker, 30_000)
   // Leaving the page fires pagehide: every instance reports the page gone.
   await page.goto('about:blank')
   await expect.poll(() => openInterval(serviceWorker)).toBeNull()
-  const lifetime = 30_000 + Date.now() - start
+  const lifetime = 30_001 + Date.now() - start
 
   // One tab, focused the whole time: at most its lifetime, counted once.
   const total = await readToday(serviceWorker, SITE_A)

@@ -74,10 +74,10 @@ test('time continues correctly after the service worker is stopped mid-session',
   // Taking focus away is the next event: it starts a fresh worker, which
   // reads the open interval back from storage.session and credits it.
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-  const left = Date.now()
   await running()
   const sw = serviceWorker
   await expect.poll(() => readToday(sw, SITE_A)).toBeGreaterThan(0)
+  const left = Date.now()
   const credited = await readToday(sw, SITE_A)
   expect(credited).toBeLessThanOrEqual(left - start)
   expect(credited).toBeGreaterThanOrEqual(last * 1000 - 2_000)

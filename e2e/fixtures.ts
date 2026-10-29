@@ -214,14 +214,14 @@ export const advance = (sw: Worker, ms: number) => callHook(sw, 'advance', ms)
 export const focusWindow = (sw: Worker, windowId: number) => callHook(sw, 'focusWindow', windowId)
 
 // The worker's open interval (in storage.session), or null.
-export function openInterval(sw: Worker): Promise<{ windowId: number; media: boolean } | null> {
+export function openInterval(sw: Worker): Promise<{ windowId: number; media: boolean; since: number } | null> {
   return sw.evaluate(() =>
     chrome.storage.session
       .get('worker')
       .then(
         ({ worker }) =>
-          (worker as { tracker?: { open?: { windowId: number; media: boolean } | null } } | undefined)?.tracker?.open ??
-          null
+          (worker as { tracker?: { open?: { windowId: number; media: boolean; since: number } | null } } | undefined)
+            ?.tracker?.open ?? null
       )
   )
 }
