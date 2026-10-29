@@ -22,3 +22,6 @@ coverage/
 
 # Logs
 *.log
+
+# Agent tooling (worktrees, local state)
+.claude/
