@@ -17,10 +17,10 @@ export default defineConfig({
       reporter: ['text', 'json-summary', 'html'],
       // Just below current coverage so a regression fails CI; raise as it grows.
       thresholds: {
-        lines: 96,
-        branches: 87,
-        functions: 88,
-        statements: 95,
+        lines: 97,
+        branches: 89,
+        functions: 89,
+        statements: 96,
       },
     },
   },

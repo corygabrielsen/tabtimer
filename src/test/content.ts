@@ -1,5 +1,5 @@
 // Shared fixtures for content-script tests: a fake clock, the real background
-// single-writer, and teardown for Models (which have no destroy of their own).
+// single-writer, and teardown for Models.
 import { vi } from 'vitest'
 import Model from '../Model'
 import { todayKeyForHost } from '../storage'
@@ -25,13 +25,11 @@ export function trackModel(model: Model): Model {
   return model
 }
 
-// Detach a Model's page listeners so it can't keep reporting into a later test.
+// Stop a Model's tick and listeners so it can't keep reporting into a later
+// test.
 export function disposeModels(): void {
   for (const model of models.splice(0)) {
-    document.removeEventListener('visibilitychange', model.handleVisibilityChange)
-    window.removeEventListener('blur', model.handleBlur)
-    window.removeEventListener('focus', model.handleFocus)
-    chrome.storage.onChanged.removeListener(model.handleStorageChange)
+    model.destroy()
   }
 }
 

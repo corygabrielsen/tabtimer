@@ -1,5 +1,5 @@
 import type Model from './Model'
-import { baseHost, readGlobalElapsedToday } from './storage'
+import { baseHost } from './storage'
 import {
   evaluateLimits,
   normalizeLimits,
@@ -160,7 +160,8 @@ export default class Blocker {
     chrome.storage.onChanged.addListener(this.handleStorageChange)
   }
 
-  private async refresh() {
+  // Re-read limits and snooze state, then re-evaluate.
+  async refresh(): Promise<void> {
     this.limits = await readLimits()
     this.snoozeUntil = await readSnoozeUntil()
     await this.tick()
@@ -182,7 +183,7 @@ export default class Blocker {
           .then((e) => e.today.elapsed)
           .catch(() => 0)
       : 0
-    const globalToday = hasGlobal ? await readGlobalElapsedToday().catch(() => 0) : 0
+    const globalToday = hasGlobal ? await this.model.readGlobalToday().catch(() => 0) : 0
     const reason = evaluateLimits(this.limits, this.siteHost, siteToday, globalToday)
     if (reason) {
       this.block(reason)
@@ -196,6 +197,7 @@ export default class Blocker {
     this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
     if (!this.blocked) {
       this.blocked = true
+      this.model.setBlocked(true)
       this.host.style.setProperty('display', 'block', 'important')
       document.documentElement.style.setProperty('overflow', 'hidden', 'important')
     }
@@ -206,11 +208,15 @@ export default class Blocker {
       return
     }
     this.blocked = false
+    this.model.setBlocked(false)
     this.host.style.setProperty('display', 'none', 'important')
     document.documentElement.style.removeProperty('overflow')
   }
 
   destroy() {
+    if (this.blocked) {
+      this.model.setBlocked(false)
+    }
     chrome.storage.onChanged.removeListener(this.handleStorageChange)
     document.documentElement.style.removeProperty('overflow')
     this.host.remove()

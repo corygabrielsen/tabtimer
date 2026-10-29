@@ -9,87 +9,72 @@ export enum TimerState {
   PAUSED = 'paused',
 }
 
-type TickCallback = (elapsed: number) => void
-
-// Timer class encapsulates the timer logic
+// A passive stopwatch: it owns no interval of its own. Its owner calls tick()
+// on a shared tick source (one per tab, see Model), and elapsed time is the
+// sum of the deltas between successive measurements rather than
+// `now - start`. Each delta is clamped to [0, maxStep]: a tick that arrives
+// after a long gap (system sleep, lid closed, a frozen tab) or after the wall
+// clock jumped forward contributes at most maxStep, and a backward clock jump
+// contributes nothing instead of erasing time already accrued.
 export default class Timer {
-  private timerId: ReturnType<typeof setInterval> | null = null
-  private startTime: number | null = null
-  private pauseTime: number | null = null
-  private elapsedPause: number = 0
+  // Wall-clock time the last delta was measured up to; null unless running.
+  private lastTick: number | null = null
   public elapsed: number = 0
   public state: TimerState = TimerState.NOT_STARTED
 
   constructor(
     public type: TimerType,
-    private interval: number,
-    private callback: TickCallback
+    // Largest single delta credited.
+    private maxStep: number
   ) {}
 
-  // Update the elapsed time and call the tick callback function
-  private updateElapsed(val: number) {
-    this.elapsed = val
-    this.callback(this.elapsed) // Call the tick callback function with the elapsed time
-  }
-
-  // Tick function called by setInterval
-  tick() {
-    if (this.startTime === null) {
-      return
+  // Credit the time since the previous measurement, clamped to [0, maxStep].
+  // Returns the amount credited (0 unless running).
+  tick(now: number = Date.now()): number {
+    if (this.lastTick === null) {
+      return 0
     }
-    // const before = this.elapsed
-    this.updateElapsed(Date.now() - this.startTime - this.elapsedPause)
+    const delta = now - this.lastTick
+    this.lastTick = now
+    if (delta <= 0) {
+      return 0
+    }
+    const credited = Math.min(delta, this.maxStep)
+    this.elapsed += credited
+    return credited
   }
 
-  // Start the timer
   start() {
     if (this.state === TimerState.RUNNING) {
       return
     }
     if (this.state === TimerState.PAUSED) {
-      // error condition unexpected
       throw new Error('Cannot start a paused timer, must resume')
     }
-    if (this.state !== TimerState.NOT_STARTED) {
-      // error condition unexpected
-      throw new Error('Cannot start a timer that is not in the NOT_STARTED state')
-    }
     this.state = TimerState.RUNNING
-    this.startTime = Date.now()
-    this.timerId = setInterval(this.tick.bind(this), this.interval)
+    this.lastTick = Date.now()
   }
 
-  // Stop the timer and reset the elapsed time
+  // Stop the timer and reset the elapsed time.
   stop() {
-    if (this.state === TimerState.NOT_STARTED) {
-      return
-    }
-    if (this.timerId) {
-      // Stop the timer
-      clearInterval(this.timerId)
-    }
-    this.timerId = null
-    this.startTime = null
-    this.updateElapsed(0)
-    this.pauseTime = null
-    this.elapsedPause = 0
+    this.lastTick = null
+    this.elapsed = 0
     this.state = TimerState.NOT_STARTED
   }
 
-  pause() {
+  // Pause, keeping the partial interval since the last tick. Returns the
+  // amount credited by that final measurement.
+  pause(): number {
     if (this.state === TimerState.PAUSED) {
-      return
+      return 0
     }
     if (this.state !== TimerState.RUNNING) {
       throw new Error(`Cannot pause a timer that is not in the RUNNING state. (state = ${this.state})`)
     }
+    const credited = this.tick()
+    this.lastTick = null
     this.state = TimerState.PAUSED
-    this.pauseTime = Date.now()
-    if (this.timerId === null) {
-      throw new Error(`timerId is null but state is ${this.state}`)
-    }
-    // Stop the timer
-    clearInterval(this.timerId)
+    return credited
   }
 
   unpause() {
@@ -99,27 +84,17 @@ export default class Timer {
     if (this.state !== TimerState.PAUSED) {
       throw new Error(`Cannot unpause a timer that is not in the PAUSED state. (state = ${this.state})`)
     }
-    if (this.pauseTime === null) {
-      throw new Error(`pauseTime is null but state is ${this.state}`)
-    }
     this.state = TimerState.RUNNING
-    this.elapsedPause += Date.now() - this.pauseTime
-    this.timerId = setInterval(this.tick.bind(this), this.interval)
+    this.lastTick = Date.now()
   }
 
-  // Reset the elapsed time while preserving the running/paused state.
-  // A paused timer (e.g. the focus timer on a blurred tab at midnight)
-  // must stay paused, otherwise it would silently resume and count
-  // non-focus time after the daily reset.
+  // Zero the elapsed time while preserving the running/paused state. A paused
+  // timer (e.g. the focus timer on a blurred tab at midnight) must stay
+  // paused, otherwise it would silently resume and count non-focus time.
   reset() {
-    if (this.state === TimerState.NOT_STARTED) {
-      return
-    }
-    const wasPaused = this.state === TimerState.PAUSED
-    this.stop()
-    this.start()
-    if (wasPaused) {
-      this.pause()
+    this.elapsed = 0
+    if (this.state === TimerState.RUNNING) {
+      this.lastTick = Date.now()
     }
   }
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { baseHost, baseKeyForHost, todayKeyForHost, ELAPSED_KEY_PREFIX } from './storage'
+import { baseHost, baseKeyForHost, isElapsedKeyForDay, todayKeyForHost, ELAPSED_KEY_PREFIX } from './storage'
 
 describe('baseHost', () => {
   it('strips subdomains down to the last two labels', () => {
@@ -25,5 +25,14 @@ describe('todayKeyForHost', () => {
   it('maps two subdomains of one site to the same key', () => {
     const day = new Date(2026, 5, 28)
     expect(todayKeyForHost('old.reddit.com', day)).toBe(todayKeyForHost('www.reddit.com', day))
+  })
+})
+
+describe('isElapsedKeyForDay', () => {
+  it('matches every site’s key for that day only', () => {
+    const day = new Date(2026, 5, 28)
+    expect(isElapsedKeyForDay(todayKeyForHost('x.com', day), day)).toBe(true)
+    expect(isElapsedKeyForDay(todayKeyForHost('x.com', new Date(2026, 5, 27)), day)).toBe(false)
+    expect(isElapsedKeyForDay('tabtimer_limits', day)).toBe(false)
   })
 })
