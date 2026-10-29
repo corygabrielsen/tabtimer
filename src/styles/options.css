@@ -1,0 +1,378 @@
+/* Options page: a settings document. Section titles hang in a left column at
+   wide widths and stack above their controls on narrow ones. */
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--s-12) var(--s-6) var(--s-12);
+}
+
+.page-head {
+  padding-bottom: var(--s-8);
+  border-bottom: 2px solid var(--ink);
+}
+
+.brand {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+h1 {
+  margin-top: var(--s-1);
+  font-size: 34px;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  margin-top: var(--s-2);
+  color: var(--ink-3);
+  font-size: var(--t-md);
+}
+
+/* --- Sections ------------------------------------------------------------ */
+
+.section {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: var(--s-8);
+  padding: var(--s-8) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.section:last-child {
+  border-bottom: 0;
+}
+
+.section-head h2 {
+  font-size: var(--t-md);
+  font-weight: 650;
+}
+
+.section-head p {
+  margin-top: var(--s-2);
+  max-width: 34ch;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.section-body {
+  min-width: 0;
+  max-width: 62ch;
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: var(--s-8) var(--s-4);
+  }
+  .section {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+  }
+  .section-head p {
+    max-width: none;
+  }
+}
+
+/* --- Add a site ---------------------------------------------------------- */
+
+.add-label {
+  display: block;
+  margin-bottom: var(--s-2);
+  font-weight: 600;
+}
+
+.add-row {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.add-row .field {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  font-size: var(--t-md);
+}
+
+.add-row .btn {
+  min-height: 36px;
+}
+
+.add .error {
+  margin-top: var(--s-2);
+}
+
+/* --- Lists --------------------------------------------------------------- */
+
+.list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-top: var(--s-8);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.list-head h3 {
+  font-size: inherit;
+}
+
+.suggest-head {
+  align-items: center;
+}
+
+.count {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Site rows: name | today | limit | stop. Shared track with .cols. */
+.cols,
+.site-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px 150px 112px;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.cols {
+  margin-top: var(--s-3);
+  padding-bottom: var(--s-1);
+  border-bottom: 1px solid var(--ink);
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.site-row {
+  min-height: 56px;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.site-name {
+  min-width: 0;
+}
+
+.site-name strong {
+  display: block;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-name span {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-today {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.site-today[data-over] {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.site-row .minutes {
+  justify-self: start;
+}
+
+.site-row .stop {
+  justify-self: end;
+}
+
+.site-row .error {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .cols {
+    display: none;
+  }
+  .site-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--s-1);
+    padding: var(--s-3) 0;
+  }
+  .site-today {
+    justify-self: end;
+  }
+  .site-row .minutes {
+    grid-column: 1;
+  }
+}
+
+.empty {
+  padding: var(--s-5) 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+}
+
+/* Suggested sites: one tap to track. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: var(--s-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  min-height: 32px;
+  padding: 0 var(--s-3) 0 var(--s-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip::before {
+  content: '+';
+  display: inline-block;
+  width: 14px;
+  margin-right: 2px;
+  color: var(--ink-3);
+  font-weight: 600;
+  text-align: center;
+}
+
+.chip:hover {
+  border-color: var(--ink);
+  background: var(--surface);
+}
+
+.chip:hover::before {
+  color: var(--ink);
+}
+
+/* --- Settings rows ------------------------------------------------------- */
+
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  min-height: 56px;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.setting:first-child {
+  border-top: 1px solid var(--rule);
+}
+
+.setting-label {
+  font-weight: 600;
+}
+
+.setting-help {
+  margin-top: 2px;
+  color: var(--ink-3);
+}
+
+.section-body > .setting-help {
+  margin-top: var(--s-3);
+}
+
+.section-body > .error {
+  margin-top: var(--s-2);
+}
+
+fieldset.setting {
+  margin: 0;
+  padding: var(--s-2) 0;
+  border-width: 0 0 1px;
+  border-style: solid;
+  border-color: var(--rule);
+  min-inline-size: 0;
+}
+
+fieldset.setting legend {
+  float: left;
+  padding: 0;
+}
+
+.segmented-wrap {
+  display: flex;
+  justify-content: space-between;
+}
+
+.segmented {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--s-3);
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.segmented label + label {
+  border-left: 1px solid var(--rule-strong);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segmented label:has(input:checked) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.segmented label:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- Privacy ------------------------------------------------------------- */
+
+.prose {
+  max-width: 60ch;
+  line-height: 1.6;
+  font-size: var(--t-md);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-5);
+  margin-top: var(--s-3);
+}
