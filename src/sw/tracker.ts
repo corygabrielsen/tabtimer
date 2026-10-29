@@ -8,7 +8,7 @@
 // which is how the worker asks a page to report again (`probe`).
 import { dayOf, startOfDay } from '../core/day'
 import { blockAt, type Limits } from '../core/limits'
-import { parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
+import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, type DayUsage, type Prefs } from '../core/schema'
 import type { Site } from '../core/site'
 import { creditEnd, step, type Attest, type Open, type TrackerEvent, type TrackerState } from '../core/tracker'
@@ -90,7 +90,7 @@ export function createTracker(deps: TrackerDeps) {
       const openAttest = open ? state.tabs[String(open.tabId)] : undefined
       if (open && openAttest) {
         const s = await stateOf(open.tabId, openAttest, state)
-        if (s.blockAt !== null && s.blockAt <= tx.now) {
+        if (overAt(s, tx.now, 'holds')) {
           await apply({ kind: 'overLimit', tabId: open.tabId })
         }
       }

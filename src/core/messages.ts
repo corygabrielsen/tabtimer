@@ -71,10 +71,10 @@ export function siteTodayAt(t: TodayTotals, site: Site, now: number): number {
 }
 
 // The limit a state is over at `now`, or null: the one rule for the block
-// screen and the popup. The worker moves blockAt past `now` for a snooze;
-// while the snooze 'holds' the state is over nothing until blockAt, and
-// 'ignored' it is over from the moment it reaches its limit. A state from
-// before midnight is over nothing.
+// screen, the worker's backstop and the popup. The worker moves blockAt
+// past `now` for a snooze; while the snooze 'holds' the state is over
+// nothing until blockAt, and 'ignored' it is over from the moment it
+// reaches its limit. A state from before midnight is over nothing.
 export function overAt(s: TabState, now: number, snooze: 'holds' | 'ignored'): BlockReason | null {
   if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day) {
     return null
