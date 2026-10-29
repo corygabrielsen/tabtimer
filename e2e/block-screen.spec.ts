@@ -254,6 +254,64 @@ for (const [layout, path] of [
   })
 }
 
+test('lets the page scroll again when its script changed one overflow axis while blocked', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A, '/scroll-document'))
+  // The page's own script writes one longhand while blocked.
+  await page.evaluate(() => {
+    document.documentElement.style.overflowX = 'auto'
+  })
+  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+  const html = () =>
+    page.evaluate(() => {
+      const s = document.documentElement.style
+      return { x: s.getPropertyValue('overflow-x'), y: s.getPropertyValue('overflow-y') }
+    })
+  expect(await html()).toEqual({ x: 'auto', y: '' })
+  const { width, height } = page.viewportSize()!
+  await page.mouse.move(width / 2, height / 2)
+  await page.mouse.wheel(0, 400)
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+})
+
+// The page's tab, as the worker sees it.
+const tabOf = (sw: import('@playwright/test').Worker, host: string) =>
+  sw.evaluate(async (host) => (await chrome.tabs.query({})).find((t) => t.url?.includes(host))?.mutedInfo, host)
+
+test('mutes the tab while blocked, so media out of the page’s reach stops too', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/interactive'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  // Audio from an element never put in the document: the block screen can't
+  // pause it.
+  await page.evaluate(() => {
+    const audio = new Audio('/silence.wav')
+    audio.loop = true
+    ;(window as unknown as { detached: HTMLAudioElement }).detached = audio
+    return audio.play()
+  })
+  expect(await tabOf(serviceWorker, SITE_A)).toMatchObject({ muted: false })
+
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  await expect.poll(() => tabOf(serviceWorker, SITE_A)).toMatchObject({ muted: true, reason: 'extension' })
+  expect(await page.evaluate(() => (window as unknown as { detached: HTMLAudioElement }).detached.paused)).toBe(false)
+
+  // Dismissed: the mute it set goes.
+  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+  await expect.poll(() => tabOf(serviceWorker, SITE_A)).toMatchObject({ muted: false })
+})
+
 // Middle-click, then move down: autoscroll (see launch() in fixtures.ts).
 async function autoscroll(page: Page) {
   const { width, height } = page.viewportSize()!

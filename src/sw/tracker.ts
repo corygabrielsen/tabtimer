@@ -24,13 +24,23 @@ export type TrackerDeps = {
   alarm: (on: boolean) => Promise<void>
   // The tracked grants (sw/grants.ts): the all-sites total is theirs.
   granted: () => Promise<readonly string[]>
+  // Mute a tab while its page is blocked (on), so media the page can't
+  // reach stops too, and undo that once it isn't. Called in the queue.
+  mute: (tabId: number, on: boolean) => Promise<void>
 }
 
 export type Tracker = ReturnType<typeof createTracker>
 
-type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[] }
+// `reply`: the reporting page's own state, if one reported.
+type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[]; reply: TabState | null }
+
+// A page the transaction answers: its tab, site and document.
+type Reporter = { tabId: number; site: Site; doc: string }
 
 const everySite = () => true
+
+// A failure that changes nothing here (a tab gone, an alarm not set).
+const ignore = () => undefined
 
 // The open interval's uncredited part, today's share of it.
 function uncredited(open: Open, now: number): number {
@@ -70,9 +80,14 @@ export function createTracker(deps: TrackerDeps) {
 
   // One event (or none: just re-check), in the queue. `tell` lists tabs to
   // build a state for besides those the step changed.
-  function run(event: TrackerEvent | null, tell: (s: TrackerState) => number[] = () => []): Promise<Outcome> {
+  function run(
+    event: TrackerEvent | null,
+    tell: (s: TrackerState) => number[] = () => [],
+    reporter: Reporter | null = null
+  ): Promise<Outcome> {
     return ledger.transaction(async (tx) => {
-      let state = tx.tracker
+      const before = tx.tracker
+      let state = before
       const wasOpen = state.open !== null
       if (event?.kind === 'idle') {
         await tx.observeIdle(event.state)
@@ -104,7 +119,15 @@ export function createTracker(deps: TrackerDeps) {
       // The alarm only when the interval opened or closed (resume() puts it
       // right on every worker start).
       if (wasOpen !== (state.open !== null)) {
-        await deps.alarm(state.open !== null).catch(() => undefined)
+        await deps.alarm(state.open !== null).catch(ignore)
+      }
+      // A tab is muted while its page reports blocked, and no longer once it
+      // doesn't (or is gone).
+      for (const id of new Set([...Object.keys(before.tabs), ...Object.keys(state.tabs)])) {
+        const blocked = state.tabs[id]?.blocked === true
+        if ((before.tabs[id]?.blocked === true) !== blocked) {
+          await deps.mute(Number(id), blocked).catch(ignore)
+        }
       }
       const states = new Map<number, TabState>()
       for (const id of new Set([...push, ...probe, ...tell(state)])) {
@@ -113,7 +136,16 @@ export function createTracker(deps: TrackerDeps) {
           states.set(id, await stateOf(id, attest, state))
         }
       }
-      return { state, states, probe }
+      // The reporter's answer, whatever the step made of its report (a
+      // departing document's is dropped, its tab perhaps gone): its site's
+      // state, running only if the open interval is its document's.
+      let reply: TabState | null = null
+      if (reporter) {
+        const open = state.open
+        const mine = open?.tabId === reporter.tabId && open.doc === reporter.doc && open.site === reporter.site
+        reply = await stateOf(reporter.tabId, reporter, mine ? state : { ...state, open: null })
+      }
+      return { state, states, probe, reply }
     })
   }
 
@@ -129,7 +161,7 @@ export function createTracker(deps: TrackerDeps) {
         }
         const attest = outcome.state.tabs[String(tabId)]!
         const probe = probes.has(tabId)
-        const reply = await deps.send(tabId, attest.doc, { type: 'state', state, probe }).catch(() => undefined)
+        const reply = await deps.send(tabId, attest.doc, { type: 'state', state, probe }).catch(ignore)
         const presence = probe ? parsePresence(reply) : null
         if (presence) {
           await report(tabId, { ...attest, ...presence }, true)
@@ -138,12 +170,23 @@ export function createTracker(deps: TrackerDeps) {
     )
   }
 
-  // A page's report: from a message (the reply carries its state) or a
-  // probe's answer (told by push).
+  // A page's report: from a message (the reply carries its state, and
+  // never waits on telling the other tabs theirs) or a probe's answer
+  // (told by push).
   async function report(tabId: number, attest: Omit<Attest, 'at'>, pushed: boolean): Promise<TabState> {
-    const outcome = await run({ kind: 'presence', tabId, attest: { ...attest, at: 0 } }, () => [tabId])
-    await settle({ ...outcome, probe: outcome.probe.filter((id) => id !== tabId) }, pushed ? null : tabId)
-    return outcome.states.get(tabId)!
+    const { site, doc } = attest
+    const outcome = await run({ kind: 'presence', tabId, attest: { ...attest, at: 0 } }, () => [tabId], {
+      tabId,
+      site,
+      doc,
+    })
+    const rest = { ...outcome, probe: outcome.probe.filter((id) => id !== tabId) }
+    if (pushed) {
+      await settle(rest)
+    } else {
+      void settle(rest, tabId).catch(ignore)
+    }
+    return outcome.reply!
   }
 
   // Every page that reported.
@@ -194,7 +237,6 @@ export function createTracker(deps: TrackerDeps) {
     resetToday: async (site: Site): Promise<void> => settle(await run({ kind: 'reset', site }, allTabs)),
 
     // The worker started: put the checkpoint alarm in line with the state.
-    resume: (): Promise<void> =>
-      ledger.transaction((tx) => deps.alarm(tx.tracker.open !== null).catch(() => undefined)),
+    resume: (): Promise<void> => ledger.transaction((tx) => deps.alarm(tx.tracker.open !== null).catch(ignore)),
   }
 }

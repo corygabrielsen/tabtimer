@@ -4,12 +4,14 @@ import {
   overAt,
   parsePresence,
   parseStatePush,
+  PROJECT_MS,
   siteTodayAt,
   totalsAt,
   SENDERS,
   type TabState,
   type TodayTotals,
 } from './messages'
+import { SUSPEND_GAP_MS } from './tracker'
 
 const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 
@@ -40,8 +42,33 @@ describe('a state read at a later moment', () => {
   it('runs on while running, and starts again at midnight', () => {
     expect(totalsAt(state, NOON + 4000)).toEqual({ siteToday: 54_000, globalToday: 84_000 })
     expect(totalsAt({ ...state, running: false }, NOON + 4000)).toEqual({ siteToday: 50_000, globalToday: 80_000 })
-    expect(totalsAt(state, MIDNIGHT + 3000)).toEqual({ siteToday: 3000, globalToday: 3000 })
-    expect(totalsAt({ ...state, running: false }, MIDNIGHT + 3000)).toEqual({ siteToday: 0, globalToday: 0 })
+    const late = { ...state, asOf: MIDNIGHT - 1000 }
+    expect(totalsAt(late, MIDNIGHT + 3000)).toEqual({ siteToday: 3000, globalToday: 3000 })
+    expect(totalsAt({ ...late, running: false }, MIDNIGHT + 3000)).toEqual({ siteToday: 0, globalToday: 0 })
+  })
+
+  it('projects a running state no further than PROJECT_MS past asOf', () => {
+    // An hour asleep: the worker said nothing since noon.
+    expect(totalsAt(state, NOON + 3_600_000)).toEqual({
+      siteToday: 50_000 + PROJECT_MS,
+      globalToday: 80_000 + PROJECT_MS,
+    })
+    expect(totalsAt({ ...state, asOf: MIDNIGHT - 1000 }, MIDNIGHT + 3_600_000)).toEqual({
+      siteToday: PROJECT_MS - 1000,
+      globalToday: PROJECT_MS - 1000,
+    })
+  })
+
+  it('never blocks on a running state too old to project', () => {
+    expect(overAt(state, NOON + PROJECT_MS, 'holds')).not.toBeNull()
+    expect(overAt(state, NOON + PROJECT_MS + 1, 'holds')).toBeNull()
+    expect(overAt(state, NOON + 3_600_000, 'ignored')).toBeNull()
+    // A state not running projects nothing: its blockAt still holds.
+    expect(overAt({ ...state, running: false }, NOON + 3_600_000, 'holds')).not.toBeNull()
+  })
+
+  it('matches the worker’s suspension gap', () => {
+    expect(PROJECT_MS).toBe(SUSPEND_GAP_MS)
   })
 
   // The block screen ('holds') and the popup ('ignored') differ only while
@@ -82,8 +109,9 @@ describe('every site’s time today, read at a later moment', () => {
     expect(siteTodayAt(totals, 'b.com', NOON + 4000)).toBe(20_000)
     expect(siteTodayAt(totals, 'c.com', NOON + 4000)).toBe(0)
     expect(siteTodayAt({ ...totals, running: null }, 'a.com', NOON + 4000)).toBe(50_000)
-    expect(siteTodayAt(totals, 'a.com', MIDNIGHT + 3000)).toBe(3000)
-    expect(siteTodayAt(totals, 'b.com', MIDNIGHT + 3000)).toBe(0)
+    expect(siteTodayAt({ ...totals, asOf: MIDNIGHT - 1000 }, 'a.com', MIDNIGHT + 3000)).toBe(3000)
+    expect(siteTodayAt({ ...totals, asOf: MIDNIGHT - 1000 }, 'b.com', MIDNIGHT + 3000)).toBe(0)
+    expect(siteTodayAt(totals, 'a.com', NOON + 3_600_000)).toBe(50_000 + PROJECT_MS)
   })
 })
 

@@ -582,6 +582,23 @@ describe('away from the computer (idle or locked)', () => {
     expect(today(model)).toBe(seconds(11))
   })
 
+  it('P2: keeps counting idle time while media in a closed shadow root plays', async () => {
+    const player = document.createElement('div')
+    document.body.append(player)
+    const closed = player.attachShadow({ mode: 'closed' })
+    browser.dom.openOrClosedShadowRoot.mockImplementation((el) => (el === player ? closed : el.shadowRoot))
+    const video = media('video', true, closed)
+    const model = started()
+    await run(minutes(1))
+    browser.setIdleState('idle')
+    await run(minutes(2))
+    expect(today(model)).toBe(minutes(3))
+    const reports = presenceReports()
+    video.stop()
+    await flush()
+    expect(reports.at(-1)).toMatchObject({ media: false })
+  })
+
   it('stops counting while the screen is locked, and resumes after', async () => {
     const model = started()
     await run(seconds(5))
@@ -631,5 +648,95 @@ describe('away from the computer (idle or locked)', () => {
     const model = started()
     await run(minutes(1))
     expect(today(model)).toBe(0)
+  })
+})
+
+describe('P1: after a gap the page can see (sleep, the back/forward cache)', () => {
+  const RUNNING: TabState = {
+    ...STATE,
+    running: true,
+    blockAt: NOON.getTime() + minutes(10),
+    limit: { scope: 'site', ms: minutes(10) },
+  }
+
+  // The worker answers the first report with RUNNING, then never again (its
+  // replies and pushes can't reach a sleeping or frozen page).
+  function silenced() {
+    let handler: ((state: TabState, probe: boolean) => unknown) | null = null
+    const pushes: Pushes = { onState: (fn) => ((handler = fn), () => (handler = null)), onStop }
+    const send = vi.fn<Bus['send']>(() => new Promise(() => {}))
+    send.mockImplementationOnce(() => Promise.resolve({ ok: true, value: RUNNING }) as never)
+    const model = trackTracker(new FocusTracker(undefined, { send, alive }, pushes))
+    model.start()
+    return { model, send, push: (state: TabState) => handler!(state, false) }
+  }
+
+  it('never blocks or grows past the gap, and the focus stopwatch stops at the last tick', async () => {
+    const { model, send, push } = silenced()
+    await run(seconds(60))
+    expect(model.readElapsed()).toMatchObject({ today: seconds(60), focus: seconds(60) })
+    // An hour asleep: no timers ran.
+    vi.setSystemTime(NOON.getTime() + seconds(60) + minutes(60))
+    expect(model.blockReason()).toBeNull()
+    expect(model.readElapsed().today).toBeLessThanOrEqual(seconds(90))
+    expect(model.readElapsed().focus).toBe(seconds(60))
+    const sent = send.mock.calls.length
+    await run(seconds(1))
+    // The tick sees the gap: the page asks again, and holds what it had.
+    expect(send.mock.calls.length).toBeGreaterThan(sent)
+    expect(model.blockReason()).toBeNull()
+    expect(model.readElapsed()).toMatchObject({ today: seconds(60), focus: seconds(60) })
+    // The worker's state on waking: not running since it woke.
+    const wake = Date.now()
+    push({ ...STATE, seq: 2, asOf: wake, today: seconds(60), globalToday: seconds(60) })
+    expect(model.readElapsed()).toMatchObject({ today: seconds(60), focus: seconds(60) })
+  })
+
+  it('closes the stopwatch at the last tick when the worker’s state arrives first', async () => {
+    const { model, push } = silenced()
+    await run(seconds(60))
+    vi.setSystemTime(NOON.getTime() + seconds(60) + minutes(60))
+    push({ ...STATE, seq: 2, asOf: Date.now(), today: seconds(60), globalToday: seconds(60) })
+    expect(model.readElapsed().focus).toBe(seconds(60))
+  })
+
+  it('holds the state while in the back/forward cache, and counts focus only from the worker’s next word', async () => {
+    const { model, push } = silenced()
+    await run(seconds(30))
+    model.suspend()
+    // Restored a minute later, after the block was due: the hidden report's
+    // answer was lost.
+    vi.setSystemTime(NOON.getTime() + seconds(30) + minutes(1))
+    const due = { ...RUNNING, blockAt: NOON.getTime() + seconds(45) }
+    expect(model.blockReason()).toBeNull()
+    expect(model.readElapsed()).toMatchObject({ today: seconds(30), focus: seconds(30) })
+    // The state from before the freeze, delivered late, counts nothing twice.
+    push({ ...due, seq: 1 })
+    await run(seconds(5))
+    expect(model.readElapsed().focus).toBe(seconds(30))
+    push({ ...RUNNING, seq: 3, asOf: Date.now(), today: seconds(30), globalToday: seconds(30) })
+    await run(seconds(10))
+    expect(model.readElapsed()).toMatchObject({ today: seconds(40), focus: seconds(40) })
+  })
+
+  it('keeps a block already due before the gap', async () => {
+    const { model } = silenced()
+    await run(seconds(1))
+    model.suspend()
+    expect(model.blockReason()).toBeNull()
+    const { model: due } = (() => {
+      const pushes: Pushes = { onState: () => () => {}, onStop }
+      const send = vi.fn<Bus['send']>(() => new Promise(() => {}))
+      send.mockImplementationOnce(
+        () => Promise.resolve({ ok: true, value: { ...RUNNING, blockAt: NOON.getTime() } }) as never
+      )
+      const m = trackTracker(new FocusTracker(undefined, { send, alive }, pushes))
+      m.start()
+      return { model: m }
+    })()
+    await run(seconds(1))
+    due.suspend()
+    vi.setSystemTime(Date.now() + minutes(5))
+    expect(due.blockReason()).toMatchObject({ scope: 'site' })
   })
 })

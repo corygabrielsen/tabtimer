@@ -40,13 +40,27 @@ export type TabState = {
   prefs: Prefs
 }
 
+// How far past `asOf` a running state holds. The worker tells the open tab
+// its state every checkpoint, and credits nothing past a longer silence
+// (SUSPEND_GAP_MS, core/tracker.ts): a running state older than this has
+// missed what the worker said since (the device slept, the page was in the
+// back/forward cache), and projects no further.
+export const PROJECT_MS = 90_000
+
+// Whether `s` is running and too old to project at `now`.
+function stale(s: { asOf: number; running: boolean }, now: number): boolean {
+  return s.running && now - s.asOf > PROJECT_MS
+}
+
 // `ms` as of `asOf` on `day`, read at `now`: plus the time since while
-// running. Past midnight, only the running time since midnight.
+// running, up to PROJECT_MS. Past midnight, only the running time since
+// midnight.
 function grownAt(ms: number, s: { day: DayStamp; asOf: number; running: boolean }, now: number): number {
+  const end = Math.min(now, s.asOf + PROJECT_MS)
   if (dayOf(now) !== s.day) {
-    return s.running ? Math.max(0, now - Math.max(s.asOf, startOfDay(now))) : 0
+    return s.running ? Math.max(0, end - Math.max(s.asOf, startOfDay(now))) : 0
   }
-  return ms + (s.running ? Math.max(0, now - s.asOf) : 0)
+  return ms + (s.running ? Math.max(0, end - s.asOf) : 0)
 }
 
 // A state's totals at `now`.
@@ -74,9 +88,10 @@ export function siteTodayAt(t: TodayTotals, site: Site, now: number): number {
 // screen, the worker's backstop and the popup. The worker moves blockAt
 // past `now` for a snooze; while the snooze 'holds' the state is over
 // nothing until blockAt, and 'ignored' it is over from the moment it
-// reaches its limit. A state from before midnight is over nothing.
+// reaches its limit. A state from before midnight, or running and stale,
+// is over nothing: a projection the worker hasn't confirmed never blocks.
 export function overAt(s: TabState, now: number, snooze: 'holds' | 'ignored'): BlockReason | null {
-  if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day) {
+  if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day || stale(s, now)) {
     return null
   }
   const totals = totalsAt(s, now)

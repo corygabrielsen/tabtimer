@@ -5,7 +5,7 @@ import type { Bus } from '../ports'
 import { formatTime } from '../format'
 import { t } from '../i18n'
 import { h } from '../ui'
-import { mountShadowHost } from './shadowHost'
+import { mountShadowHost, shadowRootOf } from './shadowHost'
 
 const HOST_ID = 'tabtimer-block'
 
@@ -119,7 +119,8 @@ const STYLES = `
   }
 `
 
-const OVERFLOW_PROPS = ['overflow', 'overflow-x', 'overflow-y'] as const
+// Each set and put back on its own: a page script may change one.
+const OVERFLOW_PROPS = ['overflow-x', 'overflow-y'] as const
 type SavedStyle = { value: string; priority: string }
 type ScrollPosition = { left: number; top: number }
 type Scope = Document | ShadowRoot
@@ -367,7 +368,9 @@ export default class BlockScreen {
           OVERFLOW_PROPS.map((p) => [p, { value: style.getPropertyValue(p), priority: style.getPropertyPriority(p) }])
         )
       )
-      style.setProperty('overflow', 'hidden', 'important')
+      for (const p of OVERFLOW_PROPS) {
+        style.setProperty(p, 'hidden', 'important')
+      }
     }
   }
 
@@ -397,9 +400,9 @@ export default class BlockScreen {
 
   // Pause media already playing, wherever the content script can reach it;
   // handlePlay keeps it paused. play doesn't cross a shadow root, so each
-  // root and frame found gets its own listener. A cross-origin frame (a video
-  // embed) is out of reach: its media plays on behind the dialog. Nothing is
-  // resumed on dismissal.
+  // root and frame found gets its own listener. What is out of reach (a
+  // cross-origin frame, a detached element) the worker silences by muting
+  // the tab while blocked. Nothing is resumed on dismissal.
   private pauseMedia(scopes: Scope[]) {
     for (const scope of scopes) {
       scope.querySelectorAll<HTMLMediaElement>('video, audio').forEach((media) => {
@@ -513,14 +516,6 @@ function reachableScopes(skip: Element): Scope[] {
   return scopes
 }
 
-function shadowRootOf(el: Element): ShadowRoot | null {
-  try {
-    return chrome.dom.openOrClosedShadowRoot(el as HTMLElement)
-  } catch {
-    return el.shadowRoot
-  }
-}
-
 // The page's open modal dialogs and popovers in `scopes`. A frame's own top
 // layer sits inside the frame, below the dialog.
 function topLayer(scopes: Scope[]): Element[] {
@@ -540,19 +535,15 @@ function restoreWindowScroll(position: ScrollPosition | null) {
   }
 }
 
-// Put back an element's saved inline overflow, unless the page set its own
-// while blocked (the override is no longer ours to undo).
+// Put back an element's saved inline overflow, each longhand on its own:
+// one the page set while blocked is no longer ours to undo, and the other
+// still is.
 function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedStyle>) {
-  if (style.getPropertyValue('overflow') !== 'hidden' || style.getPropertyPriority('overflow') !== 'important') {
-    return
-  }
   for (const p of OVERFLOW_PROPS) {
+    if (style.getPropertyValue(p) !== 'hidden' || style.getPropertyPriority(p) !== 'important') {
+      continue
+    }
     style.removeProperty(p)
-  }
-  // The shorthand only reads back when both longhands agree; restore it as
-  // one, otherwise each longhand on its own.
-  const props = saved.get('overflow')?.value ? (['overflow'] as const) : (['overflow-x', 'overflow-y'] as const)
-  for (const p of props) {
     const { value, priority } = saved.get(p)!
     if (value) {
       style.setProperty(p, value, priority)

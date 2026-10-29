@@ -141,6 +141,9 @@ export default class Overlay {
   private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
   private outsideClickAttached = false
+  // The element focus moves to after a rebuild: the pill, or the selected
+  // row.
+  private focusTarget: HTMLElement | null = null
 
   private unsubscribeState: () => void
 
@@ -276,6 +279,8 @@ export default class Overlay {
     this.setPillTime(pill, elapsed)
     this.timeElements.set('collapsed', pill)
 
+    this.focusTarget = pill
+
     pill.addEventListener('click', (e) => {
       e.stopPropagation()
       this.setExpanded(true)
@@ -296,6 +301,9 @@ export default class Overlay {
         h('span', { class: 'label' }, LABELS[key]),
         time
       )
+      if (key === this.selectedTimer) {
+        this.focusTarget = row
+      }
       row.addEventListener('click', (e) => {
         e.stopPropagation()
         this.selectedTimer = key
@@ -339,7 +347,10 @@ export default class Overlay {
     return h('div', { class: 'controls' }, h('div', { class: 'sizes' }, smaller, larger), close)
   }
 
+  // Focus inside the widget moves with the rebuild: to the selected row on
+  // expand, to the pill on collapse.
   private setExpanded(expanded: boolean) {
+    const focused = this.shadow.activeElement !== null
     this.expanded = expanded
     this.needsRebuild = true
     if (expanded) {
@@ -348,6 +359,9 @@ export default class Overlay {
       this.detachOutsideClick()
     }
     this.render()
+    if (focused) {
+      this.focusTarget?.focus({ preventScroll: true })
+    }
   }
 
   private setHidden(hidden: boolean) {

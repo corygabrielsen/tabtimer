@@ -2,10 +2,11 @@ import { bus as chromeBus, pushes as chromePushes } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { dayOf, startOfDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
-import { overAt, totalsAt, type TabState } from '../core/messages'
+import { overAt, PROJECT_MS, totalsAt, type TabState } from '../core/messages'
 import type { Prefs } from '../core/schema'
 import type { Presence } from '../core/tracker'
 import type { Bus, Clock, Pushes } from '../ports'
+import { shadowRootOf } from './shadowHost'
 
 // What the overlay shows: this site's time today, this page's focus time,
 // and how long the page has been open (both since midnight at most).
@@ -48,16 +49,21 @@ export default class FocusTracker {
   // A blur's look at focus, once focus has settled (see handleBlur).
   private blurTimer: ReturnType<typeof setTimeout> | null = null
   // The page's video and audio elements (live: the DOM keeps them current),
-  // and the open shadow roots last found, whose media they don't include.
+  // and the shadow roots last found, whose media they don't include.
   private media: HTMLCollectionOf<HTMLMediaElement>[] = []
   private roots = new Set<ShadowRoot>()
   private ticks = 0
   // Display-only stopwatches: when the page opened, this page's focus time
-  // so far, and since when it has been running (null: not running).
+  // so far, since when it has been running (null: not running), and where
+  // the last running piece ended (no moment counts twice).
   private sessionStart: number
   private focusDone = 0
   private focusFrom: number | null = null
+  private focusEnd = 0
   private day: DayStamp
+  // The page's last tick (or state): a longer silence than PROJECT_MS since
+  // is a gap (the device slept, the page was frozen).
+  private lastSeen: number
 
   constructor(
     private clock: Clock = systemClock,
@@ -65,6 +71,7 @@ export default class FocusTracker {
     private pushes: Pushes = chromePushes
   ) {
     this.sessionStart = this.clock.now()
+    this.lastSeen = this.sessionStart
     this.day = dayOf(this.sessionStart)
   }
 
@@ -136,6 +143,13 @@ export default class FocusTracker {
     }
   }
 
+  // Entering the back/forward cache: hold the state here (the worker's
+  // replies and pushes can't reach a frozen page), and report it hidden.
+  suspend(): void {
+    this.hold(this.clock.now())
+    void this.report()
+  }
+
   // Restored from the back/forward cache: report again, and catch up on
   // the worker's state.
   resync(): void {
@@ -176,6 +190,7 @@ export default class FocusTracker {
       return
     }
     const now = this.clock.now()
+    this.wake(now)
     const day = dayOf(now)
     if (day !== this.day) {
       // A new day: the stopwatches restart, and the worker's totals are
@@ -200,6 +215,46 @@ export default class FocusTracker {
     }
   }
 
+  // After a gap, what the page last knew holds from its last tick until the
+  // worker answers again.
+  private wake(now: number): void {
+    if (now - this.lastSeen > PROJECT_MS) {
+      this.hold(this.lastSeen)
+      void this.report(true)
+    }
+    this.lastSeen = now
+  }
+
+  // Stop projecting the state at `at`: a running state becomes what it
+  // showed then, with any block it hadn't reached by then dropped (only
+  // the worker can confirm one), and the focus stopwatch stops there.
+  private hold(at: number): void {
+    const s = this.state
+    if (s?.running) {
+      const totals = totalsAt(s, at)
+      const reached = s.blockAt !== null && s.blockAt <= at
+      this.state = {
+        ...s,
+        day: dayOf(at),
+        asOf: at,
+        today: totals.siteToday,
+        globalToday: totals.globalToday,
+        running: false,
+        blockAt: reached ? s.blockAt : null,
+        limit: reached ? s.limit : null,
+      }
+    }
+    this.closeFocus(at)
+  }
+
+  private closeFocus(at: number): void {
+    if (this.focusFrom !== null) {
+      this.focusDone += Math.max(0, at - this.focusFrom)
+      this.focusEnd = Math.max(this.focusFrom, at)
+      this.focusFrom = null
+    }
+  }
+
   // Focus is the document's: kept while it is in one of the page's frames,
   // gone while the window is in the background.
   private presence(): Presence {
@@ -211,10 +266,10 @@ export default class FocusTracker {
     }
   }
 
-  // Find the page's open shadow roots: media events in one don't reach the
-  // document, so each is listened to on its own.
+  // Find the page's shadow roots (closed ones too): media events in one
+  // don't reach the document, so each is listened to on its own.
   private scan(): void {
-    this.watch(new Set(openShadowRoots(document)))
+    this.watch(new Set(shadowRoots(document)))
   }
 
   private watch(roots: Set<ShadowRoot>): void {
@@ -262,16 +317,18 @@ export default class FocusTracker {
     }
   }
 
-  // Take a state from the worker, unless one it built later already came.
+  // Take a state from the worker, unless this one or one it built later
+  // already came (a state held since stays held).
   private apply(state: TabState): void {
-    if (this.state && state.seq < this.state.seq) {
+    const now = this.clock.now()
+    this.wake(now)
+    if (this.state && state.seq <= this.state.seq) {
       return
     }
     if (state.running && this.focusFrom === null) {
-      this.focusFrom = Math.max(state.asOf, startOfDay(this.clock.now()))
-    } else if (!state.running && this.focusFrom !== null) {
-      this.focusDone += Math.max(0, state.asOf - this.focusFrom)
-      this.focusFrom = null
+      this.focusFrom = Math.max(state.asOf, startOfDay(now), this.focusEnd)
+    } else if (!state.running) {
+      this.closeFocus(state.asOf)
     }
     this.state = state
     if (this.started) {
@@ -302,9 +359,12 @@ export default class FocusTracker {
     return { site: s.site, ...totalsAt(s, this.clock.now()) }
   }
 
+  // The focus stopwatch runs to now, or after a gap not yet ticked over,
+  // to the last tick.
   readElapsed(): ElapsedState {
     const now = this.clock.now()
-    const focus = this.focusDone + (this.focusFrom === null ? 0 : Math.max(0, now - this.focusFrom))
+    const end = now - this.lastSeen > PROJECT_MS ? this.lastSeen : now
+    const focus = this.focusDone + (this.focusFrom === null ? 0 : Math.max(0, end - this.focusFrom))
     return {
       today: this.readTotals().siteToday,
       focus,
@@ -361,14 +421,14 @@ const MEDIA_EVENTS = ['play', 'playing', 'pause', 'ended'] as const
 // TypeScript's DOM types).
 const prerendering = () => (document as Document & { prerendering?: boolean }).prerendering === true
 
-// Every open shadow root under `root`, nested ones included.
-function openShadowRoots(root: Document | ShadowRoot): ShadowRoot[] {
+// Every shadow root under `root`, closed and nested ones included.
+function shadowRoots(root: Document | ShadowRoot): ShadowRoot[] {
   const found: ShadowRoot[] = []
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const shadow = (node as Element).shadowRoot
+    const shadow = shadowRootOf(node as Element)
     if (shadow) {
-      found.push(shadow, ...openShadowRoots(shadow))
+      found.push(shadow, ...shadowRoots(shadow))
     }
   }
   return found
@@ -377,8 +437,9 @@ function openShadowRoots(root: Document | ShadowRoot): ShadowRoot[] {
 const mediaIn = (root: ShadowRoot) => root.querySelectorAll<HTMLMediaElement>('video, audio')
 
 // Whether any of `media` is playing (muted or not): watching or listening
-// keeps idle time counting. Media in closed shadow roots or cross-origin
-// frames isn't seen. readyState 2 is HAVE_CURRENT_DATA.
+// keeps idle time counting. Media in cross-origin frames or detached
+// elements isn't seen here; the worker hears it (tab.audible). readyState 2
+// is HAVE_CURRENT_DATA.
 function anyPlaying(media: Iterable<HTMLMediaElement>): boolean {
   for (const el of media) {
     if (!el.paused && !el.ended && el.readyState >= 2) {
