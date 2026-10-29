@@ -119,7 +119,7 @@ const STYLES = `
     border: 0;
     border-radius: 0;
     background: transparent;
-    color: #5f5f5f;
+    color: #8a8a8a;
     cursor: pointer;
     font: inherit;
     font-size: 12px;

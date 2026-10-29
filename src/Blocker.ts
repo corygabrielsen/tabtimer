@@ -75,13 +75,13 @@ const STYLES = `
     margin: 16px auto 0;
     border: 0;
     background: transparent;
-    color: #5f5f5f;
+    color: #8a8a8a;
     font: inherit;
     font-size: 11px;
     cursor: pointer;
   }
   .manage:hover {
-    color: #8a8a8a;
+    color: #f5f5f5;
   }
   .snooze:focus-visible,
   .manage:focus-visible {
