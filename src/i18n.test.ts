@@ -26,12 +26,12 @@ describe('localizeDom', () => {
   it('replaces text of [data-i18n] elements and sets [data-i18n-attr] attributes', () => {
     document.body.innerHTML = `
       <span id="a" data-i18n="labelToday">stale</span>
-      <input id="b" data-i18n-attr="placeholder=optionsLimitOff; aria-label=optionsGlobalLimit" />
+      <input id="b" data-i18n-attr="placeholder=optionsAddPlaceholder; aria-label=optionsGlobalLimit" />
       <span id="c" data-i18n-attr="title=">keep</span>`
     localizeDom()
     expect(document.getElementById('a')?.textContent).toBe('Today')
     const input = document.getElementById('b')!
-    expect(input.getAttribute('placeholder')).toBe('off')
+    expect(input.getAttribute('placeholder')).toBe('example.com')
     expect(input.getAttribute('aria-label')).toBe('All tracked sites combined')
     expect(document.getElementById('c')?.hasAttribute('title')).toBe(false)
   })

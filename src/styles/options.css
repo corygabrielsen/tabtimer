@@ -193,28 +193,76 @@ h1 {
   font-weight: 650;
 }
 
-.site-row .minutes {
-  position: relative;
+/* A row's limit: a compact button that expands the row with the picker. */
+.limit-toggle {
   justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--control-h);
+  padding: 0 var(--s-2) 0 var(--s-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
-/* Row "Saved" sits under the field so it never takes column width. */
-.site-row .saved {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  font-size: 11px;
-  white-space: nowrap;
+.limit-toggle::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-right: 1.5px solid var(--ink-3);
+  border-bottom: 1.5px solid var(--ink-3);
+  transform: rotate(45deg);
+  transition: transform 0.15s var(--ease);
+}
+
+.limit-toggle:hover {
+  border-color: var(--ink);
+  background: var(--surface);
+}
+
+.limit-toggle[aria-expanded='true'] {
+  border-color: var(--ink);
+}
+
+.limit-toggle[aria-expanded='true']::after {
+  margin-top: 3px;
+  transform: rotate(225deg);
+}
+
+.limit-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  padding: var(--s-1) 0 var(--s-2);
+}
+
+.limit-panel .limit-picker {
+  order: 2;
+  align-items: flex-end;
+}
+
+.limit-panel .saved {
+  order: 1;
+}
+
+.limit-panel .saved:empty {
+  display: none;
 }
 
 .site-row .stop {
   justify-self: end;
   padding: 0 var(--s-2);
   margin-right: calc(-1 * var(--s-2));
-}
-
-.site-row .error {
-  grid-column: 1 / -1;
 }
 
 @media (max-width: 560px) {
@@ -229,12 +277,17 @@ h1 {
   .site-today {
     justify-self: end;
   }
-  .site-row .minutes {
+  .limit-toggle {
     grid-column: 1;
     justify-self: start;
   }
-  .site-row .saved {
-    position: static;
+  .limit-panel {
+    justify-content: flex-start;
+  }
+  .limit-panel .limit-picker {
+    order: 0;
+    align-items: stretch;
+    width: 100%;
   }
 }
 
@@ -313,8 +366,38 @@ h1 {
   margin-top: var(--s-3);
 }
 
-.section-body > .error {
-  margin-top: var(--s-2);
+.setting-control {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.setting-control .saved {
+  line-height: 32px;
+}
+
+.setting-limit .limit-picker {
+  align-items: flex-end;
+}
+
+@media (max-width: 560px) {
+  .setting-limit {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-3);
+    padding: var(--s-3) 0;
+  }
+  .setting-control {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: var(--s-1);
+  }
+  .setting-control .saved {
+    line-height: inherit;
+  }
+  .setting-limit .limit-picker {
+    align-items: stretch;
+  }
 }
 
 fieldset.setting {

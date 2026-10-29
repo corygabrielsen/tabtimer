@@ -17,6 +17,9 @@ All notable changes to Tab Timer. The format follows
   sites are one-tap chips, and the tracked sites table shows today's time.
 - Light and dark themes follow the system setting, and all text meets WCAG AA
   contrast, including the on-page timer and block screen.
+- Daily limits are set with one tap: preset chips (Off, 15m, 30m, 1h, 2h for a
+  site; Off, 1h, 2h, 3h, 4h for all sites combined), plus a Custom option for
+  any whole number of minutes, in the popup and on the settings page.
 - "Reset today" in the popup asks for a second click to confirm.
 
 ### Fixed

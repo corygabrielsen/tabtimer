@@ -32,9 +32,28 @@
     "placeholders": { "h": { "content": "$1" }, "m": { "content": "$2" } }
   },
   "savedNotice": { "message": "Saved" },
-  "limitInvalid": {
-    "message": "Enter whole minutes from 1 to $max$, or leave blank for no limit.",
+  "limitOff": { "message": "Off" },
+  "limitCustom": { "message": "Custom" },
+  "limitChipMinutes": { "message": "$n$m", "placeholders": { "n": { "content": "$1" } } },
+  "limitChipHours": { "message": "$h$h", "placeholders": { "h": { "content": "$1" } } },
+  "limitChipHoursMinutes": {
+    "message": "$h$h $m$m",
+    "placeholders": { "h": { "content": "$1" }, "m": { "content": "$2" } }
+  },
+  "limitCustomAria": { "message": "Custom: $time$", "placeholders": { "time": { "content": "$1" } } },
+  "limitCustomHint": { "message": "Enter to save" },
+  "limitCustomInvalid": {
+    "message": "Enter whole minutes from 1 to $max$.",
     "placeholders": { "max": { "content": "$1" } }
+  },
+  "limitCustomSiteAria": {
+    "message": "Custom daily limit for $host$, in minutes",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "limitCustomGlobalAria": { "message": "Custom daily limit for all tracked sites, in minutes" },
+  "optionsLimitToggleAria": {
+    "message": "Daily limit for $host$: $limit$",
+    "placeholders": { "host": { "content": "$1" }, "limit": { "content": "$2" } }
   },
   "overlaySwitchLabel": { "message": "Show timer on the page" },
   "popupSettings": { "message": "Settings" },
@@ -70,7 +89,7 @@
   },
   "popupMeterGlobalAria": { "message": "Time used of the daily limit for all tracked sites" },
   "popupLimit": { "message": "Daily limit" },
-  "popupLimitAria": { "message": "Daily limit in minutes for $host$", "placeholders": { "host": { "content": "$1" } } },
+  "popupLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupResetToday": { "message": "Reset today" },
   "popupResetAria": { "message": "Reset today's time for $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupResetConfirm": { "message": "Click again to reset" },
@@ -124,14 +143,10 @@
     "message": "When a limit is reached, the site is covered by a full-page block. You can snooze it 5 minutes at a time."
   },
   "optionsGlobalLimit": { "message": "All tracked sites combined" },
-  "optionsGlobalHelp": { "message": "One budget shared by every site. Leave blank for no limit." },
+  "optionsGlobalHelp": { "message": "One budget shared by every site." },
   "optionsPerSiteHint": { "message": "Set a limit for one site in the Sites list above." },
   "optionsMinutes": { "message": "min" },
-  "optionsLimitOff": { "message": "off" },
-  "optionsSiteLimitAria": {
-    "message": "Daily limit in minutes for $host$",
-    "placeholders": { "host": { "content": "$1" } }
-  },
+  "optionsSiteLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "optionsOverlayHeading": { "message": "On-page timer" },
   "optionsOverlayHelp": {
     "message": "A small timer at the top of tracked pages. Click it to switch between today, this visit and time open."

@@ -7,14 +7,15 @@ import {
   readSnoozeUntil,
   setPerSiteLimit,
   msToMinutes,
-  parseLimitMinutes,
+  minutesToMs,
   evaluateLimits,
   LIMITS_KEY,
   BLOCK_SNOOZE_KEY,
   type Limits,
 } from './limits'
 import { localizeDom, t } from './i18n'
-import { byId, bindMinutesField, formatDuration, setDocumentLang } from './ui'
+import { byId, formatDuration, setDocumentLang } from './ui'
+import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; hostname: string; protocol: string }
 type View = 'tracked' | 'enable' | 'untracked' | 'loading'
@@ -183,23 +184,31 @@ function renderTracked(tab: ActiveTab, base: string) {
     syncLimitField(last.limits)
   }
 
-  // --- daily limit for this site (commit on change, never per keystroke) ---
-  const limitInput = byId<HTMLInputElement>('site-limit')
-  const limitError = byId('site-limit-error')
+  // --- daily limit for this site: preset chips, or a custom whole-minutes value ---
+  const siteMinutes = (limits: Limits): number | null => {
+    const ms = limits.perSite[base]
+    return typeof ms === 'number' && ms > 0 ? msToMinutes(ms) : null
+  }
+  let picker: LimitPicker | null = null
   const syncLimitField = (limits: Limits) => {
-    if (!limitInput || document.activeElement === limitInput) {
+    const mount = byId('site-limit')
+    if (!mount) {
       return
     }
-    const ms = limits.perSite[base]
-    const value = typeof ms === 'number' ? String(msToMinutes(ms)) : ''
-    limitInput.value = value
-    limitInput.defaultValue = value
-  }
-  if (limitInput && limitError) {
-    limitInput.setAttribute('aria-label', t('popupLimitAria', base))
-    bindMinutesField(limitInput, limitError, byId('site-limit-saved'), (value) =>
-      setPerSiteLimit(base, parseLimitMinutes(value))
-    )
+    if (!picker) {
+      picker = createLimitPicker({
+        id: 'site-limit',
+        presets: SITE_PRESETS,
+        label: t('popupLimitAria', base),
+        fieldLabel: t('limitCustomSiteAria', base),
+        value: siteMinutes(limits),
+        saved: byId('site-limit-saved'),
+        commit: (minutes) => setPerSiteLimit(base, minutes === null ? null : minutesToMs(minutes)),
+      })
+      mount.replaceWith(picker.el)
+      return
+    }
+    picker.set(siteMinutes(limits))
   }
 
   // --- overlay switch ---

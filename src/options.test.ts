@@ -26,18 +26,29 @@ const grant = (...hosts: string[]) => {
 // The Tracking table, one row per tracked site, keyed by host.
 const trackedHosts = () => [...$('tracked-sites').querySelectorAll<HTMLLIElement>('li')].map((li) => li.dataset.host)
 const row = (host: string) => $('tracked-sites').querySelector<HTMLLIElement>(`li[data-host="${host}"]`)
-const limitInput = (host: string) => row(host)?.querySelector<HTMLInputElement>('input')
-const stopButton = (host: string) => row(host)?.querySelector<HTMLButtonElement>('button')
+const stopButton = (host: string) => row(host)?.querySelector<HTMLButtonElement>('.stop')
+// Each row's limit: a compact toggle that expands the row with the chip picker.
+const limitToggle = (host: string) => row(host)?.querySelector<HTMLButtonElement>('.limit-toggle')
+const limitPanel = (host: string) => row(host)?.querySelector<HTMLElement>('.limit-panel')
+const radios = (root: Element | null | undefined) => [
+  ...(root?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? []),
+]
+const radio = (root: Element | null | undefined, label: string) => radios(root).find((c) => c.textContent === label)
+const checkedRadio = (root: Element | null | undefined) =>
+  radios(root).find((c) => c.getAttribute('aria-checked') === 'true')?.textContent
+const globalPicker = () => $('global-limit')
 const todayCell = (host: string) => row(host)?.querySelector<HTMLElement>('[data-today-host]')
 
 // Suggested sites that aren't tracked yet, as one-tap buttons.
 const chips = () => [...$('suggested').querySelectorAll<HTMLButtonElement>('button')]
 const chip = (host: string) => chips().find((b) => b.dataset.host === host)
 
-function commit(input: HTMLInputElement | null | undefined, value: string): void {
-  input!.value = value
-  input!.dispatchEvent(new Event('input'))
-  input!.dispatchEvent(new Event('change'))
+// Pick Custom in a picker and type a value, then press `key`.
+function enterCustom(root: Element | null | undefined, value: string, key = 'Enter'): void {
+  click(radios(root).at(-1))
+  const input = root!.querySelector<HTMLInputElement>('input')!
+  input.value = value
+  input.dispatchEvent(new KeyboardEvent('keydown', { key }))
 }
 
 function submitAdd(value: string): Event {
@@ -216,61 +227,130 @@ describe('adding a site', () => {
 })
 
 describe('limits', () => {
-  it('offers a per-site limit on each tracked site', async () => {
-    grant('reddit.com')
-    await openOptions()
-    expect(limitInput('reddit.com')?.getAttribute('aria-label')).toBe('Daily limit in minutes for reddit.com')
-    expect(limitInput('reddit.com')?.getAttribute('placeholder')).toBe('off')
-  })
-
-  it('shows saved limits in minutes', async () => {
-    grant('reddit.com', 'alpha.org')
+  it('shows each tracked site’s limit as a compact toggle', async () => {
+    grant('reddit.com', 'alpha.org', 'x.com')
     browser.storage.local.seed({
-      [LIMITS_KEY]: { global: 90 * MIN, perSite: { 'reddit.com': 15 * MIN, 'alpha.org': MIN } },
+      [LIMITS_KEY]: { global: 90 * MIN, perSite: { 'reddit.com': 15 * MIN, 'alpha.org': 50 * MIN } },
     })
     await openOptions()
-    expect($<HTMLInputElement>('global-limit').value).toBe('90')
-    expect(limitInput('reddit.com')?.value).toBe('15')
-    expect(limitInput('alpha.org')?.value).toBe('1')
+    expect(text(limitToggle('reddit.com'))).toBe('15m')
+    expect(text(limitToggle('alpha.org'))).toBe('50m')
+    expect(text(limitToggle('x.com'))).toBe('Off')
+    expect(limitToggle('reddit.com')?.getAttribute('aria-label')).toBe('Daily limit for reddit.com: 15 min')
+    expect(limitToggle('x.com')?.getAttribute('aria-label')).toBe('Daily limit for x.com: Off')
+    expect(limitToggle('reddit.com')?.getAttribute('aria-expanded')).toBe('false')
+    expect(limitPanel('reddit.com')?.hidden).toBe(true)
+    // The all-sites cap: a non-preset value is its own chip.
+    expect(checkedRadio(globalPicker())).toBe('1h 30m')
   })
 
-  it('saves a per-site limit on commit, and clears it when blanked', async () => {
+  it('expands a row into the same chip picker, one row at a time', async () => {
+    grant('reddit.com', 'x.com')
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 * MIN } } })
+    await openOptions()
+    click(limitToggle('reddit.com'))
+    const panel = limitPanel('reddit.com')
+    expect(panel?.hidden).toBe(false)
+    expect(limitToggle('reddit.com')?.getAttribute('aria-expanded')).toBe('true')
+    expect(limitToggle('reddit.com')?.getAttribute('aria-controls')).toBe(panel?.id)
+    expect(panel?.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Daily limit for reddit.com')
+    expect(radios(panel).map((c) => c.textContent)).toEqual(['Off', '15m', '30m', '1h', '2h', 'Custom'])
+    expect(document.activeElement).toBe(radio(panel, '30m'))
+
+    click(limitToggle('x.com'))
+    expect(limitPanel('reddit.com')?.hidden).toBe(true)
+    expect(limitPanel('x.com')?.hidden).toBe(false)
+    click(limitToggle('x.com'))
+    expect(limitPanel('x.com')?.hidden).toBe(true)
+  })
+
+  it('saves a per-site preset at once and updates the toggle', async () => {
     grant('reddit.com')
     await openOptions()
-    commit(limitInput('reddit.com'), '20')
+    click(limitToggle('reddit.com'))
+    click(radio(limitPanel('reddit.com'), '1h'))
     await flush()
-    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 20 * MIN } })
-    expect(text(row('reddit.com')?.querySelector('.saved'))).toBe('Saved')
-    commit(limitInput('reddit.com'), '')
+    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 60 * MIN } })
+    expect(text(limitToggle('reddit.com'))).toBe('1h')
+    expect(text(limitPanel('reddit.com')?.querySelector('.saved'))).toBe('Saved')
+    click(radio(limitPanel('reddit.com'), 'Off'))
     await flush()
     expect(storedLimits()).toEqual({ global: null, perSite: {} })
+    expect(text(limitToggle('reddit.com'))).toBe('Off')
   })
 
-  it('flags an invalid per-site limit inline and does not save it', async () => {
+  it('saves a custom per-site limit, and flags an invalid one inline', async () => {
     grant('reddit.com')
     await openOptions()
-    commit(limitInput('reddit.com'), '1.5')
+    click(limitToggle('reddit.com'))
+    const panel = limitPanel('reddit.com')
+    enterCustom(panel, '1.5')
     await flush()
     expect(storedLimits()).toBeUndefined()
-    expect(limitInput('reddit.com')?.getAttribute('aria-invalid')).toBe('true')
-    const error = row('reddit.com')?.querySelector<HTMLElement>('.error')
+    const input = panel?.querySelector('input')
+    expect(input?.getAttribute('aria-invalid')).toBe('true')
+    const error = panel?.querySelector<HTMLElement>('.error')
     expect(error?.hidden).toBe(false)
-    expect(limitInput('reddit.com')?.getAttribute('aria-describedby')).toBe(error?.id)
+    expect(input?.getAttribute('aria-describedby')).toContain(error?.id)
+
+    input!.value = '50'
+    input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await flush()
+    expect(storedLimits()).toEqual({ global: null, perSite: { 'reddit.com': 50 * MIN } })
+    expect(checkedRadio(panel)).toBe('50m')
+    expect(text(limitToggle('reddit.com'))).toBe('50m')
   })
 
-  it('saves the all-sites cap, and rejects nonsense instead of clearing it', async () => {
+  it('Escape in the chips collapses the row back to its toggle', async () => {
+    grant('reddit.com')
     await openOptions()
-    const input = $<HTMLInputElement>('global-limit')
-    expect(input.getAttribute('aria-describedby')).toContain('global-limit-error')
-    commit(input, '120')
+    click(limitToggle('reddit.com'))
+    radio(limitPanel('reddit.com'), 'Off')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+    )
+    expect(limitPanel('reddit.com')?.hidden).toBe(true)
+    expect(document.activeElement).toBe(limitToggle('reddit.com'))
+  })
+
+  it('keeps the open row open when the table re-renders', async () => {
+    grant('reddit.com', 'x.com')
+    await openOptions()
+    click(limitToggle('x.com'))
+    click(stopButton('reddit.com'))
     await flush()
-    expect(storedLimits()).toEqual({ global: 120 * MIN, perSite: {} })
+    expect(trackedHosts()).toEqual(['x.com'])
+    expect(limitPanel('x.com')?.hidden).toBe(false)
+  })
+
+  it('follows per-site limits changed elsewhere', async () => {
+    grant('reddit.com')
+    await openOptions()
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 120 * MIN } } })
+    await flush()
+    expect(text(limitToggle('reddit.com'))).toBe('2h')
+    expect(checkedRadio(limitPanel('reddit.com'))).toBe('2h')
+  })
+
+  it('saves the all-sites cap from its presets, a custom value, or Off', async () => {
+    await openOptions()
+    const picker = globalPicker()
+    expect(picker.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('All tracked sites combined')
+    expect(radios(picker).map((c) => c.textContent)).toEqual(['Off', '1h', '2h', '3h', '4h', 'Custom'])
+    expect(checkedRadio(picker)).toBe('Off')
+    click(radio(picker, '3h'))
+    await flush()
+    expect(storedLimits()).toEqual({ global: 180 * MIN, perSite: {} })
     expect(text($('global-limit-saved'))).toBe('Saved')
-    commit(input, '-3')
+    enterCustom(picker, '-3')
     await flush()
-    expect(storedLimits()).toEqual({ global: 120 * MIN, perSite: {} })
+    expect(storedLimits()).toEqual({ global: 180 * MIN, perSite: {} })
     expect($('global-limit-error').hidden).toBe(false)
-    commit(input, '')
+    enterCustom(picker, '-3', 'Escape')
+    enterCustom(picker, '150')
+    await flush()
+    expect(storedLimits()).toEqual({ global: 150 * MIN, perSite: {} })
+    expect(checkedRadio(picker)).toBe('2h 30m')
+    click(radio(picker, 'Off'))
     await flush()
     expect(storedLimits()).toEqual({ global: null, perSite: {} })
   })
@@ -279,16 +359,17 @@ describe('limits', () => {
     await openOptions()
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 45 * MIN, perSite: {} } })
     await flush()
-    expect($<HTMLInputElement>('global-limit').value).toBe('45')
+    expect(checkedRadio(globalPicker())).toBe('45m')
   })
 
   it('keeps the all-sites cap when a per-site limit changes', async () => {
     grant('x.com')
     browser.storage.local.seed({ [LIMITS_KEY]: { global: MIN, perSite: {} } })
     await openOptions()
-    commit(limitInput('x.com'), '5')
+    click(limitToggle('x.com'))
+    click(radio(limitPanel('x.com'), '15m'))
     await flush()
-    expect(storedLimits()).toEqual({ global: MIN, perSite: { 'x.com': 5 * MIN } })
+    expect(storedLimits()).toEqual({ global: MIN, perSite: { 'x.com': 15 * MIN } })
   })
 })
 
@@ -370,7 +451,7 @@ describe('when browser APIs fail', () => {
 it('localizes the page', async () => {
   await openOptions()
   expect(document.querySelector('h1')?.textContent).toBe('Settings')
-  expect($('global-limit').getAttribute('placeholder')).toBe('off')
+  expect(text($('global-limit')?.querySelector('[role="radio"]'))).toBe('Off')
   expect(document.documentElement.lang).toBe('en-US')
   expect($('privacy-link').textContent).toBe('Privacy policy')
 })

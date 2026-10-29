@@ -56,8 +56,8 @@ export const MAX_LIMIT_MINUTES = 1440
 
 export type MinutesParse = { ok: true; value: string } | { ok: false }
 
-// Validate a minutes field: blank (no limit) or a whole number 1..1440.
-// Returns the canonical text to hand to parseLimitMinutes.
+// Validate a minutes field: blank or a whole number 1..1440. Returns the
+// canonical text (leading zeros dropped).
 export function validateMinutes(raw: string): MinutesParse {
   const value = raw.trim()
   if (value === '') {
@@ -89,44 +89,4 @@ export function flashSaved(el: HTMLElement | null): void {
       el.classList.remove('is-on')
     }, 1600)
   )
-}
-
-// Wire a minutes field: validate on input (feedback only), commit on change
-// (blur or Enter), never per keystroke — a half-typed "3" of "30" must not
-// become a 3-minute limit.
-export function bindMinutesField(
-  input: HTMLInputElement,
-  errorEl: HTMLElement,
-  savedEl: HTMLElement | null,
-  commit: (canonical: string) => Promise<void>
-): void {
-  const check = (): MinutesParse => {
-    const result = validateMinutes(input.value)
-    input.setAttribute('aria-invalid', String(!result.ok))
-    errorEl.hidden = result.ok
-    errorEl.textContent = result.ok ? '' : t('limitInvalid', String(MAX_LIMIT_MINUTES))
-    return result
-  }
-  input.addEventListener('input', () => {
-    // Only clear a shown error while typing; don't nag mid-entry.
-    if (input.getAttribute('aria-invalid') === 'true') {
-      check()
-    }
-  })
-  input.addEventListener('change', () => {
-    const result = check()
-    if (!result.ok) {
-      return
-    }
-    input.value = result.value
-    input.defaultValue = result.value
-    void commit(result.value).then(() => flashSaved(savedEl))
-  })
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && input.getAttribute('aria-invalid') === 'true') {
-      e.preventDefault()
-      input.value = input.defaultValue
-      check()
-    }
-  })
 }

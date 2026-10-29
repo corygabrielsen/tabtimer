@@ -32,24 +32,13 @@
         <p id="global-line" class="global" hidden></p>
 
         <div class="controls">
-          <div class="control">
-            <label for="site-limit" class="control-label" data-i18n="popupLimit">Daily limit</label>
-            <span class="minutes">
+          <div class="control control-limit">
+            <div class="control-head">
+              <span class="control-label" data-i18n="popupLimit">Daily limit</span>
               <span id="site-limit-saved" class="saved" role="status"></span>
-              <input
-                id="site-limit"
-                class="field"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="off"
-                aria-describedby="site-limit-error"
-                data-i18n-attr="placeholder=optionsLimitOff"
-              />
-              <span class="unit" data-i18n="optionsMinutes">min</span>
-            </span>
+            </div>
+            <div id="site-limit"></div>
           </div>
-          <p id="site-limit-error" class="error control-error" hidden></p>
 
           <div class="control">
             <span id="overlay-label" class="control-label" data-i18n="overlaySwitchLabel">Show timer on the page</span>

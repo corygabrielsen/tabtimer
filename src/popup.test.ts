@@ -32,16 +32,16 @@ async function openPopup(tab: { id?: number; url?: string } | null): Promise<voi
 
 const openReddit = () => openPopup({ id: 1, url: 'https://www.reddit.com/' })
 
-// Type a value without committing it (what each keystroke does).
-function type(input: HTMLInputElement, value: string): void {
-  input.value = value
-  input.dispatchEvent(new Event('input'))
-}
+// The daily-limit chip group.
+const limitChips = () => [...$('site-limit').querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+const limitChip = (label: string) => limitChips().find((c) => c.textContent === label)
+const checkedChip = () => limitChips().find((c) => c.getAttribute('aria-checked') === 'true')
+const customField = () => $<HTMLInputElement>('site-limit-custom')
 
-// Type then commit (blur or Enter fire `change`).
-function commit(input: HTMLInputElement, value: string): void {
-  type(input, value)
-  input.dispatchEvent(new Event('change'))
+function enterCustom(value: string, key = 'Enter'): void {
+  click(limitChip('Custom') ?? limitChips().at(-1))
+  customField().value = value
+  customField().dispatchEvent(new KeyboardEvent('keydown', { key }))
 }
 
 const storedLimits = () => browser.storage.local.data[LIMITS_KEY]
@@ -243,7 +243,7 @@ describe('popup on a tracked site', () => {
       browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 10 * MIN } } })
       await flush()
       expect(face()).toBe('over')
-      expect($<HTMLInputElement>('site-limit').value).toBe('10')
+      expect(checkedChip()?.textContent).toBe('10m')
     })
   })
 
@@ -348,71 +348,78 @@ describe('popup on a tracked site', () => {
     })
   })
 
-  describe('daily limit field', () => {
+  describe('daily limit', () => {
     beforeEach(() => {
       browser.storage.local.seed({ [LIMITS_KEY]: { global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } } })
     })
 
-    it('shows the saved limit in minutes, labelled for the site', async () => {
+    it('offers preset chips for the site, with the saved limit selected', async () => {
       await openReddit()
-      const input = $<HTMLInputElement>('site-limit')
-      expect(input.value).toBe('30')
-      expect(input.getAttribute('aria-label')).toBe('Daily limit in minutes for reddit.com')
+      expect($('site-limit').querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
+        'Daily limit for reddit.com'
+      )
+      expect(limitChips().map((c) => c.textContent)).toEqual(['Off', '15m', '30m', '1h', '2h', 'Custom'])
+      expect(checkedChip()?.textContent).toBe('30m')
     })
 
-    // B3: a per-keystroke save turned a half-typed "30" into a 3-minute limit
-    // and could block the open tab immediately.
-    it('B3: does not save while typing, only on commit', async () => {
+    it('saves a preset as soon as it is picked', async () => {
       await openReddit()
-      const input = $<HTMLInputElement>('site-limit')
-      type(input, '4')
+      click(limitChip('2h'))
       await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
-      commit(input, '45')
-      await flush()
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 45 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 120 * MIN } })
       expect(text('site-limit-saved')).toBe('Saved')
+      expect(text('summary')).toBe('2 h left of your 2 h limit')
     })
 
-    it('clears the limit when blanked', async () => {
+    it('Off clears the limit', async () => {
       await openReddit()
-      commit($<HTMLInputElement>('site-limit'), '  ')
+      click(limitChip('Off'))
       await flush()
       expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: {} })
     })
 
+    // B3: a per-keystroke save turned a half-typed "30" into a 3-minute limit
+    // and could block the open tab immediately.
+    it('B3: a custom value saves only on Enter, then shows as its own chip', async () => {
+      await openReddit()
+      click(limitChip('Custom'))
+      customField().value = '4'
+      customField().dispatchEvent(new Event('input'))
+      await flush()
+      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
+      customField().value = '45'
+      customField().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+      await flush()
+      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 45 * MIN } })
+      expect(checkedChip()?.textContent).toBe('45m')
+      expect(text('site-limit-saved')).toBe('Saved')
+    })
+
     it.each(['abc', '0', '-5', '2.5', '1441'])('rejects %s without saving', async (bad) => {
       await openReddit()
-      const input = $<HTMLInputElement>('site-limit')
-      commit(input, bad)
+      enterCustom(bad)
       await flush()
-      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(customField().getAttribute('aria-invalid')).toBe('true')
       expect($('site-limit-error').hidden).toBe(false)
-      expect(text('site-limit-error')).toBe('Enter whole minutes from 1 to 1440, or leave blank for no limit.')
+      expect(text('site-limit-error')).toBe('Enter whole minutes from 1 to 1440.')
       expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
     })
 
-    it('clears the error once the value is fixed, and Escape restores the saved value', async () => {
+    it('Escape cancels the custom value and keeps the saved one', async () => {
       await openReddit()
-      const input = $<HTMLInputElement>('site-limit')
-      commit(input, 'x')
-      type(input, '15')
-      expect(input.getAttribute('aria-invalid')).toBe('false')
-      expect($('site-limit-error').hidden).toBe(true)
-
-      commit(input, 'nope')
-      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-      expect(input.value).toBe('30')
-      expect(input.getAttribute('aria-invalid')).toBe('false')
+      enterCustom('90', 'Escape')
+      await flush()
+      expect(checkedChip()?.textContent).toBe('30m')
+      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 30 * MIN } })
     })
 
-    it('normalizes leading zeros', async () => {
+    it('a custom value equal to a preset selects the preset', async () => {
       await openReddit()
-      const input = $<HTMLInputElement>('site-limit')
-      commit(input, '007')
+      enterCustom('060')
       await flush()
-      expect(input.value).toBe('7')
-      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 7 * MIN } })
+      expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 60 * MIN } })
+      expect(checkedChip()?.textContent).toBe('1h')
+      expect(limitChips().at(-1)?.textContent).toBe('Custom')
     })
   })
 })

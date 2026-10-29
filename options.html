@@ -81,31 +81,16 @@
           </p>
         </div>
         <div class="section-body">
-          <div class="setting">
+          <div class="setting setting-limit">
             <div class="setting-text">
-              <label for="global-limit" class="setting-label" data-i18n="optionsGlobalLimit">
-                All tracked sites combined
-              </label>
-              <p id="global-limit-help" class="setting-help" data-i18n="optionsGlobalHelp">
-                One budget shared by every site. Leave blank for no limit.
-              </p>
+              <span class="setting-label" data-i18n="optionsGlobalLimit">All tracked sites combined</span>
+              <p class="setting-help" data-i18n="optionsGlobalHelp">One budget shared by every site.</p>
             </div>
-            <span class="minutes">
+            <div class="setting-control">
               <span id="global-limit-saved" class="saved" role="status"></span>
-              <input
-                id="global-limit"
-                class="field"
-                type="text"
-                inputmode="numeric"
-                autocomplete="off"
-                placeholder="off"
-                aria-describedby="global-limit-help global-limit-error"
-                data-i18n-attr="placeholder=optionsLimitOff"
-              />
-              <span class="unit" data-i18n="optionsMinutes">min</span>
-            </span>
+              <div id="global-limit"></div>
+            </div>
           </div>
-          <p id="global-limit-error" class="error" hidden></p>
           <p class="setting-help" data-i18n="optionsPerSiteHint">Set a limit for one site in the Sites list above.</p>
         </div>
       </section>

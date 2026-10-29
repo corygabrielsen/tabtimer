@@ -1,8 +1,17 @@
 import { SUGGESTED_SITES, originsForHost, hostFromOrigin, normalizeHost } from './sites'
-import { readLimits, setGlobalLimit, setPerSiteLimit, msToMinutes, parseLimitMinutes, LIMITS_KEY } from './limits'
+import {
+  readLimits,
+  setGlobalLimit,
+  setPerSiteLimit,
+  msToMinutes,
+  minutesToMs,
+  LIMITS_KEY,
+  type Limits,
+} from './limits'
 import { storage, todayKeyForHost, HIDDEN_KEY, SCALE_KEY, ELAPSED_KEY_PREFIX } from './storage'
 import { localizeDom, t } from './i18n'
-import { h, byId, bindMinutesField, flashSaved, formatDuration, setDocumentLang } from './ui'
+import { h, byId, flashSaved, formatDuration, setDocumentLang } from './ui'
+import { createLimitPicker, formatChipMinutes, SITE_PRESETS, GLOBAL_PRESETS, type LimitPicker } from './limitPicker'
 
 const LABELS = new Map(SUGGESTED_SITES.map((s) => [s.host, s.label]))
 const SIZES = [0.5, 0.75, 1]
@@ -27,26 +36,75 @@ function readToday(host: string): Promise<number> {
 
 // --- Tracked site rows -------------------------------------------------------
 
-function limitField(host: string, currentMs: number | undefined): { wrap: HTMLElement; error: HTMLElement } {
-  const value = typeof currentMs === 'number' ? String(msToMinutes(currentMs)) : ''
-  const errorId = `limit-error-${host}`
-  const input = h('input', {
-    class: 'field',
-    type: 'text',
-    inputmode: 'numeric',
-    autocomplete: 'off',
-    placeholder: t('optionsLimitOff'),
-    'aria-label': t('optionsSiteLimitAria', host),
-    'aria-describedby': errorId,
+const toMinutes = (ms: number | null | undefined): number | null =>
+  typeof ms === 'number' && ms > 0 ? msToMinutes(ms) : null
+const toMs = (minutes: number | null): number | null => (minutes === null ? null : minutesToMs(minutes))
+
+// The table is too narrow for a chip row per site, so each row shows its limit
+// as a compact button that expands the row with the same picker the popup uses.
+// One row is open at a time, and stays open across re-renders.
+let openLimitHost: string | null = null
+const rowLimits = new Map<string, (limits: Limits) => void>()
+
+function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLElement; panel: HTMLElement } {
+  const id = `limit-${host}`
+  const panelId = `${id}-panel`
+  const toggle = h('button', {
+    type: 'button',
+    class: 'limit-toggle',
+    'aria-expanded': 'false',
+    'aria-controls': panelId,
     'data-host': host,
   })
-  input.value = value
-  input.defaultValue = value
   const saved = h('span', { class: 'saved', role: 'status' })
-  const error = h('p', { id: errorId, class: 'error', hidden: true })
-  bindMinutesField(input, error, saved, (v) => setPerSiteLimit(host, parseLimitMinutes(v)))
-  const wrap = h('span', { class: 'minutes' }, input, h('span', { class: 'unit' }, t('optionsMinutes')), saved)
-  return { wrap, error }
+  const label = (minutes: number | null) => {
+    toggle.textContent = minutes === null ? t('limitOff') : formatChipMinutes(minutes)
+    toggle.setAttribute(
+      'aria-label',
+      t('optionsLimitToggleAria', [host, minutes === null ? t('limitOff') : formatDuration(minutes * 60000)])
+    )
+  }
+  const picker: LimitPicker = createLimitPicker({
+    id,
+    presets: SITE_PRESETS,
+    label: t('optionsSiteLimitAria', host),
+    fieldLabel: t('limitCustomSiteAria', host),
+    value: toMinutes(currentMs),
+    saved,
+    commit: (minutes) => setPerSiteLimit(host, toMs(minutes)),
+    onChange: label,
+    onEscape: () => {
+      setOpen(false)
+      toggle.focus()
+    },
+  })
+  const panel = h('div', { class: 'limit-panel', id: panelId, hidden: true }, picker.el, saved)
+  const setOpen = (open: boolean) => {
+    if (open && openLimitHost !== host) {
+      // Close whichever other row is open.
+      document.querySelector<HTMLButtonElement>('.limit-toggle[aria-expanded="true"]')?.click()
+    }
+    openLimitHost = open ? host : openLimitHost === host ? null : openLimitHost
+    toggle.setAttribute('aria-expanded', String(open))
+    panel.hidden = !open
+  }
+  toggle.addEventListener('click', () => {
+    const open = toggle.getAttribute('aria-expanded') !== 'true'
+    setOpen(open)
+    if (open) {
+      picker.focus()
+    }
+  })
+  label(toMinutes(currentMs))
+  rowLimits.set(host, (limits) => {
+    const minutes = toMinutes(limits.perSite[host])
+    picker.set(minutes)
+    label(minutes)
+  })
+  if (openLimitHost === host) {
+    setOpen(true)
+  }
+  return { toggle, panel }
 }
 
 function todayText(ms: number, limitMs: number | undefined): string {
@@ -71,7 +129,7 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
     },
     todayText(todayMs, limitMs)
   )
-  const { wrap, error } = limitField(host, limitMs)
+  const { toggle, panel } = limitCell(host, limitMs)
   const stop = h(
     'button',
     { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', host), 'data-host': host },
@@ -81,7 +139,7 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
     pendingFocus = { list: 'tracked', host }
     void disable(host)
   })
-  return h('li', { class: 'site-row', 'data-host': host }, name, today, wrap, stop, error)
+  return h('li', { class: 'site-row', 'data-host': host }, name, today, toggle, stop, panel)
 }
 
 function suggestionChip(label: string, host: string): HTMLLIElement {
@@ -148,6 +206,10 @@ async function render() {
   if (seq !== renderSeq) {
     return
   }
+  if (openLimitHost !== null && !tracked.includes(openLimitHost)) {
+    openLimitHost = null
+  }
+  rowLimits.clear()
   trackedUl.replaceChildren(...tracked.map((host, i) => siteRow(host, limits.perSite[host], todays[i] ?? 0)))
   byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
   const count = byId('tracked-count')
@@ -168,6 +230,9 @@ async function render() {
 
 async function refreshTodays() {
   const limits = await readLimits()
+  for (const sync of rowLimits.values()) {
+    sync(limits)
+  }
   for (const el of document.querySelectorAll<HTMLElement>('[data-today-host]')) {
     const host = el.dataset.todayHost ?? ''
     const ms = await readToday(host)
@@ -221,25 +286,24 @@ function initAddForm() {
 // --- Global limit -------------------------------------------------------------
 
 async function initGlobalLimit() {
-  const input = byId<HTMLInputElement>('global-limit')
-  const error = byId('global-limit-error')
-  if (!input || !error) {
+  const mount = byId('global-limit')
+  if (!mount) {
     return
   }
-  const sync = async () => {
-    if (document.activeElement === input) {
-      return
-    }
-    const limits = await readLimits()
-    const value = limits.global ? String(msToMinutes(limits.global)) : ''
-    input.value = value
-    input.defaultValue = value
-  }
-  await sync()
-  bindMinutesField(input, error, byId('global-limit-saved'), (v) => setGlobalLimit(parseLimitMinutes(v)))
+  const limits = await readLimits()
+  const picker = createLimitPicker({
+    id: 'global-limit',
+    presets: GLOBAL_PRESETS,
+    label: t('optionsGlobalLimit'),
+    fieldLabel: t('limitCustomGlobalAria'),
+    value: toMinutes(limits.global),
+    saved: byId('global-limit-saved'),
+    commit: (minutes) => setGlobalLimit(toMs(minutes)),
+  })
+  mount.replaceWith(picker.el)
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[LIMITS_KEY]) {
-      void sync()
+      void readLimits().then((l) => picker.set(toMinutes(l.global)))
     }
   })
 }
