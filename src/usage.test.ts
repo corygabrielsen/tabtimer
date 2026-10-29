@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LIMITS_KEY } from './core/schema'
+import { originsForSite } from './core/site'
+import { bus } from './chrome/bus'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, flush, loadPageBody, normText } from './test/dom'
 import { bucketsOf } from './test/data'
@@ -160,9 +162,10 @@ describe('day view', () => {
   })
 
   // U7: open over midnight, "Today" kept showing yesterday until a write.
-  it('U7: starts the new day at midnight without a write', () => {
+  it('U7: starts the new day at midnight without a write', async () => {
     vi.setSystemTime(new Date(2026, 9, 28, 23, 59, 59))
     vi.advanceTimersByTime(2000)
+    await flush()
     expect(text('period-label')).toBe('Today')
     expect(text('total')).toBe('0 min')
     expect(document.querySelector('.none')?.textContent).toBe('No activity.')
@@ -388,6 +391,79 @@ describe('a selected site', () => {
     expect($('filter').hidden).toBe(true)
     expect(text('total')).toBe('1 h 39 min')
     expect(document.activeElement).toBe(row('reddit.com'))
+  })
+})
+
+// Storage lacks the open interval's uncredited part, so today lagged the
+// on-page timer, the popup and Settings by up to a checkpoint (a minute),
+// the over mark included.
+describe('today as the worker sees it', () => {
+  const page = { url: 'https://www.reddit.com/', frameId: 0, documentLifecycle: 'active' }
+  // Tab 1 on reddit.com reports itself in use, or not. The tab is the sender
+  // only until the worker takes the message.
+  const report = async (visible: boolean) => {
+    const own = browser.sender
+    browser.sender = { ...page, id: browser.runtime.id, tab: { id: 1, windowId: 1 } }
+    const sent = bus.send('presence', { visible, focused: true, media: false, blocked: false })
+    await Promise.resolve()
+    browser.sender = own
+    await sent
+  }
+  // 29 min 24 s stored in the current hour (4 PM), against a 30 min limit.
+  const seed: Record<string, unknown> = {
+    ...day('2026-10-28', { 'reddit.com': { 16: 29.4 }, 'github.com': { 10: 5 } }),
+    [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 },
+  }
+  const shown = () => ({
+    total: text('total'),
+    bar: bars()[16]!.getAttribute('aria-label'),
+    time: row('reddit.com').querySelector('.site-time')?.textContent,
+    over: row('reddit.com').hasAttribute('data-over'),
+  })
+
+  beforeEach(async () => {
+    browser.granted = new Set(originsForSite('reddit.com'))
+    browser.storage.local.seed(seed)
+    await report(true)
+    vi.setSystemTime(Date.now() + 40_000)
+  })
+
+  it('counts the time not yet credited in today, its hour and its over mark', async () => {
+    await open(seed)
+    expect(browser.storage.local.data['day:2026-10-28']).toEqual(seed['day:2026-10-28'])
+    expect(shown()).toEqual({ total: '35 min', bar: '4 PM, 30 min', time: '30 min', over: true })
+    // It runs on while the tab does.
+    vi.advanceTimersByTime(40_000)
+    expect(shown()).toEqual({ total: '36 min', bar: '4 PM, 31 min', time: '31 min', over: true })
+  })
+
+  it('adds it to today’s bar in the week', async () => {
+    await open(seed)
+    mode('week')
+    expect(bars()[3]!.getAttribute('aria-label')).toBe('Wednesday, Oct 28, 35 min')
+    expect(row('reddit.com').querySelector('.site-time')?.textContent).toBe('30 min')
+  })
+
+  it('leaves another day as stored', async () => {
+    await open(seed)
+    click($('prev'))
+    expect(text('total')).toBe('0 min')
+  })
+
+  it('stops running once the tab stops', async () => {
+    await open(seed)
+    expect(shown().time).toBe('30 min')
+    await report(false)
+    await flush()
+    vi.advanceTimersByTime(60_000)
+    expect(shown()).toEqual({ total: '35 min', bar: '4 PM, 30 min', time: '30 min', over: true })
+  })
+
+  it('shows storage’s time when the worker doesn’t answer', async () => {
+    // Not an extension page: the worker refuses it.
+    browser.sender = { id: browser.runtime.id, url: 'https://reddit.com/' }
+    await open(seed)
+    expect(shown()).toEqual({ total: '34 min', bar: '4 PM, 29 min', time: '29 min', over: false })
   })
 })
 

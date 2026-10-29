@@ -9,13 +9,15 @@ import {
   patchHistory,
   periodOf,
   summarize,
+  withUncredited,
   type History,
 } from './core/usage'
-import { siteTodayAt, type TodayTotals } from './core/messages'
-import { normalizePrefs, siteTotal, snapScale, DEFAULT_PREFS, LIMITS_KEY, PREFS_KEY, type Prefs } from './core/schema'
+import { siteOverAt, siteTodayAt } from './core/messages'
+import { normalizePrefs, snapScale, DEFAULT_PREFS, LIMITS_KEY, PREFS_KEY, type Prefs } from './core/schema'
 import { chromeStore, loadThenPatch } from './chrome/store'
 import type { StoreChanges } from './ports'
 import { bus } from './chrome/bus'
+import { liveToday } from './liveToday'
 import { localizeDom, t } from './i18n'
 import { h, byId, firstDayOfWeek, flashSaved, formatDuration, placeChildren, setDocumentLang, uiLocale } from './ui'
 import {
@@ -50,35 +52,24 @@ const local = chromeStore('local')
 let limits: Limits = DEFAULT_LIMITS
 let history: History = new Map()
 let prefs: Prefs = DEFAULT_PREFS
-// Today's times as the worker sees them, the open interval's included (null:
-// it hasn't answered; storage's are shown).
-let totals: TodayTotals | null = null
+// Today's times as the worker sees them, the open interval's included.
+const live = liveToday(
+  () => history.get(dayOf(Date.now())) ?? {},
+  () => {
+    refreshTodays()
+    renderWeek()
+  }
+)
 const loaded = loadThenPatch(
   local,
   async () => {
-    const [items] = await Promise.all([local.getAll().catch(() => ({}) as Record<string, unknown>), askTotals()])
+    const [items] = await Promise.all([local.getAll().catch(() => ({}) as Record<string, unknown>), live.ready])
     limits = normalizeLimits(items[LIMITS_KEY])
     history = historyOf(items)
     prefs = normalizePrefs(items[PREFS_KEY])
   },
   (changes) => onStorageChange(changes)
 )
-
-// A later worker transaction's answer is never replaced by an earlier one.
-async function askTotals(): Promise<void> {
-  const res = await bus.send('todayTotals', {})
-  if (!res.ok) {
-    totals = null
-  } else if (totals === null || res.value.seq >= totals.seq) {
-    totals = res.value
-  }
-}
-
-// A site's time today.
-function todayOf(host: string): number {
-  const now = Date.now()
-  return totals ? siteTodayAt(totals, host, now) : siteTotal(history.get(dayOf(now)) ?? {}, host)
-}
 
 // --- Tracked site rows -------------------------------------------------------
 
@@ -150,9 +141,9 @@ function limitCell(host: string, current: number | null): { toggle: HTMLElement;
 
 // A row's time today, flagged once it reaches the site's limit.
 function paintToday(el: HTMLElement, host: string): void {
-  const ms = todayOf(host)
-  const limitMs = limitsFor(limits, host).site
-  const over = limitMs !== null && ms >= limitMs
+  const now = Date.now()
+  const ms = siteTodayAt(live.totals(), host, now)
+  const over = siteOverAt(live.totals(), host, limitsFor(limits, host).site, now)
   el.textContent = over ? t('optionsTodayOver', formatDuration(ms)) : formatDuration(ms)
   el.toggleAttribute('data-over', over)
   el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
@@ -454,13 +445,15 @@ function renderWeek() {
   if (!card) {
     return
   }
-  const today = dayOf(Date.now())
-  card.hidden = !hasAnyUsage(history, today)
+  const now = Date.now()
+  const today = dayOf(now)
+  const shown = withUncredited(history, live.totals(), now)
+  card.hidden = !hasAnyUsage(shown, today)
   if (card.hidden) {
     return
   }
   const week = thisWeek()
-  const summary = summarize(history, week, today, null)
+  const summary = summarize(shown, week, today, null)
   byId('week-total')!.textContent = formatDuration(summary.total)
   byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))
   const totals = summary.bars.map((bar) => barTotal(bar))
@@ -504,28 +497,11 @@ function onStorageChange(changes: StoreChanges): void {
   if (LIMITS_KEY in changes) {
     refreshTodays()
   }
-  if (days.includes(dayOf(Date.now()))) {
-    void askTotals().then(refreshTodays)
-  }
   const week = thisWeek().days
   if (days.some((day) => week.includes(day))) {
     renderWeek()
   }
 }
-
-// The running site's time runs on while the page is open, and at midnight
-// today's figures and the week start over without waiting for a write.
-let shownDay = dayOf(Date.now())
-window.setInterval(() => {
-  const day = dayOf(Date.now())
-  if (day !== shownDay) {
-    shownDay = day
-    void askTotals().then(refreshTodays)
-    renderWeek()
-  } else if (totals?.running) {
-    refreshTodays()
-  }
-}, 1000)
 
 setDocumentLang()
 localizeDom()

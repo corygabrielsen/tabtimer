@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import type { BlockReason } from './limits'
 import {
+  latestTotals,
   overAt,
   parsePresence,
   parseStatePush,
   PROJECT_MS,
+  siteOverAt,
   siteTodayAt,
   totalsAt,
   SENDERS,
@@ -112,6 +114,45 @@ describe('every site’s time today, read at a later moment', () => {
     expect(siteTodayAt({ ...totals, asOf: MIDNIGHT - 1000 }, 'a.com', MIDNIGHT + 3000)).toBe(3000)
     expect(siteTodayAt({ ...totals, asOf: MIDNIGHT - 1000 }, 'b.com', MIDNIGHT + 3000)).toBe(0)
     expect(siteTodayAt(totals, 'a.com', NOON + 3_600_000)).toBe(50_000 + PROJECT_MS)
+  })
+
+  it('is over its own limit as the popup is, the snooze ignored', () => {
+    expect(siteOverAt(totals, 'a.com', 60_000, NOON + 9999)).toBe(false)
+    expect(siteOverAt(totals, 'a.com', 60_000, NOON + 10_000)).toBe(true)
+    expect(siteOverAt(totals, 'b.com', 20_000, NOON)).toBe(true)
+    expect(siteOverAt(totals, 'b.com', 20_001, NOON + 60_000)).toBe(false)
+    expect(siteOverAt(totals, 'a.com', null, NOON + 60_000)).toBe(false)
+    // Past midnight, or running and stale: over nothing, as overAt.
+    expect(siteOverAt(totals, 'b.com', 20_000, MIDNIGHT)).toBe(false)
+    expect(siteOverAt(totals, 'a.com', 60_000, NOON + PROJECT_MS + 1)).toBe(false)
+    // The same answer overAt gives the popup for that site's tab.
+    const tab: TabState = {
+      site: 'a.com',
+      day: totals.day,
+      seq: 1,
+      asOf: NOON,
+      today: 50_000,
+      globalToday: 70_000,
+      running: true,
+      blockAt: NOON + 5 * 60_000,
+      limit: { scope: 'site', ms: 60_000 },
+      prefs: { hidden: false, scale: 1 },
+    }
+    for (const at of [NOON, NOON + 9999, NOON + 10_000, NOON + 60_000, NOON + PROJECT_MS + 1]) {
+      expect(siteOverAt(totals, 'a.com', 60_000, at)).toBe(overAt(tab, at, 'ignored') !== null)
+    }
+  })
+})
+
+describe('latestTotals', () => {
+  const totals = (seq: number): TodayTotals => ({ day: '2026-06-10', asOf: 0, seq, running: null, sites: {} })
+
+  it('keeps the later transaction’s answer, and none when the worker fails', () => {
+    expect(latestTotals(null, { ok: true, value: totals(1) })).toEqual(totals(1))
+    expect(latestTotals(totals(2), { ok: true, value: totals(1) })).toEqual(totals(2))
+    expect(latestTotals(totals(2), { ok: true, value: totals(2) })).toEqual(totals(2))
+    expect(latestTotals(totals(2), { ok: true, value: totals(3) })).toEqual(totals(3))
+    expect(latestTotals(totals(2), { ok: false, error: 'unreachable' })).toBeNull()
   })
 })
 
