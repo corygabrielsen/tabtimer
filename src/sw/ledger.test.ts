@@ -95,6 +95,25 @@ describe('credit', () => {
     browser.storage.local.error = null
     await expect(addElapsed('a.com', [[NOON - 1000, NOON]])).resolves.toBe(1000)
   })
+
+  it('loses, never doubles, a span whose commit fails partway', async () => {
+    const OPEN = { tabId: 1, windowId: 1, doc: 'd', site: 'a.com', media: false }
+    // As the tracker does: credit since the open interval's mark, and move the mark on.
+    const checkpoint = () =>
+      ledger.transaction(async (tx) => {
+        const since = tx.tracker.open?.since ?? now - 1000
+        await tx.credit([{ site: 'a.com', start: since, end: now, media: false }])
+        tx.tracker = { ...tx.tracker, open: { ...OPEN, since: now, checkpoint: now } }
+      })
+    await checkpoint()
+    now += 1000
+    // The worker's state isn't saved (a quota, or the worker stopped mid-commit).
+    vi.spyOn(browser.storage.session, 'set').mockRejectedValueOnce(new Error('QUOTA_BYTES quota exceeded'))
+    await expect(checkpoint()).rejects.toThrow('QUOTA_BYTES')
+    await checkpoint()
+    // 1 s before the first checkpoint, then the next 1 s credited once.
+    expect(siteTotal(normalizeDay(data()['day:2026-06-10']), 'a.com')).toBe(2000)
+  })
 })
 
 describe('retention', () => {

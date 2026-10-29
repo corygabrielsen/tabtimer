@@ -164,10 +164,13 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     if (unsnoozed) {
       writes[LIMITS_KEY] = unsnoozed
     }
-    await Promise.all([
-      session.set({ [WORKER_KEY]: { tracker: tx.tracker, away, day: today, seq } }),
-      Object.keys(writes).length > 0 ? local.set(writes) : null,
-    ])
+    // The worker's state first: it moves the open interval's mark past the
+    // time credited. A commit that fails between the two writes loses that
+    // time; the other order would credit it again in the next transaction.
+    await session.set({ [WORKER_KEY]: { tracker: tx.tracker, away, day: today, seq } })
+    if (Object.keys(writes).length > 0) {
+      await local.set(writes)
+    }
     // The first transaction of another day (the date moved on, or the
     // clock went back) prunes the days now outside the window.
     if (stored.day !== today) {
