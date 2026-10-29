@@ -6,6 +6,7 @@ import {
   today,
   readToday,
   openPopup,
+  setPageFocus,
   shadowText,
   clickInShadow,
   LIMITS_KEY,
@@ -280,7 +281,7 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   // Take window focus away so SITE_A stops accruing, then let the last
   // report (every 5 s) land and put the stored total back on a whole
   // minute: the stored total is what the limit compares.
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await setPageFocus(page, false)
   await page.waitForTimeout(6_000)
   await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 3 * MINUTE }))
   expect(await readToday(serviceWorker, SITE_A)).toBe(3 * MINUTE)

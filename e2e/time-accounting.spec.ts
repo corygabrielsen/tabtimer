@@ -3,6 +3,7 @@ import {
   expect,
   advance,
   openInterval,
+  checkpoint,
   readToday,
   seed,
   today,
@@ -50,6 +51,25 @@ test('B5: re-enabling a site without a reload counts focus time once', async ({ 
   const total = await readToday(serviceWorker, SITE_A)
   expect(total).toBeGreaterThanOrEqual(30_000)
   expect(total).toBeLessThanOrEqual(lifetime)
+})
+
+test('P2: keeps counting while focus is in a frame of the page', async ({ context, serviceWorker, site }) => {
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/frame'))
+  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
+  const since = (await openInterval(serviceWorker))!.since
+  // The top window blurs as the frame takes focus; the page keeps it.
+  const blurred = page.evaluate(
+    () => new Promise((resolve) => window.addEventListener('blur', resolve, { once: true }))
+  )
+  await page.frameLocator('iframe').locator('#field').click()
+  await blurred
+  expect(await page.evaluate(() => document.hasFocus())).toBe(true)
+  await page.waitForTimeout(1_500)
+  expect((await openInterval(serviceWorker))?.since).toBe(since)
+  await advance(serviceWorker, 30_000)
+  await checkpoint(serviceWorker)
+  expect(await readToday(serviceWorker, SITE_A)).toBeGreaterThanOrEqual(30_000)
 })
 
 test('B9: a page restored from the back/forward cache keeps tracking and blocking', async ({

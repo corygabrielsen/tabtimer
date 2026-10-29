@@ -31,7 +31,7 @@ export interface Bus {
 }
 
 // States the service worker pushes to a page. The handler returns the
-// page's presence, which the worker takes as a fresh report.
+// page's presence, which the worker takes as a fresh report if `probe`.
 export interface Pushes {
-  onState(handle: (state: TabState) => Presence): () => void
+  onState(handle: (state: TabState, probe: boolean) => Presence): () => void
 }

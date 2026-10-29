@@ -59,7 +59,8 @@ const SCROLL_PAGES: Record<string, string> = {
 // Every *.test host resolves to the fixture server. Any path serves a plain
 // page; /interactive adds focusable controls, looping audio, and a way into
 // fullscreen (the button, or the F key like a video player), counting requests
-// in window.fullscreenAttempts and entries in window.fullscreenEntries. SCROLL_PAGES serve scrolling layouts.
+// in window.fullscreenAttempts and entries in window.fullscreenEntries. SCROLL_PAGES serve scrolling layouts;
+// /frame embeds a frame with a text field.
 function startServer(): Promise<Server> {
   const wav = silentWav()
   const server = createServer((req, res) => {
@@ -71,6 +72,7 @@ function startServer(): Promise<Server> {
     }
     const extra =
       SCROLL_PAGES[req.url ?? ''] ??
+      (req.url === '/frame' ? '<iframe srcdoc="<input id=field>"></iframe>' : null) ??
       (req.url === '/interactive'
         ? '<button id="page-button">page button</button><a id="page-link" href="#x">page link</a>' +
           '<audio id="media" src="/silence.wav" loop></audio>' +
@@ -212,6 +214,28 @@ export const advance = (sw: Worker, ms: number) => callHook(sw, 'advance', ms)
 // Headless Chromium focuses a window but sends no focus event; the hook
 // delivers the one Chrome would.
 export const focusWindow = (sw: Worker, windowId: number) => callHook(sw, 'focusWindow', windowId)
+
+// Headless Chromium keeps every page focused. Take focus away (or give it
+// back) where the content script looks: document.hasFocus() in its isolated
+// world, and the window's blur or focus event.
+export async function setPageFocus(page: Page, focused: boolean): Promise<void> {
+  const cdp = await page.context().newCDPSession(page)
+  const worlds: number[] = []
+  cdp.on('Runtime.executionContextCreated', ({ context }) => {
+    if (context.origin.startsWith('chrome-extension://')) {
+      worlds.push(context.id)
+    }
+  })
+  await cdp.send('Runtime.enable')
+  const expression = `document.hasFocus = () => ${focused}; window.dispatchEvent(new Event('${focused ? 'focus' : 'blur'}'))`
+  for (const contextId of worlds) {
+    await cdp.send('Runtime.evaluate', { contextId, expression })
+  }
+  await cdp.detach()
+  if (worlds.length === 0) {
+    throw new Error('no content script world')
+  }
+}
 
 // The worker's open interval (in storage.session), or null.
 export function openInterval(sw: Worker): Promise<{ windowId: number; media: boolean; since: number } | null> {

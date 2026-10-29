@@ -62,8 +62,9 @@ export function serveRouter(handle: Handler): void {
 }
 
 // The page side of state pushes (core/messages.ts StatePush): `handle` gets
-// each state from this extension's service worker and returns the page's
-// presence, sent back as the reply. Returns the unsubscribe function.
+// each state from this extension's service worker (and whether it is a
+// probe) and returns the page's presence, sent back as the reply. Returns
+// the unsubscribe function.
 export const pushes: Pushes = {
   onState(handle) {
     const listener = (raw: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r: unknown) => void) => {
@@ -71,9 +72,9 @@ export const pushes: Pushes = {
       if (sender.id !== chrome.runtime.id || sender.tab) {
         return false
       }
-      const state = parseStatePush(raw)
-      if (state) {
-        sendResponse(handle(state))
+      const push = parseStatePush(raw)
+      if (push) {
+        sendResponse(handle(push.state, push.probe))
       }
       return false
     }

@@ -7,6 +7,7 @@ import {
   focusWindow,
   openInterval,
   readToday,
+  setPageFocus,
   shadowText,
   OVERLAY_ID,
 } from './fixtures'
@@ -73,7 +74,7 @@ test('time continues correctly after the service worker is stopped mid-session',
 
   // Taking focus away is the next event: it starts a fresh worker, which
   // reads the open interval back from storage.session and credits it.
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await setPageFocus(page, false)
   await running()
   const sw = serviceWorker
   await expect.poll(() => readToday(sw, SITE_A)).toBeGreaterThan(0)
@@ -86,10 +87,10 @@ test('time continues correctly after the service worker is stopped mid-session',
   // And it keeps counting from there (on the new worker's clock, moved
   // forward through the e2e build's hook).
   const resumed = Date.now()
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await setPageFocus(page, true)
   await expect.poll(() => openInterval(sw)).not.toBeNull()
   await advance(sw, 30_000)
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await setPageFocus(page, false)
   await expect.poll(() => readToday(sw, SITE_A)).toBeGreaterThanOrEqual(credited + 30_000)
   expect(await readToday(sw, SITE_A)).toBeLessThanOrEqual(credited + 30_000 + Date.now() - resumed)
 })

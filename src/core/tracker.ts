@@ -13,7 +13,8 @@
 //   - browser events (tab switch, window focus, removal, navigation, idle,
 //     lock, blocking) only close the interval, or ask a page to report
 //     again (`probe`); a reset of the open site's time only moves the
-//     interval's start up to `now`, crediting nothing;
+//     interval's start up to `now`, crediting nothing; a tab moving to
+//     another window only updates where it is;
 //   - an interval is credited up to `now` while its checkpoints keep
 //     coming; after a silence longer than SUSPEND_GAP_MS (the device slept
 //     without locking, so no alarm fired) it is credited only up to its
@@ -69,6 +70,8 @@ export type TrackerState = { tabs: Record<string, Attest>; open: Open | null }
 export type TrackerEvent =
   | { kind: 'presence'; tabId: number; attest: Attest }
   | { kind: 'activated'; tabId: number; windowId: number }
+  // The tab moved to another window.
+  | { kind: 'attached'; tabId: number; windowId: number }
   // windowId null: no Chrome window has focus.
   | { kind: 'windowFocus'; windowId: number | null }
   | { kind: 'removed'; tabId: number }
@@ -242,6 +245,19 @@ class Builder {
   }
 }
 
+// The tab is in window `windowId` (an event from the browser says so): its
+// report and the open interval follow it.
+function move(b: Builder, tabId: number, windowId: number): void {
+  const key = String(tabId)
+  const attest = b.tabs[key]
+  if (attest && attest.windowId !== windowId) {
+    b.tabs[key] = { ...attest, windowId }
+  }
+  if (b.open?.tabId === tabId && b.open.windowId !== windowId) {
+    b.open = { ...b.open, windowId }
+  }
+}
+
 function presence(b: Builder, tabId: number, a: Attest, idle: IdleState): void {
   const key = String(tabId)
   const previous = b.tabs[key]
@@ -285,10 +301,15 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
       presence(b, e.tabId, e.attest, idle)
       break
     case 'activated':
+      move(b, e.tabId, e.windowId)
       // Another tab came to the front of the open tab's window.
       if (open && open.windowId === e.windowId && open.tabId !== e.tabId) {
         b.close()
       }
+      b.probe.add(e.tabId)
+      break
+    case 'attached':
+      move(b, e.tabId, e.windowId)
       b.probe.add(e.tabId)
       break
     case 'windowFocus':

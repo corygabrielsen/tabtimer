@@ -57,6 +57,7 @@ describe('presence', () => {
       site: 'a.com',
       day: '2026-06-10',
       asOf: NOON,
+      seq: 1,
       today: 0,
       globalToday: 0,
       running: true,
@@ -98,6 +99,17 @@ describe('presence', () => {
     now += 5 * S
     await tracker.presence(2, { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false, ...SHOWN })
     expect(sent.map(([tabId, doc, push]) => [tabId, doc, push.state.running])).toEqual([[1, 'doc-a', false]])
+  })
+
+  it('P8: numbers its states in the order it built them, across restarts and within a millisecond', async () => {
+    const seqs: number[] = []
+    let tracker = worker()
+    seqs.push((await tracker.presence(1, { ...PAGE, ...SHOWN })).seq)
+    seqs.push((await tracker.presence(1, { ...PAGE, ...SHOWN, media: true })).seq)
+    tracker = worker()
+    now -= 60 * MIN // the clock went back
+    seqs.push((await tracker.presence(1, { ...PAGE, ...SHOWN })).seq)
+    expect(seqs).toEqual([1, 2, 3])
   })
 })
 
@@ -256,6 +268,45 @@ describe('probes', () => {
     ])
   })
 
+  it('P7: marks the pushes it reads the reply to as probes, and only those', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, ...HIDDEN })
+    replies.set(2, SHOWN)
+    sent = []
+    await tracker.dispatch({ kind: 'activated', tabId: 2, windowId: 1 })
+    expect(sent.map(([tabId, , push]) => [tabId, push.probe, push.state.running])).toEqual([
+      [1, false, false],
+      [2, true, false],
+      [2, false, true],
+    ])
+  })
+
+  it('W3: follows a tab moved to another window, which then counts there', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN, focused: false })
+    replies.set(1, SHOWN)
+    // Dragged into window 2, which takes focus.
+    await tracker.dispatch({ kind: 'attached', tabId: 1, windowId: 2 })
+    await tracker.dispatch({ kind: 'activated', tabId: 1, windowId: 2 })
+    await tracker.dispatch({ kind: 'windowFocus', windowId: 2 })
+    expect(open()).toMatchObject({ tabId: 1, windowId: 2, since: NOON })
+    // The open tab moved back: it keeps counting once its window has focus.
+    now += 5 * S
+    await tracker.dispatch({ kind: 'attached', tabId: 1, windowId: 1 })
+    await tracker.dispatch({ kind: 'windowFocus', windowId: 1 })
+    expect(open()).toMatchObject({ tabId: 1, windowId: 1, since: NOON })
+  })
+
+  it('W3: takes a tab’s window from its activation too', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    replies.set(1, SHOWN)
+    await tracker.dispatch({ kind: 'activated', tabId: 1, windowId: 3 })
+    await tracker.dispatch({ kind: 'windowFocus', windowId: 3 })
+    expect(open()).toMatchObject({ tabId: 1, windowId: 3, since: NOON })
+  })
+
   it('ignores an answer that is not a presence, and a page that is gone', async () => {
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN, focused: false })
@@ -374,6 +425,15 @@ describe('background wiring', () => {
     browser.windows.onFocusChanged.dispatch(browser.windows.WINDOW_ID_NONE)
     await flush()
     expect(tracked()).toBeNull()
+  })
+
+  it('W3: follows a tab moved to another window', async () => {
+    await report(SHOWN)
+    browser.tabs.onAttached.dispatch(1, { newWindowId: 2, newPosition: 0 })
+    await flush()
+    browser.windows.onFocusChanged.dispatch(2)
+    await flush()
+    expect(tracked()).toMatchObject({ tabId: 1, windowId: 2 })
   })
 
   it('closes on navigation to another site, a page it can’t see, or a discard', async () => {

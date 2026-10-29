@@ -30,14 +30,15 @@ import {
   type DayUsage,
   type Prefs,
 } from '../core/schema'
+import { isFiniteNumber } from '../core/guards'
 import { serial } from '../core/serial'
 import { normalizeTracker, type Accrual, type TrackerState } from '../core/tracker'
 import type { Site } from '../core/site'
 import type { Clock, Store } from '../ports'
 
 // storage.session key: the worker's state between events ({ tracker, away,
-// day }), read once at the start of a transaction and written once at its
-// end. `day`: the day of the last transaction.
+// day, seq }), read once at the start of a transaction and written once at
+// its end. `day`: the day of the last transaction; `seq`: its number.
 export const WORKER_KEY = 'worker'
 
 // What a transaction (Ledger.transaction) may do: the queued operations'
@@ -45,6 +46,8 @@ export const WORKER_KEY = 'worker'
 // until the transaction's task has finished.
 export type Tx = {
   now: number
+  // This transaction's number: one more than the last one's.
+  seq: number
   // The tracker's state (core/tracker.ts), saved as the transaction ends.
   tracker: TrackerState
   // Credit closed intervals, less time away from the computer that
@@ -81,7 +84,8 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     const now = clock.now()
     const today = dayOf(now)
     const todayKey = dayKey(today)
-    const stored = (await session.get<Partial<Record<'tracker' | 'away' | 'day', unknown>>>(WORKER_KEY)) ?? {}
+    const stored = (await session.get<Partial<Record<'tracker' | 'away' | 'day' | 'seq', unknown>>>(WORKER_KEY)) ?? {}
+    const seq = (isFiniteNumber(stored.seq) ? stored.seq : 0) + 1
     let away = asOf(normalizeAway(stored.away), now)
     // The day usages read so far, and those changed.
     const days = new Map<string, DayUsage>()
@@ -117,6 +121,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
     const tx: Tx = {
       now,
+      seq,
       tracker: normalizeTracker(stored.tracker),
       credit: async (accruals) => {
         for (const { site, start, end, media } of accruals) {
@@ -160,7 +165,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
       writes[LIMITS_KEY] = unsnoozed
     }
     await Promise.all([
-      session.set({ [WORKER_KEY]: { tracker: tx.tracker, away, day: today } }),
+      session.set({ [WORKER_KEY]: { tracker: tx.tracker, away, day: today, seq } }),
       Object.keys(writes).length > 0 ? local.set(writes) : null,
     ])
     // The first transaction of another day (the date moved on, or the
