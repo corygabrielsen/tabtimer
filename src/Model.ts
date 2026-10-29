@@ -28,7 +28,10 @@ export default class Model {
   private host: string
   private resetTimeoutId: ReturnType<typeof setTimeout> | null = null
   constructor() {
-    this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}))
+    // The session timer is wall time on the page, so a long gap between
+    // ticks (a throttled background tab wakes about once a minute) still
+    // counts in full; only backward clock jumps are ignored.
+    this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}), Infinity)
     this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.reportElapsed)
     this.host = window.location.hostname
     this.resetTimersAtTime = this.getResetTime()

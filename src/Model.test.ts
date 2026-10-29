@@ -82,6 +82,22 @@ describe('focus time accrual', () => {
     expect(await today(model)).toBe(seconds(10))
   })
 
+  it('excludes every unfocused gap across repeated blur/focus cycles', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(3))
+    setPageState({ focused: false })
+    await vi.advanceTimersByTimeAsync(minutes(2))
+    setPageState({ focused: true })
+    await vi.advanceTimersByTimeAsync(seconds(4))
+    setPageState({ focused: false })
+    await vi.advanceTimersByTimeAsync(minutes(7))
+    setPageState({ focused: true })
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    const state = await model.readElapsed()
+    expect(state.focus.elapsed).toBe(seconds(12))
+    expect(state.today.elapsed).toBe(seconds(12))
+  })
+
   it('pauses while the tab is hidden', async () => {
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(4))

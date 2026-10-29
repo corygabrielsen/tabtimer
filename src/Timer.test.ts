@@ -34,6 +34,21 @@ describe('Timer', () => {
     expect(t.elapsed).toBe(atPause + 1000)
   })
 
+  it('excludes both gaps across two pause/resume cycles', () => {
+    const t = new Timer(TimerType.FOCUS, 1000, noop)
+    t.start()
+    vi.advanceTimersByTime(3000)
+    t.pause()
+    vi.advanceTimersByTime(20_000)
+    t.unpause()
+    vi.advanceTimersByTime(4000)
+    t.pause()
+    vi.advanceTimersByTime(70_000)
+    t.unpause()
+    vi.advanceTimersByTime(5000)
+    expect(t.elapsed).toBe(12_000)
+  })
+
   it('preserves the paused state across reset (regression)', () => {
     const t = new Timer(TimerType.FOCUS, 1000, noop)
     t.start()
@@ -81,7 +96,7 @@ describe('Timer', () => {
 
   // A suspended machine fires no ticks; on wake the clock has jumped. That
   // gap is not focus time.
-  it.fails('B1: does not count a sleep/lid-close gap as elapsed time', () => {
+  it('B1: does not count a sleep/lid-close gap as elapsed time', () => {
     const t = new Timer(TimerType.FOCUS, 1000, noop)
     t.start()
     vi.advanceTimersByTime(2000)
@@ -90,12 +105,20 @@ describe('Timer', () => {
     expect(t.elapsed).toBeLessThanOrEqual(2000 + 2 * 1000)
   })
 
-  it.fails('B1: ignores a backward clock jump instead of losing accrued time', () => {
+  it('B1: ignores a backward clock jump instead of losing accrued time', () => {
     const t = new Timer(TimerType.FOCUS, 1000, noop)
     t.start()
     vi.advanceTimersByTime(5000)
     vi.setSystemTime(Date.now() - 60 * 60 * 1000)
     vi.advanceTimersByTime(1000)
     expect(t.elapsed).toBeGreaterThanOrEqual(5000)
+  })
+
+  it('can be configured to credit long gaps in full (wall time)', () => {
+    const t = new Timer(TimerType.COUNTUP, 1000, noop, Infinity)
+    t.start()
+    vi.setSystemTime(Date.now() + 60 * 1000)
+    vi.advanceTimersByTime(1000)
+    expect(t.elapsed).toBe(61 * 1000)
   })
 })

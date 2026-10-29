@@ -11,20 +11,41 @@ export enum TimerState {
 
 type TickCallback = (elapsed: number) => void
 
-// Timer class encapsulates the timer logic
+// Timer accumulates elapsed time as a sum of per-tick deltas rather than as
+// `now - start`. Each delta is clamped to [0, maxStep]: a tick that arrives
+// after a long gap (system sleep, lid closed, a frozen tab) or after the wall
+// clock jumped forward contributes at most maxStep, and a backward clock jump
+// contributes nothing instead of erasing time already accrued.
 export default class Timer {
   private timerId: ReturnType<typeof setInterval> | null = null
-  private startTime: number | null = null
-  private pauseTime: number | null = null
-  private elapsedPause: number = 0
+  // Wall-clock time the last delta was measured up to; null unless running.
+  private lastTick: number | null = null
+  private maxStep: number
   public elapsed: number = 0
   public state: TimerState = TimerState.NOT_STARTED
 
   constructor(
     public type: TimerType,
     private interval: number,
-    private callback: TickCallback
-  ) {}
+    private callback: TickCallback,
+    // Largest single delta credited; defaults to two tick intervals.
+    maxStep?: number
+  ) {
+    this.maxStep = maxStep ?? 2 * interval
+  }
+
+  // Credit the time since the previous measurement, clamped to [0, maxStep].
+  private accrue(): void {
+    if (this.lastTick === null) {
+      return
+    }
+    const now = Date.now()
+    const delta = now - this.lastTick
+    this.lastTick = now
+    if (delta > 0) {
+      this.elapsed += Math.min(delta, this.maxStep)
+    }
+  }
 
   // Update the elapsed time and call the tick callback function
   private updateElapsed(val: number) {
@@ -34,11 +55,11 @@ export default class Timer {
 
   // Tick function called by setInterval
   tick() {
-    if (this.startTime === null) {
+    if (this.lastTick === null) {
       return
     }
-    // const before = this.elapsed
-    this.updateElapsed(Date.now() - this.startTime - this.elapsedPause)
+    this.accrue()
+    this.updateElapsed(this.elapsed)
   }
 
   // Start the timer
@@ -55,7 +76,7 @@ export default class Timer {
       throw new Error('Cannot start a timer that is not in the NOT_STARTED state')
     }
     this.state = TimerState.RUNNING
-    this.startTime = Date.now()
+    this.lastTick = Date.now()
     this.timerId = setInterval(this.tick.bind(this), this.interval)
   }
 
@@ -69,10 +90,8 @@ export default class Timer {
       clearInterval(this.timerId)
     }
     this.timerId = null
-    this.startTime = null
+    this.lastTick = null
     this.updateElapsed(0)
-    this.pauseTime = null
-    this.elapsedPause = 0
     this.state = TimerState.NOT_STARTED
   }
 
@@ -83,8 +102,10 @@ export default class Timer {
     if (this.state !== TimerState.RUNNING) {
       throw new Error(`Cannot pause a timer that is not in the RUNNING state. (state = ${this.state})`)
     }
+    // Keep the partial interval since the last tick.
+    this.accrue()
+    this.lastTick = null
     this.state = TimerState.PAUSED
-    this.pauseTime = Date.now()
     if (this.timerId === null) {
       throw new Error(`timerId is null but state is ${this.state}`)
     }
@@ -99,11 +120,8 @@ export default class Timer {
     if (this.state !== TimerState.PAUSED) {
       throw new Error(`Cannot unpause a timer that is not in the PAUSED state. (state = ${this.state})`)
     }
-    if (this.pauseTime === null) {
-      throw new Error(`pauseTime is null but state is ${this.state}`)
-    }
     this.state = TimerState.RUNNING
-    this.elapsedPause += Date.now() - this.pauseTime
+    this.lastTick = Date.now()
     this.timerId = setInterval(this.tick.bind(this), this.interval)
   }
 
