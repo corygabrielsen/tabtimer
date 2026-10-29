@@ -213,8 +213,10 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
 
   await clickInShadow(page, BLOCK_ID, 'button.snooze')
   await expect(block).toBeHidden()
-  const { snoozeUntil } = (await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil: number }
-  expect(snoozeUntil).toBeGreaterThan(Date.now() + 4 * MINUTE)
+  // The page lifts the block at the click; the worker stores the snooze after.
+  await expect
+    .poll(async () => ((await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil)
+    .toBeGreaterThan(Date.now() + 4 * MINUTE)
 
   // Fast-forward: expire the snooze in storage instead of waiting 5 minutes.
   await seed(serviceWorker, {
