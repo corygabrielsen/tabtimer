@@ -4,7 +4,7 @@
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
 import { addDays, daysBetween, utcOf, type DayStamp } from './day'
-import { dayOfKey, normalizeDay, oldestKept, RETENTION_DAYS, HOURS_PER_DAY, type DayUsage } from './schema'
+import { dayOfKey, normalizeDay, oldestKept, sumBuckets, RETENTION_DAYS, HOURS_PER_DAY, type DayUsage } from './schema'
 
 // Stored days by date. Days absent from the map had no usage.
 export type History = Map<DayStamp, DayUsage>
@@ -73,7 +73,7 @@ export function dayBars(history: History, days: DayStamp[]): Bar[] {
   return days.map((day) => {
     const bar: Bar = {}
     for (const [site, buckets] of Object.entries(history.get(day) ?? {})) {
-      const ms = buckets.reduce((total, b) => total + b, 0)
+      const ms = sumBuckets(buckets)
       if (ms > 0) {
         bar[site] = ms
       }
@@ -110,11 +110,9 @@ export function siteTotals(bars: Bar[]): SiteTotal[] {
     .sort((a, b) => b.ms - a.ms || a.site.localeCompare(b.site))
 }
 
-// The `n` sites with the most time over `bars`.
-export function topSites(bars: Bar[], n = TOP_SITES): string[] {
-  return siteTotals(bars)
-    .slice(0, n)
-    .map((s) => s.site)
+// The `n` sites with the most time, of `totals` (siteTotals).
+export function topSites(totals: SiteTotal[], n = TOP_SITES): string[] {
+  return totals.slice(0, n).map((s) => s.site)
 }
 
 // A bar split into the `top` sites' times, in order, then everyone else's.
@@ -244,10 +242,11 @@ export function summarize(history: History, period: Period, today: DayStamp, sit
   const total = periodTotal(bars, site)
   const previous = periodTotal(dayBars(history, period.previous), site)
   const days = countedDays(period.days, today)
+  const sites = siteTotals(bars)
   return {
     bars,
-    top: site === null ? topSites(bars) : [],
-    sites: siteTotals(bars),
+    top: site === null ? topSites(sites) : [],
+    sites,
     total,
     change: change(total, previous),
     days,

@@ -1,7 +1,7 @@
 import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
 import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayOf } from './core/day'
-import { dayBars, dayLabel, hasAnyUsage, historyOf, periodOf, periodTotal, summarize } from './core/usage'
+import { barTotal, dayLabel, hasAnyUsage, historyOf, periodOf, summarize } from './core/usage'
 import {
   dayKey,
   normalizeDay,
@@ -397,7 +397,7 @@ async function renderWeek() {
   const summary = summarize(history, week, today, null)
   byId('week-total')!.textContent = formatDuration(summary.total)
   byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))
-  const totals = dayBars(history, week.days).map((bar) => periodTotal([bar]))
+  const totals = summary.bars.map((bar) => barTotal(bar))
   const top = Math.max(1, ...totals)
   byId('week-bars')!.replaceChildren(
     ...week.days.map((day, i) => {

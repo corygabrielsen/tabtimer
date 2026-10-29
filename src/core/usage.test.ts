@@ -122,11 +122,11 @@ describe('top sites', () => {
       { site: 'b.com', ms: 5 },
       { site: 'c.com', ms: 5 },
     ])
-    expect(topSites(bars, 2)).toEqual(['a.com', 'b.com'])
+    expect(topSites(siteTotals(bars), 2)).toEqual(['a.com', 'b.com'])
   })
 
   it('defaults to three', () => {
-    expect(topSites([{ a: 4, b: 3, c: 2, d: 1 }])).toEqual(['a', 'b', 'c'])
+    expect(topSites(siteTotals([{ a: 4, b: 3, c: 2, d: 1 }]))).toEqual(['a', 'b', 'c'])
   })
 
   it('stacks the top sites, then everyone else as Other', () => {
