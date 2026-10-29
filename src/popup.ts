@@ -4,7 +4,7 @@ import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { hourLabel } from './core/usage'
-import { originsForSite, siteOfUrl } from './core/site'
+import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
 import {
   blockAt,
   limitsFor,
@@ -44,20 +44,6 @@ function showView(view: View) {
   for (const v of VIEWS) {
     byId(v)?.toggleAttribute('hidden', v !== view)
   }
-}
-
-// Hosts extensions can never run on, even with a grant.
-const RESTRICTED_HOSTS = new Set(['chromewebstore.google.com', 'chrome.google.com', 'microsoftedge.microsoft.com'])
-
-// The tab's site, or null where tracking can't run (not http(s), a host
-// without a dot, or a restricted host).
-function trackableSite(tab: ActiveTab): string | null {
-  const site = siteOfUrl(tab.url)
-  if (site === null) {
-    return null
-  }
-  const { hostname } = new URL(tab.url)
-  return hostname.includes('.') && !RESTRICTED_HOSTS.has(hostname) ? site : null
 }
 
 // activeTab grants access to the current tab while the popup is open, so we can
@@ -362,13 +348,15 @@ async function init() {
   byId('manage-btn')?.addEventListener('click', () => chrome.runtime.openOptionsPage())
 
   const tab = await activeTab()
-  const base = tab && trackableSite(tab)
+  const base = tab && trackableSiteOfUrl(tab.url)
   if (!tab || !base) {
     showView('untracked')
     return
   }
 
-  const granted = await chrome.permissions.contains({ origins: originsForSite(base) }).catch(() => false)
+  // Whatever granted it: our prompt, or Chrome's own site access controls.
+  const perms = await chrome.permissions.getAll().catch(() => ({ origins: [] as string[] }))
+  const granted = isTracked(perms.origins ?? [], tab.url)
 
   if (granted) {
     renderTracked(base)

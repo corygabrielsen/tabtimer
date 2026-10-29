@@ -90,6 +90,14 @@ describe('sender policy', () => {
     })
   })
 
+  it('U2: refuses a content script on a host with no trackable site', async () => {
+    // Reachable with an all-sites grant: nothing the popup or settings could track.
+    for (const url of ['https://s3.amazonaws.com/bucket/key', 'http://localhost:3000/', 'http://intranet/']) {
+      await expect(handle(presence, content(url))).resolves.toEqual({ ok: false, error: 'forbidden' })
+    }
+    expect(today()).toBeUndefined()
+  })
+
   it('accepts content requests only from a tab’s top frame on an http(s) page', async () => {
     const refused = [
       content(undefined, { frameId: 3 }),

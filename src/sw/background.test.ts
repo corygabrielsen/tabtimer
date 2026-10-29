@@ -124,6 +124,20 @@ describe('content-script registration', () => {
     expect(registered()?.matches).toEqual([...originsForSite('reddit.com'), ...originsForSite('x.com')])
   })
 
+  it("X3: registers Chrome's own grant shapes, but not a bare public suffix", async () => {
+    browser.granted = new Set(['https://www.reddit.com/*', '*://*/*', ...originsForSite('s3.amazonaws.com')])
+    browser.runtime.onStartup.dispatch()
+    await flush()
+    expect(registered()?.matches).toEqual(['https://www.reddit.com/*', '*://*/*'])
+  })
+
+  it('U2: registers nothing for a grant on a bare public suffix alone', async () => {
+    browser.granted = new Set(originsForSite('s3.amazonaws.com'))
+    browser.runtime.onStartup.dispatch()
+    await flush()
+    expect(registered()).toBeUndefined()
+  })
+
   it('tracks grants as they are added and removed', async () => {
     browser.grant(originsForSite('reddit.com'))
     await flush()

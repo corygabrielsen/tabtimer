@@ -30,6 +30,7 @@ function seconds(text: string): number {
 test('loads: service worker alive and options page renders', async ({ context, serviceWorker, extensionId }) => {
   expect(serviceWorker.url()).toBe(`chrome-extension://${extensionId}/service-worker-loader.js`)
   expect(await serviceWorker.evaluate(() => chrome.runtime.getManifest().name)).toBe('Tab Timer')
+  expect(await serviceWorker.evaluate(() => chrome.runtime.getManifest().incognito)).toBe('not_allowed')
 
   const page = await context.newPage()
   await page.goto(`chrome-extension://${extensionId}/options.html`)
@@ -37,6 +38,17 @@ test('loads: service worker alive and options page renders', async ({ context, s
   await expect(page.getByRole('radiogroup', { name: 'All sites' })).toBeVisible()
   // The fixture hosts are granted, so they list as tracked sites.
   await expect(page.locator('#tracked-sites')).toContainText(SITE_A)
+})
+
+// The unit fake (src/test/chrome.ts) models these semantics.
+test('a grant covers narrower patterns, and getAll lists it as granted', async ({ serviceWorker }) => {
+  const holds = (origins: string[]) =>
+    serviceWorker.evaluate((origins) => chrome.permissions.contains({ origins }), origins)
+  expect(await holds([`https://www.${SITE_A}/*`, `http://${SITE_A}/*`, `*://*.x.${SITE_A}/*`])).toBe(true)
+  expect(await holds([`*://${UNTRACKED}/*`])).toBe(false)
+  expect(await holds(['*://*/*'])).toBe(false)
+  const origins = await serviceWorker.evaluate(() => chrome.permissions.getAll().then((p) => p.origins))
+  expect(origins).toEqual(expect.arrayContaining([`*://${SITE_A}/*`, `*://*.${SITE_A}/*`]))
 })
 
 test('the tracking table’s headers sit over their columns', async ({ context, serviceWorker, extensionId }) => {

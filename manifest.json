@@ -34,6 +34,7 @@
     "service_worker": "src/sw/background.ts",
     "type": "module"
   },
+  "incognito": "not_allowed",
   "permissions": ["storage", "scripting", "activeTab", "idle", "alarms"],
   "optional_host_permissions": ["*://*/*"]
 }

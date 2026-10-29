@@ -1,4 +1,4 @@
-import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
+import { SUGGESTED_SITES, grantsOf, originsForSite, normalizeSiteInput, type Grants } from './core/site'
 import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayOf } from './core/day'
 import {
@@ -32,13 +32,14 @@ function enable(hosts: string[]): Promise<boolean> {
   return chrome.permissions.request({ origins: hosts.flatMap(originsForSite) }).catch(() => false)
 }
 
-function disable(host: string): Promise<boolean> {
-  return chrome.permissions.remove({ origins: originsForSite(host) }).catch(() => false)
+// Stop: remove exactly the origins granted, however they were granted.
+function disable(origins: string[]): Promise<boolean> {
+  return chrome.permissions.remove({ origins }).catch(() => false)
 }
 
-async function grantedHosts(): Promise<Set<string>> {
+async function granted(): Promise<Grants> {
   const perms = await chrome.permissions.getAll().catch(() => ({ origins: [] as string[] }))
-  return new Set((perms.origins ?? []).map(siteFromOrigin))
+  return grantsOf(perms.origins ?? [])
 }
 
 const local = chromeStore('local')
@@ -140,7 +141,20 @@ function paintToday(el: HTMLElement, host: string): void {
   el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
 }
 
-function siteRow(host: string): HTMLLIElement {
+function stopButton(host: string, name: string, origins: string[]): HTMLButtonElement {
+  const stop = h(
+    'button',
+    { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', name), 'data-host': host },
+    t('optionsStop')
+  )
+  stop.addEventListener('click', () => {
+    pendingFocus = { list: 'tracked', host }
+    void disable(origins)
+  })
+  return stop
+}
+
+function siteRow(host: string, origins: string[]): HTMLLIElement {
   const label = LABELS.get(host)
   const name = h(
     'div',
@@ -151,16 +165,23 @@ function siteRow(host: string): HTMLLIElement {
   const today = h('span', { class: 'site-today figure', 'data-label': t('optionsColToday'), 'data-today-host': host })
   paintToday(today, host)
   const { toggle, panel } = limitCell(host, siteLimitOf(limits, host))
-  const stop = h(
-    'button',
-    { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', host), 'data-host': host },
-    t('optionsStop')
+  return h('li', { class: 'site-row', 'data-host': host }, name, today, toggle, stopButton(host, host, origins), panel)
+}
+
+// A grant for every site (from Chrome's own site access controls): its own
+// row, with nothing to count or limit apart.
+const ALL_SITES = '*'
+
+function allSitesRow(origins: string[]): HTMLLIElement {
+  const name = t('optionsGlobalLimit')
+  return h(
+    'li',
+    { class: 'site-row', 'data-host': ALL_SITES },
+    h('div', { class: 'site-name' }, h('strong', { title: name }, name)),
+    h('span'),
+    h('span'),
+    stopButton(ALL_SITES, name, origins)
   )
-  stop.addEventListener('click', () => {
-    pendingFocus = { list: 'tracked', host }
-    void disable(host)
-  })
-  return h('li', { class: 'site-row', 'data-host': host }, name, today, toggle, stop, panel)
 }
 
 function suggestionChip(label: string, host: string): HTMLLIElement {
@@ -216,12 +237,13 @@ async function render() {
     return
   }
 
-  const [granted] = await Promise.all([grantedHosts(), loaded])
+  const [grants] = await Promise.all([granted(), loaded])
+  const sites = grants.sites
 
   // Suggested sites first (by label), then the user's own (by host).
   const tracked = [
-    ...SUGGESTED_SITES.filter((s) => granted.has(s.host)).map((s) => s.host),
-    ...[...granted].filter((host) => !LABELS.has(host)).sort(),
+    ...SUGGESTED_SITES.filter((s) => sites.has(s.host)).map((s) => s.host),
+    ...[...sites.keys()].filter((host) => !LABELS.has(host)).sort(),
   ]
   if (seq !== renderSeq) {
     return
@@ -230,22 +252,30 @@ async function render() {
     openLimitHost = null
   }
   rowLimits.clear()
-  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host)))
-  byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
+  const rows = tracked.map((host) => siteRow(host, sites.get(host)!))
+  if (grants.all.length > 0) {
+    rows.push(allSitesRow(grants.all))
+  }
+  trackedUl.replaceChildren(...rows)
+  byId('tracked-empty')?.toggleAttribute('hidden', rows.length > 0)
   const count = byId('tracked-count')
   if (count) {
-    count.textContent = tracked.length > 0 ? String(tracked.length) : ''
+    count.textContent = rows.length > 0 ? String(rows.length) : ''
   }
-  document.querySelector('.cols')?.toggleAttribute('hidden', tracked.length === 0)
+  document.querySelector('.cols')?.toggleAttribute('hidden', rows.length === 0)
 
-  const untracked = SUGGESTED_SITES.filter((s) => !granted.has(s.host))
+  // Every site granted: nothing left to suggest.
+  const untracked = grants.all.length > 0 ? [] : SUGGESTED_SITES.filter((s) => !sites.has(s.host))
   suggestedUl.replaceChildren(...untracked.map((s) => suggestionChip(s.label, s.host)))
   // Every suggestion tracked: no Suggested section at all.
   document.querySelector('.suggest-head')?.toggleAttribute('hidden', untracked.length === 0)
   suggestedUl.hidden = untracked.length === 0
 
   const prev = order
-  order = { tracked, suggested: untracked.map((s) => s.host) }
+  order = {
+    tracked: grants.all.length > 0 ? [...tracked, ALL_SITES] : tracked,
+    suggested: untracked.map((s) => s.host),
+  }
   restoreFocus(prev)
 }
 

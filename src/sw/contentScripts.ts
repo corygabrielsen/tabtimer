@@ -3,12 +3,13 @@
 // the popup or options page) the bundled content script is registered for the
 // granted origins, and kept in sync as grants are added or removed.
 import { serial } from '../core/serial'
+import { trackedOrigins } from '../core/site'
 
 const CONTENT_SCRIPT_ID = 'tabtimer-content'
 
 async function grantedOrigins(): Promise<string[]> {
   const perms = await chrome.permissions.getAll()
-  return perms.origins ?? []
+  return trackedOrigins(perms.origins ?? [])
 }
 
 async function sync(): Promise<void> {
