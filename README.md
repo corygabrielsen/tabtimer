@@ -3,23 +3,29 @@
 [![CI](https://github.com/corygabrielsen/tabtimer/actions/workflows/ci.yml/badge.svg)](https://github.com/corygabrielsen/tabtimer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Chrome extension that shows how much time you've actively spent on the sites
-you choose — as an unobtrusive on-page overlay and a toolbar popup.
+Tab Timer counts the time you actually spend on the sites you choose — only
+while the tab is in front of you — and blocks a site once you reach the daily
+limit you set for it.
 
-- **You choose what's tracked** — installs with **no host-permission prompt**;
-  enable suggested social sites (or add your own) from the popup or options page.
-- **On-page overlay** — a small pill at the top of tracked sites showing the
-  running time; expand it for Today / Focus / Session, or hide it.
-- **Popup** — the active site's time today, with a reset and a show/hide toggle.
-- **Daily limits** — optional per-site and all-sites caps (off by default), set
-  from the options page or popup. Once a cap is hit, the page is covered by a
-  block screen showing today's time against the limit, with a **5 more minutes**
-  snooze; it lifts at the midnight reset.
-- **Counts only while you're there** — pauses after 5 minutes without keyboard
-  or mouse input (taking back the time since your last input) and whenever the
-  screen is locked; video or audio playing keeps it counting.
-- **Private by design** — everything stays in `chrome.storage.local`; nothing is
-  ever sent off your device. See [PRIVACY.md](PRIVACY.md).
+- **Choose your sites** — installs with **no host-permission prompt**. Track a
+  suggested site in one tap or add your own; Chrome asks for access the first
+  time you add each one.
+- **Limits in one tap** — pick 15m, 30m, 1h or 2h (or a custom number of
+  minutes) per site from the popup or settings, plus an optional cap across all
+  tracked sites. Limits are off by default.
+- **A block screen that means it** — once a limit is reached the page is
+  covered: no scrolling behind it, fullscreen video exits, playing media
+  pauses. A **5 more minutes** snooze is there when you need it, and limits
+  reset at midnight.
+- **Honest counting** — time only counts while the tab is visible and focused.
+  It pauses after 5 minutes without keyboard or mouse input and while the
+  screen is locked (playing video or audio keeps counting), and sleep never
+  counts.
+- **At a glance** — a small timer at the top of tracked pages (click to switch
+  between today, this visit and time open), and a popup showing today's time
+  against the limit.
+- **Private by design** — everything stays in your browser's local storage;
+  nothing is ever sent anywhere. See [PRIVACY.md](PRIVACY.md).
 
 > Screenshots for the listing live in [`store-assets/`](store-assets/).
 
@@ -30,8 +36,8 @@ From source (development):
 1. `pnpm install && pnpm build`
 2. Chrome → Extensions → enable **Developer mode**
 3. **Load unpacked** → select `dist/`
-4. The options page opens on first run — enable the sites to track (or use the
-   popup's **Enable on this site**).
+4. The settings page opens on first run — pick the sites to track (or use the
+   popup's **Track this site**).
 
 ## Develop
 
