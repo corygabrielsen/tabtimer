@@ -34,13 +34,15 @@ export default class Model {
   // next one (when it rolls over).
   private day: Date
   private resetTimersAtTime: Date
-  // Focus elapsed last successfully reported to the background writer.
-  private previousStorageUpdateElapsedValue: number = 0
-  // When we last attempted a report (throttle baseline); epoch so the very
-  // first report fires immediately.
+  // Focus time not yet acknowledged by the background writer, by the day key
+  // it belongs to: accrued but not sent yet, and sent but not yet answered.
+  // A failed send is merged back into `unsent` and retried, so no time is
+  // dropped; sends carry disjoint deltas, so several may be in flight.
+  private unsent = new Map<string, number>()
+  private inFlight = new Set<{ key: string; delta: number }>()
+  // When we last attempted a routine report (throttle baseline); epoch so
+  // the very first report fires immediately.
   private previousStorageUpdateTime: number = 0
-  // True while a report is in flight, to prevent overlapping reports.
-  private reporting: boolean = false
   private host: string
 
   // Cached stored total for this site today, loaded once per day and then
@@ -127,10 +129,10 @@ export default class Model {
   private tick = () => {
     const now = Date.now()
     this.countupTimer.tick(now)
-    this.focusTimer.tick(now)
+    this.credit(this.focusTimer.tick(now))
     // This tick's time is credited to the day the tab was accounting to; a
     // tick that crosses midnight is the old day's final one.
-    if (!this.maybeRollover() && this.focusTimer.state === TimerState.RUNNING) {
+    if (!this.maybeRollover()) {
       this.maybeReport(now)
     }
     for (const listener of this.tickListeners) {
@@ -161,16 +163,12 @@ export default class Model {
   // baselines restart. Time accrued but not yet reported still belongs to
   // the old day, so it is sent to the old day's key rather than dropped.
   private rollover(): void {
-    // Credit the time since the last tick to the old day first.
+    // Credit the time since the last tick to the old day, and send it.
     this.countupTimer.tick()
-    this.focusTimer.tick()
-    const oldKey = this.getTodayKey()
-    const unreported = this.elapsedFocusTime() - this.previousStorageUpdateElapsedValue
+    this.credit(this.focusTimer.tick())
+    this.sendUnsent()
     this.day = startOfDay(new Date())
     this.resetTimersAtTime = this.getResetTime()
-    if (unreported > 0) {
-      void sendMessage({ type: 'addElapsed', key: oldKey, delta: unreported }).catch(() => undefined)
-    }
     this.resetTimers()
     this.storedToday = 0
     this.storedTodayLoad = null
@@ -179,53 +177,62 @@ export default class Model {
     this.globalTodayLoad = null
   }
 
-  // Throttled to ~10s: report accrued focus time to the background writer.
-  private maybeReport(now: number): void {
-    if (this.elapsedFocusTime() - this.previousStorageUpdateElapsedValue <= 0) {
-      return
+  // Attribute focus time to the day being accounted.
+  private credit(ms: number): void {
+    if (ms > 0) {
+      const key = this.getTodayKey()
+      this.unsent.set(key, (this.unsent.get(key) ?? 0) + ms)
     }
-    if (now - this.previousStorageUpdateTime < REPORT_INTERVAL_MS) {
-      return
-    }
-    void this.flushElapsed(this.elapsedFocusTime())
   }
 
-  // Report the focus time accrued since the last successful report to the
-  // background writer, which atomically adds it to today's key. The single
-  // writer makes the cross-tab accumulation race-free.
-  private flushElapsed(elapsed: number): Promise<void> {
-    if (this.reporting) {
-      return Promise.resolve()
+  // Throttled to ~10s: report accrued focus time to the background writer.
+  private maybeReport(now: number): void {
+    if (this.unsent.size === 0 || now - this.previousStorageUpdateTime < REPORT_INTERVAL_MS) {
+      return
     }
-    const diff = elapsed - this.previousStorageUpdateElapsedValue
-    if (diff <= 0) {
-      return Promise.resolve()
-    }
-    this.reporting = true
     // Advance the throttle baseline at attempt time so a failing report
     // (e.g. extension context invalidated) is retried at most every 10s
     // rather than every tick.
-    this.previousStorageUpdateTime = Date.now()
-    const key = this.getTodayKey()
-    return sendMessage({ type: 'addElapsed', key, delta: diff })
-      .then((response) => {
-        // Only advance the reported baseline on success; on failure the same
-        // delta is recomputed and retried next time, so no time is lost.
-        if (response.ok) {
-          this.previousStorageUpdateElapsedValue = elapsed
-        }
-      })
-      .catch(() => {
-        // Service worker asleep or extension reloaded; drop this report.
-      })
-      .finally(() => {
-        this.reporting = false
-      })
+    this.previousStorageUpdateTime = now
+    this.sendUnsent()
   }
 
-  // Best-effort persist of pending focus time on page unload.
+  // Send every unsent delta to the background writer, which atomically adds
+  // it to its day's key. The single writer makes the cross-tab accumulation
+  // race-free.
+  private sendUnsent(): void {
+    for (const [key, delta] of this.unsent) {
+      const report = { key, delta }
+      this.inFlight.add(report)
+      sendMessage({ type: 'addElapsed', key, delta })
+        .then((response) => response.ok)
+        .catch(() => false) // service worker asleep or extension reloaded
+        .then((ok) => {
+          // A report dropped by a reset is no longer ours to retry.
+          if (this.inFlight.delete(report) && !ok) {
+            this.unsent.set(key, (this.unsent.get(key) ?? 0) + delta)
+          }
+        })
+    }
+    this.unsent.clear()
+  }
+
+  // Report everything accrued so far right away, regardless of the throttle
+  // or of reports still in flight (page hidden or unloading).
   flush(): void {
-    void this.flushElapsed(this.elapsedFocusTime())
+    this.credit(this.focusTimer.tick())
+    this.sendUnsent()
+  }
+
+  // Focus time on `key` not yet reflected in storage.
+  private unacknowledged(key: string): number {
+    let total = this.unsent.get(key) ?? 0
+    for (const report of this.inFlight) {
+      if (report.key === key) {
+        total += report.delta
+      }
+    }
+    return total
   }
 
   // Remove this host's daily keys for every day except today. Safe to run
@@ -317,10 +324,6 @@ export default class Model {
     this.maybeRollover()
     return this.loadStoredToday().then(() => {
       const focusElapsed = this.elapsedFocusTime()
-      let diff = focusElapsed - this.previousStorageUpdateElapsedValue
-      if (diff < 0) {
-        diff = 0
-      }
       return {
         countup: {
           elapsed: this.elapsedCountupTime(),
@@ -331,7 +334,7 @@ export default class Model {
           state: this.focusTimer.state,
         },
         today: {
-          elapsed: this.storedToday + diff,
+          elapsed: this.storedToday + this.unacknowledged(this.getTodayKey()),
           state: this.focusTimer.state, // same as focus timer
         },
       }
@@ -349,7 +352,6 @@ export default class Model {
   private resetTimers(): void {
     this.countupTimer.reset()
     this.focusTimer.reset()
-    this.previousStorageUpdateElapsedValue = 0
     // Drop the throttle baseline so the first post-reset write isn't
     // suppressed for up to 10s.
     this.previousStorageUpdateTime = 0
@@ -360,12 +362,23 @@ export default class Model {
     // Roll over first if due, so the reset applies to the current day.
     this.maybeRollover()
     this.resetTimers()
+    this.dropUnacknowledged(this.getTodayKey())
     this.storedToday = 0
     void sendMessage({ type: 'resetKey', key: this.getTodayKey() }).catch(() => undefined)
   }
 
+  // Forget focus time owed to `key` (its stored total was reset).
+  private dropUnacknowledged(key: string): void {
+    this.unsent.delete(key)
+    for (const report of this.inFlight) {
+      if (report.key === key) {
+        this.inFlight.delete(report)
+      }
+    }
+  }
+
   handleBlur = () => {
-    this.focusTimer.pause()
+    this.credit(this.focusTimer.pause())
   }
 
   handleFocus = () => {
@@ -374,7 +387,10 @@ export default class Model {
 
   handleVisibilityChange = () => {
     if (document.hidden) {
-      this.focusTimer.pause()
+      this.credit(this.focusTimer.pause())
+      // Hidden fires before pagehide and is the last event reliably delivered
+      // on mobile and when a tab is discarded, so persist pending time now.
+      this.flush()
     } else {
       this.focusTimer.unpause()
     }
@@ -403,6 +419,7 @@ export default class Model {
       // so the on-screen total reflects the reset and we don't immediately
       // re-report the stale delta back onto the freshly-zeroed key.
       this.resetTimers()
+      this.dropUnacknowledged(this.getTodayKey())
     }
   }
 }

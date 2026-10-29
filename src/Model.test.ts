@@ -141,13 +141,52 @@ describe('reporting to the background writer', () => {
     expect(deltas).toEqual([seconds(1), seconds(10), seconds(10), seconds(10)])
   })
 
-  it('does not report while paused', async () => {
+  it('reports pending time on hiding, then nothing while paused', async () => {
     const deltas = addElapsedReports()
     started()
     await vi.advanceTimersByTimeAsync(seconds(2))
     setPageState({ hidden: true })
     await vi.advanceTimersByTimeAsync(minutes(5))
-    expect(deltas).toEqual([seconds(1)])
+    expect(deltas).toEqual([seconds(1), seconds(1)])
+    expect(storedToday()).toBe(seconds(2))
+  })
+
+  it('B7: persists pending time as soon as the tab is hidden', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(6) + 400)
+    expect(storedToday()).toBe(seconds(1))
+    setPageState({ hidden: true })
+    await flush()
+    // Including the partial second since the last tick.
+    expect(storedToday()).toBe(seconds(6) + 400)
+    expect(await today(model)).toBe(seconds(6) + 400)
+  })
+
+  it('B7: keeps a failed unload flush and retries it', async () => {
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(6))
+    browser.storage.local.error = 'storage unavailable'
+    model.flush()
+    await flush()
+    expect(storedToday()).toBe(seconds(1))
+    expect(await today(model)).toBe(seconds(6))
+    browser.storage.local.error = null
+    await vi.advanceTimersByTimeAsync(seconds(5)) // next routine report, at 11s
+    expect(storedToday()).toBe(seconds(11))
+  })
+
+  it('B7: overlapping reports never double-count', async () => {
+    browser.latency = 500
+    const model = started()
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(seconds(3))
+      model.flush()
+    }
+    await vi.advanceTimersByTimeAsync(seconds(3))
+    setPageState({ hidden: true }) // pause and flush; nothing accrues after
+    await vi.advanceTimersByTimeAsync(seconds(5))
+    expect(await today(model)).toBe(seconds(18))
+    expect(storedToday()).toBe(seconds(18))
   })
 
   it('retries a failed report without losing the time', async () => {
@@ -177,7 +216,7 @@ describe('reporting to the background writer', () => {
     expect(storedToday()).toBe(seconds(6))
   })
 
-  it.fails('B7: the unload flush is not skipped while a report is in flight', async () => {
+  it('B7: the unload flush is not skipped while a report is in flight', async () => {
     browser.latency = 500 // a slow-to-wake service worker
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(12)) // the 11s report is in flight
