@@ -494,6 +494,27 @@ describe('probes and pushes', () => {
     expect(state.tabs).toEqual({})
   })
 
+  it('X1: forgets a tab whose page no grant covers, closing its interval', () => {
+    const untracked = (tabId: number, doc: string, departing: boolean): TrackerEvent => ({
+      kind: 'untracked',
+      tabId,
+      doc,
+      departing,
+    })
+    const { state, credits, pushes } = run([
+      [0, presence(1)],
+      [0, presence(2, { visible: false })],
+      [0, presence(3, { visible: false })],
+      [3 * S, untracked(1, 'doc-other', false)],
+      // A departing page: only the document the tab last heard from.
+      [3 * S, untracked(2, 'doc-other', true)],
+      [3 * S, untracked(3, 'doc-3', true)],
+    ])
+    expect(credited(credits)).toEqual({ 'a.com': 3 * S })
+    expect(state).toEqual({ tabs: { 2: { ...attest(2, { visible: false }), at: T } }, open: null })
+    expect(pushes.slice(3)).toEqual([[], [], []])
+  })
+
   it('keeps the attestation of a tab navigating within its site', () => {
     const { state } = run([
       [0, presence(2, { visible: false })],

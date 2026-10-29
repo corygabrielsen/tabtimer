@@ -7,6 +7,7 @@ import { bus } from '../chrome/bus'
 import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY } from '../core/schema'
 import { CHECKPOINT_MS, type Presence } from '../core/tracker'
 import type { StatePush } from '../core/messages'
+import { originsForSite } from '../core/site'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
 
@@ -23,6 +24,7 @@ let now: number
 let sent: Array<[number, string, StatePush]>
 let replies: Map<number, unknown>
 let alarm: ReturnType<typeof vi.fn<TrackerDeps['alarm']>>
+let granted: string[]
 
 // A fresh worker on the same storage: what the browser starts after it
 // stopped the previous one.
@@ -35,6 +37,7 @@ function worker(alarmDep: TrackerDeps['alarm'] = alarm) {
       return replies.has(tabId) ? Promise.resolve(replies.get(tabId)) : Promise.reject(new Error('no page'))
     },
     alarm: alarmDep,
+    granted: () => Promise.resolve(granted),
   })
 }
 
@@ -48,6 +51,7 @@ beforeEach(() => {
   sent = []
   replies = new Map()
   alarm = vi.fn(() => Promise.resolve())
+  granted = ['*://*/*']
 })
 
 describe('presence', () => {
@@ -91,6 +95,28 @@ describe('presence', () => {
       globalToday: 24 * S + 20 * S,
       running: true,
     })
+  })
+
+  it('X4: counts only the tracked sites toward the all-sites total', async () => {
+    browser.storage.local.seed({
+      [LIMITS_KEY]: { global: 1, perSite: {} },
+      'day:2026-06-10': { 'b.com': emptyBuckets().fill(1000), 'c.com': emptyBuckets().fill(10) },
+    })
+    granted = ['*://a.com/*', '*://*.c.com/*']
+    const tracker = worker()
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
+      globalToday: 240,
+      running: true,
+      blockAt: NOON + MIN - 240,
+    })
+    // Grants that can't be read: every site counts.
+    const failing = createTracker({
+      ledger: createLedger(chromeStore('local'), chromeStore('session'), { now: () => now }),
+      send: () => Promise.resolve(undefined),
+      alarm,
+      granted: () => Promise.reject(new Error('gone')),
+    })
+    await expect(failing.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({ globalToday: 24_240 })
   })
 
   it('tells the page that lost the interval, and not the one that took it', async () => {
@@ -451,6 +477,7 @@ describe('background wiring', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers({ now: NOON })
+    browser.granted = new Set(originsForSite('reddit.com'))
     await boot()
   })
 

@@ -239,7 +239,23 @@ describe('popup on a tracked site', () => {
       expect($('meter').getAttribute('aria-valuenow')).toBe('45') // clamped to the max
     })
 
+    // x.com tracked too: its time counts toward the all-sites total.
+    const trackX = () => {
+      browser.granted = new Set([...originsForSite('reddit.com'), ...originsForSite('x.com')])
+    }
+
+    it('X4: leaves sites no longer tracked out of the all-sites total', async () => {
+      browser.storage.local.seed({
+        [LIMITS_KEY]: { global: 30, perSite: {} },
+        ...dayEntry({ 'reddit.com': 10 * MIN, 'x.com': 25 * MIN }),
+      })
+      await openReddit()
+      expect(face()).toBe('ok')
+      expect(text('summary')).toBe('20 min left of 30 min (all sites)')
+    })
+
     it('over the all-sites cap only: names the cap', async () => {
+      trackX()
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 30, perSite: {} },
         ...dayEntry({ 'reddit.com': 10 * MIN, 'x.com': 25 * MIN }),
@@ -251,6 +267,7 @@ describe('popup on a tracked site', () => {
     })
 
     it('with only an all-sites cap: the meter follows the cap', async () => {
+      trackX()
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 180, perSite: {} },
         ...dayEntry({ 'reddit.com': 12 * MIN, 'x.com': 48 * MIN }),
@@ -262,6 +279,7 @@ describe('popup on a tracked site', () => {
     })
 
     it('with both limits: the all-sites total gets its own line', async () => {
+      trackX()
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 180, perSite: { 'reddit.com': 60 } },
         ...dayEntry({ 'reddit.com': 20 * MIN, 'x.com': 65 * MIN }),

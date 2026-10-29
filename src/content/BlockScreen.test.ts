@@ -15,6 +15,7 @@ import {
   seedLimits,
   seedToday,
   startBackground,
+  EVERY_HOST,
   trackTracker,
   useClock,
 } from '../test/content'
@@ -53,7 +54,7 @@ function page<K extends keyof HTMLElementTagNameMap>(tag: K): HTMLElementTagName
 
 beforeEach(async () => {
   browser = fakeChrome()
-  await startBackground()
+  await startBackground(EVERY_HOST)
   useClock(NOON)
   shadowOf = trackShadowRoots()
 })

@@ -4,7 +4,8 @@ import { systemClock } from '../chrome/clock'
 import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { trackableSiteOfUrl } from '../core/site'
 import { checkpointAlarm, CHECKPOINT_ALARM } from './checkpoint'
-import { grantedSites, injectOpenTabs, revokedSites, syncContentScripts } from './contentScripts'
+import { grantedSites, injectOpenTabs, revokedSites, startTab, syncContentScripts } from './contentScripts'
+import { watchGrants } from './grants'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
 import { createRouter } from './router'
@@ -26,7 +27,9 @@ const local = chromeStore('local')
 const testClock = __TABTIMER_E2E__ ? offsetClock(systemClock) : null
 const ledger = createLedger(local, chromeStore('session'), testClock ?? systemClock)
 
-const tracker = createTracker({ ledger, send: sendState, alarm: checkpointAlarm() })
+// First: a grant or revoke is seen here before anything acts on it.
+const granted = watchGrants()
+const tracker = createTracker({ ledger, send: sendState, alarm: checkpointAlarm(), granted })
 
 // Every listener is registered synchronously at the top level, as MV3
 // requires: any of these events can be what starts the worker.
@@ -43,6 +46,14 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (change.url !== undefined || change.status === 'loading' || change.discarded) {
     const url = change.discarded ? undefined : (change.url ?? tab.url)
     dispatch({ kind: 'navigated', tabId, site: url === undefined ? null : trackableSiteOfUrl(url) })
+  }
+  // A page shown (a load, or a back/forward cache restore) on a granted
+  // site runs the script.
+  if (change.status === 'complete' && tab.url !== undefined) {
+    const url = tab.url
+    void granted()
+      .then((origins) => startTab(tabId, url, origins))
+      .catch(() => undefined)
   }
 })
 chrome.windows.onFocusChanged.addListener((windowId) =>
@@ -88,8 +99,15 @@ chrome.runtime.onInstalled.addListener((details) => {
 chrome.runtime.onStartup.addListener(() => void boot())
 // Grants from our pages or Chrome's own site access controls alike: the open
 // tabs follow the registration.
-chrome.permissions.onAdded.addListener(({ origins }) => void grantedSites(origins ?? []))
-chrome.permissions.onRemoved.addListener(() => void revokedSites())
+// The all-sites total covers the tracked sites: every page learns the new one.
+chrome.permissions.onAdded.addListener(({ origins }) => {
+  void grantedSites(origins ?? [])
+  void tracker.refresh().catch(() => undefined)
+})
+chrome.permissions.onRemoved.addListener(() => {
+  void revokedSites()
+  void tracker.refresh().catch(() => undefined)
+})
 // A new extension context (installed, updated, reloaded or enabled) finds
 // open tabs running the previous one's orphaned script, or none.
 void injectOpenTabs()
@@ -100,6 +118,7 @@ serveRouter(
   createRouter({
     ledger,
     tracker,
+    granted,
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
     // Brought to the front with its window: the options page may be a tab

@@ -253,7 +253,7 @@ export default class FocusTracker {
     const response = await this.bus.send('presence', presence)
     if (response.ok) {
       this.apply(response.value)
-    } else if (!this.bus.alive()) {
+    } else if (response.error === 'untracked' || !this.bus.alive()) {
       this.stop()
     } else if (this.lastReport === presence) {
       // Not heard: send it again once the worker may be back.

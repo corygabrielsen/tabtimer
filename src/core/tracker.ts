@@ -78,6 +78,8 @@ export type TrackerEvent =
   // The tab's top frame moved to `site` (null: a page that isn't tracked,
   // or one whose URL the worker can't see).
   | { kind: 'navigated'; tabId: number; site: Site | null }
+  // Document `doc` of the tab spoke from a page no grant covers.
+  | { kind: 'untracked'; tabId: number; doc: string; departing: boolean }
   | { kind: 'idle'; state: IdleState }
   | { kind: 'checkpoint' }
   // The open tab's site is over its limit (the worker's backstop).
@@ -337,6 +339,20 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
       }
       const key = String(e.tabId)
       if (b.tabs[key] && b.tabs[key].site !== e.site) {
+        delete b.tabs[key]
+        b.push.delete(e.tabId)
+      }
+      break
+    }
+    case 'untracked': {
+      // The tab's shown page, or the departing one it last heard from: its
+      // report and interval go. Another document's departing page changes
+      // nothing.
+      const key = String(e.tabId)
+      if (!e.departing || b.tabs[key]?.doc === e.doc) {
+        if (open?.tabId === e.tabId) {
+          b.close()
+        }
         delete b.tabs[key]
         b.push.delete(e.tabId)
       }

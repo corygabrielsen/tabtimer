@@ -11,8 +11,12 @@ import { bucketsOf } from './data'
 import { resetPageState } from './dom'
 
 // Wire the real background.ts into the fake browser so FocusTracker's reports land
-// in storage exactly as in the extension.
-export async function startBackground(): Promise<void> {
+// in storage exactly as in the extension, with `granted` (if given) as the
+// grants.
+export async function startBackground(granted?: string[]): Promise<void> {
+  if (granted) {
+    fakeChrome().granted = new Set(granted)
+  }
   vi.resetModules()
   await import('../sw/background')
 }
@@ -36,6 +40,9 @@ export function disposeTrackers(): void {
     tracker.destroy()
   }
 }
+
+// The grant a page's script runs under in the content tests.
+export const EVERY_HOST = ['*://*/*']
 
 // Store limits (in minutes); anything not given is at its default.
 export function seedLimits(limits: Partial<Limits>): void {

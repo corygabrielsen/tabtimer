@@ -130,9 +130,10 @@ export function siteTotal(day: DayUsage, site: string): number {
   return sumBuckets(day[site])
 }
 
-// Every site's total for the day (what the all-sites limit compares).
-export function dayTotal(day: DayUsage): number {
-  return Object.values(day).reduce((total, buckets) => total + sumBuckets(buckets), 0)
+// The total for the day of every site `counts` (what the all-sites limit
+// compares, over the tracked sites).
+export function dayTotal(day: DayUsage, counts: (site: string) => boolean = () => true): number {
+  return Object.entries(day).reduce((total, [site, buckets]) => total + (counts(site) ? sumBuckets(buckets) : 0), 0)
 }
 
 export function normalizePrefs(value: unknown): Prefs {
