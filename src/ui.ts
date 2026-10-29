@@ -38,6 +38,24 @@ export function setDocumentLang(): void {
   }
 }
 
+// The browser UI language, the one the strings come from.
+export function uiLocale(): string {
+  return chrome.i18n.getUILanguage?.() || 'en'
+}
+
+// The locale's first day of the week (0 = Sunday … 6 = Saturday); Sunday
+// where the browser can't say.
+export function firstDayOfWeek(locale: string): number {
+  type WeekInfo = { firstDay: number }
+  try {
+    const info = new Intl.Locale(locale) as Intl.Locale & { getWeekInfo?: () => WeekInfo; weekInfo?: WeekInfo }
+    const firstDay = (info.getWeekInfo?.() ?? info.weekInfo)?.firstDay
+    return typeof firstDay === 'number' ? firstDay % 7 : 0
+  } catch {
+    return 0
+  }
+}
+
 // Human duration for limits and remaining time: "45 min", "2 h", "1 h 05 min".
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.round(ms / 60000))

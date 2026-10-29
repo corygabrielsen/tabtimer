@@ -1,11 +1,12 @@
 import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
 import { msToMinutes, minutesToMs, normalizeLimits, DEFAULT_LIMITS, type LimitEdit, type Limits } from './core/limits'
 import { dayOf } from './core/day'
+import { dayBars, dayLabel, hasAnyUsage, historyOf, periodOf, periodTotal, summarize } from './core/usage'
 import { dayKey, normalizeDay, normalizePrefs, siteTotal, DAY_KEY_PREFIX, LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { chromeStore } from './chrome/store'
 import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
-import { h, byId, flashSaved, formatDuration, setDocumentLang } from './ui'
+import { h, byId, firstDayOfWeek, flashSaved, formatDuration, setDocumentLang, uiLocale } from './ui'
 import { createLimitPicker, formatChipMinutes, SITE_PRESETS, GLOBAL_PRESETS, type LimitPicker } from './limitPicker'
 
 const LABELS = new Map(SUGGESTED_SITES.map((s) => [s.host, s.label]))
@@ -67,6 +68,7 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
   const toggle = h('button', {
     type: 'button',
     class: 'limit-toggle',
+    'data-label': t('optionsColLimit'),
     'aria-expanded': 'false',
     'aria-controls': panelId,
     'data-host': host,
@@ -138,6 +140,7 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
     'span',
     {
       class: 'site-today figure',
+      'data-label': t('optionsColToday'),
       'data-today-host': host,
       'data-over': typeof limitMs === 'number' && todayMs >= limitMs,
       'aria-label': t('optionsTodayAria', [host, formatDuration(todayMs)]),
@@ -192,7 +195,7 @@ function restoreFocus(prevOrder: { tracked: string[]; suggested: string[] }) {
   if (next) {
     next.focus()
   } else {
-    byId(list === 'tracked' ? 'add-input' : 'enable-suggested')?.focus()
+    byId('add-input')?.focus()
   }
 }
 
@@ -235,8 +238,9 @@ async function render() {
 
   const untracked = SUGGESTED_SITES.filter((s) => !granted.has(s.host))
   suggestedUl.replaceChildren(...untracked.map((s) => suggestionChip(s.label, s.host)))
-  byId('suggested-empty')?.toggleAttribute('hidden', untracked.length > 0)
-  byId('enable-suggested')?.toggleAttribute('hidden', untracked.length === 0)
+  // Every suggestion tracked: no Suggested section at all.
+  document.querySelector('.suggest-head')?.toggleAttribute('hidden', untracked.length === 0)
+  suggestedUl.hidden = untracked.length === 0
 
   const prev = order
   order = { tracked, suggested: untracked.map((s) => s.host) }
@@ -380,6 +384,36 @@ async function initOverlay() {
   })
 }
 
+// --- This week ---------------------------------------------------------------
+
+// The week so far: its total, the daily average and a bar per day.
+async function renderWeek() {
+  const card = byId('week-card')
+  if (!card) {
+    return
+  }
+  const history = historyOf(await local.getAll().catch(() => ({})))
+  card.hidden = !hasAnyUsage(history)
+  if (card.hidden) {
+    return
+  }
+  const locale = uiLocale()
+  const today = dayOf(Date.now())
+  const week = periodOf('week', 0, today, firstDayOfWeek(locale))
+  const summary = summarize(history, week, today, null)
+  byId('week-total')!.textContent = formatDuration(summary.total)
+  byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))
+  const totals = dayBars(history, week.days).map((bar) => periodTotal([bar]))
+  const top = Math.max(1, ...totals)
+  byId('week-bars')!.replaceChildren(
+    ...week.days.map((day, i) => {
+      const bar = h('span', { class: 'week-bar', 'data-today': day === today })
+      bar.style.setProperty('--v', String(totals[i]! / top))
+      return h('span', { class: 'week-day' }, bar, h('span', {}, dayLabel(day, locale, { weekday: 'narrow' })))
+    })
+  )
+}
+
 // --- Boot -----------------------------------------------------------------------
 
 byId('enable-suggested')?.addEventListener('click', () => {
@@ -397,6 +431,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && keys.some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))) {
     void refreshTodays()
   }
+  if (area === 'local' && keys.some((k) => k.startsWith(DAY_KEY_PREFIX))) {
+    void renderWeek()
+  }
 })
 
 setDocumentLang()
@@ -405,3 +442,4 @@ initAddForm()
 void initGlobalLimit()
 void initOverlay()
 void render()
+void renderWeek()

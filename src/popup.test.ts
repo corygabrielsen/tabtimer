@@ -143,6 +143,44 @@ describe('popup on a tracked site', () => {
     expect($('today').textContent).toBe('01:00:00')
   })
 
+  it('shows today on this site by hour, and links to all activity', async () => {
+    const at = (hour: number) => new Date(new Date().setHours(hour, 0, 0, 0))
+    seedToday({ 'reddit.com': 20 * MIN }, at(9))
+    seedToday({ 'youtube.com': 5 * MIN }, at(10))
+    await openReddit()
+    const strip = $('strip')
+    expect(strip.getAttribute('role')).toBe('img')
+    expect(strip.getAttribute('aria-label')).toBe('Today on reddit.com, by hour')
+    const bars = [...strip.querySelectorAll<HTMLElement>('span')]
+    expect(bars).toHaveLength(24)
+    expect(bars[9]!.style.getPropertyValue('--v')).toBe('1')
+    expect(bars[9]!.hasAttribute('data-on')).toBe(true)
+    expect(bars[10]!.style.getPropertyValue('--v')).toBe('0')
+    expect(bars[10]!.hasAttribute('data-on')).toBe(false)
+    const link = $<HTMLAnchorElement>('activity-link')
+    expect(link.textContent).toBe('See all activity')
+    expect(link.getAttribute('href')).toBe('usage.html')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('reads as a timeline: hour marks, their names, and now', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['Date'] })
+    await openReddit()
+    const marks = [...$('strip').querySelectorAll<HTMLElement>('.mark')].map((m) => m.style.left)
+    expect(marks).toEqual(['0%', '25%', '50%', '75%'])
+    const axis = $('strip-axis')
+    expect(axis.getAttribute('aria-hidden')).toBe('true')
+    expect([...axis.children].map((l) => l.textContent)).toEqual(['12 AM', '6 AM', '12 PM', '6 PM'])
+    expect([...axis.children].map((l) => (l as HTMLElement).style.left)).toEqual(['0%', '25%', '50%', '75%'])
+    expect($('strip').querySelector<HTMLElement>('.now')?.style.left).toBe('62.5%')
+  })
+
+  it('scales a quiet day’s strip to a floor, not its one busy minute', async () => {
+    seedToday({ 'reddit.com': 2 * MIN }, new Date(new Date().setHours(9, 0, 0, 0)))
+    await openReddit()
+    expect($('strip').querySelectorAll<HTMLElement>('span')[9]!.style.getPropertyValue('--v')).toBe('0.2')
+  })
+
   it('treats a granted subdomain visit as the same tracked site', async () => {
     await openPopup({ id: 1, url: 'https://new.reddit.com/r/x' })
     expect(visibleSection()).toEqual(['tracked'])
@@ -154,7 +192,7 @@ describe('popup on a tracked site', () => {
       expect(face()).toBe('open')
       expect(text('status')).toBe('Tracking')
       expect($('meter').hidden).toBe(true)
-      expect(text('summary')).toBe('No daily limit. Set one below to get blocked when time is up.')
+      expect(text('summary')).toBe('No limit')
       expect($('global-line').hidden).toBe(true)
     })
 
@@ -173,7 +211,7 @@ describe('popup on a tracked site', () => {
       expect(meter.getAttribute('aria-valuemax')).toBe('60')
       expect(meter.getAttribute('aria-valuetext')).toBe('23 min of 1 h')
       expect(meter.getAttribute('aria-label')).toBe('Time used of the daily limit for reddit.com')
-      expect(text('summary')).toBe('37 min left of your 1 h limit')
+      expect(text('summary')).toBe('37 min left of 1 h')
     })
 
     it('over the site limit: limit reached, by how much', async () => {
@@ -184,7 +222,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('over')
       expect(text('status')).toBe('Limit reached')
-      expect(text('summary')).toBe("Over this site's limit by 3 min.")
+      expect(text('summary')).toBe('3 min over limit')
       expect($('meter').getAttribute('aria-valuenow')).toBe('45') // clamped to the max
     })
 
@@ -195,7 +233,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('over')
-      expect(text('summary')).toBe('Over the all-sites limit by 5 min.')
+      expect(text('summary')).toBe('5 min over limit (all sites)')
       expect($('meter').getAttribute('aria-label')).toBe('Time used of the daily limit for all tracked sites')
     })
 
@@ -206,7 +244,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('ok')
-      expect(text('summary')).toBe('2 h left of the 3 h limit for all sites')
+      expect(text('summary')).toBe('2 h left of 3 h (all sites)')
       expect($('global-line').hidden).toBe(true)
     })
 
@@ -217,7 +255,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect($('global-line').hidden).toBe(false)
-      expect(text('global-line')).toBe('All tracked sites today: 1 h 25 min of 3 h')
+      expect(text('global-line')).toBe('All sites: 1 h 25 min of 3 h')
     })
 
     it('snoozed: still over, says when blocking resumes', async () => {
@@ -229,7 +267,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('snoozed')
       expect(text('status')).toBe('Snoozed')
-      expect(text('summary')).toBe("Over this site's limit by 3 min. Blocking resumes in 4 min.")
+      expect(text('summary')).toBe('3 min over limit. Snoozed · 4 min left')
     })
 
     it('follows limit changes made elsewhere', async () => {
@@ -252,9 +290,9 @@ describe('popup on a tracked site', () => {
         [SNOOZE_KEY]: Date.now() + 4 * MIN,
       })
       await openReddit()
-      expect(text('summary')).toContain('Blocking resumes in 4 min.')
+      expect(text('summary')).toContain('Snoozed · 4 min left')
       vi.advanceTimersByTime(2 * MIN)
-      expect(text('summary')).toContain('Blocking resumes in 2 min.')
+      expect(text('summary')).toContain('Snoozed · 2 min left')
       // Once the snooze lapses the face goes back to blocking.
       vi.advanceTimersByTime(3 * MIN)
       expect(face()).toBe('over')
@@ -364,7 +402,7 @@ describe('popup on a tracked site', () => {
       await flush()
       expect(storedLimits()).toEqual({ global: 60 * MIN, perSite: { 'reddit.com': 120 * MIN } })
       expect(text('site-limit-saved')).toBe('Saved')
-      expect(text('summary')).toBe('2 h left of your 2 h limit')
+      expect(text('summary')).toBe('2 h left of 2 h')
     })
 
     it('Off clears the limit', async () => {

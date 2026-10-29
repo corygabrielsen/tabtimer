@@ -2,11 +2,13 @@ import { chromeStore } from './chrome/store'
 import { bus } from './chrome/bus'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
+import { hourLabel } from './core/usage'
 import { originsForSite, siteOf } from './core/site'
 import { msToMinutes, minutesToMs, evaluateLimits, normalizeLimits, type Limits } from './core/limits'
 import {
   dayKey,
   dayTotal,
+  emptyBuckets,
   normalizeDay,
   normalizePrefs,
   normalizeSnooze,
@@ -17,7 +19,7 @@ import {
   SNOOZE_KEY,
 } from './core/schema'
 import { localizeDom, t } from './i18n'
-import { byId, formatDuration, setDocumentLang } from './ui'
+import { byId, formatDuration, setDocumentLang, uiLocale } from './ui'
 import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; hostname: string; protocol: string }
@@ -68,7 +70,58 @@ function activeTab(): Promise<ActiveTab | null> {
   })
 }
 
-type Snapshot = { siteToday: number; globalToday: number; limits: Limits; snoozeUntil: number }
+type Snapshot = { siteToday: number; globalToday: number; limits: Limits; snoozeUntil: number; hours: number[] }
+
+// The strip's full height: the day's busiest hour, or this much if less, so a
+// few minutes don't fill it.
+const STRIP_FLOOR_MS = 10 * 60_000
+
+// The hours the timeline names: midnight, 6, noon and 18.
+const STRIP_MARKS = [0, 6, 12, 18]
+
+// Today's time on this site as a timeline: 24 thin bars, faint marks every
+// six hours with their names below, and where now falls.
+function renderStrip(base: string, hours: number[]) {
+  const strip = byId('strip')
+  const axis = byId('strip-axis')
+  if (!strip || !axis) {
+    return
+  }
+  const top = Math.max(STRIP_FLOOR_MS, ...hours)
+  strip.setAttribute('aria-label', t('popupStripAria', base))
+  const at = (hour: number) => `${(hour / 24) * 100}%`
+  const marks = STRIP_MARKS.map((hour) => {
+    const mark = document.createElement('i')
+    mark.className = 'mark'
+    mark.style.left = at(hour)
+    return mark
+  })
+  const now = new Date()
+  const nowMark = document.createElement('i')
+  nowMark.className = 'now'
+  nowMark.style.left = at(now.getHours() + now.getMinutes() / 60)
+  strip.replaceChildren(
+    ...marks,
+    ...hours.map((ms) => {
+      const bar = document.createElement('span')
+      bar.style.setProperty('--v', String(ms / top))
+      if (ms > 0) {
+        bar.dataset.on = ''
+      }
+      return bar
+    }),
+    nowMark
+  )
+  const locale = uiLocale()
+  axis.replaceChildren(
+    ...STRIP_MARKS.map((hour) => {
+      const label = document.createElement('span')
+      label.textContent = hourLabel(hour, locale)
+      label.style.left = at(hour)
+      return label
+    })
+  )
+}
 
 function faceFor(base: string, s: Snapshot) {
   const siteLimit = s.limits.perSite[base]
@@ -95,6 +148,7 @@ function renderFace(base: string, s: Snapshot) {
   const globalLine = byId('global-line')
 
   hero?.setAttribute('data-state', face.state)
+  renderStrip(base, s.hours)
   if (today) {
     today.textContent = formatTime(s.siteToday)
   }
@@ -149,7 +203,7 @@ function summaryText(
     const over = formatDuration(face.reason.elapsed - face.reason.limit)
     const cause = face.reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)
     if (face.state === 'snoozed') {
-      return `${cause} ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.snoozeUntil - Date.now())))}`
+      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, s.snoozeUntil - Date.now())))}`
     }
     return cause
   }
@@ -178,7 +232,13 @@ function renderTracked(base: string) {
       read(LIMITS_KEY).then(normalizeLimits),
       read(SNOOZE_KEY).then(normalizeSnooze),
     ])
-    return { siteToday: siteTotal(day, base), globalToday: dayTotal(day), limits, snoozeUntil }
+    return {
+      siteToday: siteTotal(day, base),
+      globalToday: dayTotal(day),
+      limits,
+      snoozeUntil,
+      hours: day[base] ?? emptyBuckets(),
+    }
   }
 
   let last: Snapshot | null = null
@@ -253,7 +313,7 @@ function renderTracked(base: string) {
     window.clearTimeout(disarm)
     setArmed(false)
     if (last) {
-      renderFace(base, { ...last, siteToday: 0 }) // optimistic
+      renderFace(base, { ...last, siteToday: 0, hours: emptyBuckets() }) // optimistic
     }
     void bus.send('resetToday', { site: base })
   })

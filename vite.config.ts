@@ -51,5 +51,7 @@ export default defineConfig({
     // source to the Web Store, bloat the zip, and (via the content-script's
     // web_accessible_resources) are probeable by every tracked site.
     sourcemap: false,
+    // Pages the manifest doesn't name (the manifest brings popup and options).
+    rollupOptions: { input: { usage: 'usage.html' } },
   },
 })

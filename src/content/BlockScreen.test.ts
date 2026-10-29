@@ -257,6 +257,16 @@ describe('block screen', () => {
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
   })
 
+  it('opens the activity page in a new tab and stays blocked', async () => {
+    await mount()
+    const activity = screen().querySelector('.activity')
+    expect(activity?.textContent).toBe('See activity')
+    click(activity)
+    await flush()
+    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
+    expect(isBlocked()).toBe(true)
+  })
+
   it('replaces a stale block screen instead of stacking a second one', async () => {
     await mount()
     await mount()
@@ -300,17 +310,18 @@ describe('block screen', () => {
     expect(screen().activeElement).toBe(snoozeButton())
   })
 
-  it('cycles Tab and Shift+Tab between its two buttons', async () => {
+  it('cycles Tab and Shift+Tab through its buttons', async () => {
     await mount()
     const manage = screen().querySelector<HTMLButtonElement>('.manage')!
+    const activity = screen().querySelector<HTMLButtonElement>('.activity')!
     const seen: (Element | null)[] = []
-    for (const shiftKey of [false, false, true, false]) {
+    for (const shiftKey of [false, false, false, true, true]) {
       const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
       screen().activeElement!.dispatchEvent(tab)
       expect(tab.defaultPrevented).toBe(true)
       seen.push(screen().activeElement)
     }
-    expect(seen).toEqual([manage, snoozeButton(), manage, snoozeButton()])
+    expect(seen).toEqual([activity, manage, snoozeButton(), manage, activity])
   })
 
   it('leaves other keys alone', async () => {

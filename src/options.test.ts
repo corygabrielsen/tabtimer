@@ -76,7 +76,7 @@ describe('tracked sites', () => {
     expect(text($('tracked-count'))).toBe('')
     expect(chips().map((b) => b.textContent)).toEqual(SUGGESTED_SITES.map((s) => s.label))
     expect($('enable-suggested').hidden).toBe(false)
-    expect($('suggested-empty').hidden).toBe(true)
+    expect($('suggested').hidden).toBe(false)
   })
 
   it('lists suggested sites first by name, then custom ones alphabetically', async () => {
@@ -178,14 +178,15 @@ describe('tracked sites', () => {
     expect(trackedHosts()).toEqual(['alpha.org'])
   })
 
-  it('tracks every suggested site at once, then says so', async () => {
+  it('tracks every suggested site at once, then drops the Suggested section', async () => {
     await openOptions()
+    expect(document.querySelector<HTMLElement>('.suggest-head')!.hidden).toBe(false)
     click($('enable-suggested'))
     await flush()
     expect(browser.granted).toEqual(new Set(SUGGESTED_SITES.flatMap((s) => originsForSite(s.host))))
     expect(chips()).toEqual([])
-    expect($('suggested-empty').hidden).toBe(false)
-    expect($('enable-suggested').hidden).toBe(true)
+    expect(document.querySelector<HTMLElement>('.suggest-head')!.hidden).toBe(true)
+    expect($('suggested').hidden).toBe(true)
   })
 })
 
@@ -202,8 +203,8 @@ describe('adding a site', () => {
   })
 
   it.each([
-    ['', 'Enter a domain to track, like example.com.'],
-    ['localhost', "That isn't a domain. Try something like example.com."],
+    ['', 'Enter a domain.'],
+    ['localhost', 'Not a valid domain.'],
   ])('explains why %j cannot be added', async (value, message) => {
     await openOptions()
     submitAdd(value)
@@ -348,7 +349,7 @@ describe('limits', () => {
   it('saves the all-sites cap from its presets, a custom value, or Off', async () => {
     await openOptions()
     const picker = globalPicker()
-    expect(picker.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('All tracked sites combined')
+    expect(picker.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('All sites')
     expect(radios(picker).map((c) => c.textContent)).toEqual(['Off', '1h', '2h', '3h', '4h', 'Custom'])
     expect(checkedRadio(picker)).toBe('Off')
     click(radio(picker, '3h'))
@@ -468,4 +469,57 @@ it('localizes the page', async () => {
   expect(text($('global-limit')?.querySelector('[role="radio"]'))).toBe('Off')
   expect(document.documentElement.lang).toBe('en-US')
   expect($('privacy-link').textContent).toBe('Privacy policy')
+})
+
+describe('this week', () => {
+  // A Wednesday: the week (from Sunday the 25th) has had four days.
+  const NOW = new Date(2026, 9, 28, 16, 40)
+  const at = (day: number, hour = 12) => new Date(2026, 9, day, hour)
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOW, toFake: ['Date'] })
+  })
+
+  it('is hidden until anything is recorded', async () => {
+    await openOptions()
+    expect($('week-card').hidden).toBe(true)
+  })
+
+  it('shows the week’s total, daily average and a bar per day', async () => {
+    browser.storage.local.seed({
+      ...dayEntry({ 'reddit.com': 60 * MIN }, at(26)),
+      ...dayEntry({ 'reddit.com': 20 * MIN, 'x.com': 20 * MIN }, at(28)),
+      ...dayEntry({ 'reddit.com': 500 * MIN }, at(24)), // last week
+    })
+    await openOptions()
+    expect($('week-card').hidden).toBe(false)
+    expect(text($('week-total'))).toBe('1 h 40 min')
+    expect(text($('week-average'))).toBe('Daily average 25 min')
+    const days = [...$('week-bars').querySelectorAll<HTMLElement>('.week-bar')]
+    expect(days).toHaveLength(7)
+    expect(days.map((d) => d.style.getPropertyValue('--v'))).toEqual([
+      '0',
+      '1',
+      '0',
+      '0.6666666666666666',
+      '0',
+      '0',
+      '0',
+    ])
+    expect(days.map((d) => d.hasAttribute('data-today'))).toEqual([false, false, false, true, false, false, false])
+    expect([...$('week-bars').querySelectorAll('.week-day > span:last-child')].map((s) => s.textContent).join('')).toBe(
+      'SMTWTFS'
+    )
+    const link = $<HTMLAnchorElement>('week-link')
+    expect(link.getAttribute('href')).toBe('usage.html')
+    expect(link.target).toBe('_blank')
+  })
+
+  it('updates as time is recorded', async () => {
+    browser.storage.local.seed(dayEntry({ 'reddit.com': 10 * MIN }, at(28)))
+    await openOptions()
+    browser.storage.local.set(dayEntry({ 'reddit.com': 30 * MIN }, at(28)))
+    await flush()
+    expect(text($('week-total'))).toBe('30 min')
+  })
 })

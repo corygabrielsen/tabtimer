@@ -26,6 +26,10 @@
             <span id="today">00:00:00</span>
           </p>
           <div id="meter" class="meter" role="meter" aria-valuemin="0" hidden></div>
+          <div class="timeline">
+            <div id="strip" class="strip" role="img"></div>
+            <div id="strip-axis" class="strip-axis" aria-hidden="true"></div>
+          </div>
           <p id="summary" class="summary" aria-live="polite"></p>
         </div>
 
@@ -55,6 +59,9 @@
 
         <div class="actions">
           <button id="reset-btn" type="button" class="btn btn-quiet" data-i18n="popupResetToday">Reset today</button>
+          <a id="activity-link" class="link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
+            >See all activity</a
+          >
         </div>
       </section>
 
@@ -66,7 +73,6 @@
             <span class="status" data-i18n="popupNotTrackedTitle">Not tracked</span>
           </div>
           <p class="readout figure" aria-hidden="true">--:--:--</p>
-          <p class="summary" data-i18n="popupNotTracking">Tab Timer only counts time on sites you choose.</p>
         </div>
         <button id="enable-btn" type="button" class="btn btn-primary wide" data-i18n="popupEnableSite">
           Track this site
@@ -76,9 +82,7 @@
       <!-- Browser pages, the Web Store, files: extensions can't run there. -->
       <section id="untracked" hidden aria-labelledby="untracked-title">
         <h1 id="untracked-title" class="lead" data-i18n="popupCantTrack">This page can't be tracked</h1>
-        <p class="note" data-i18n="popupCantTrackDetail">
-          Browser pages, the Chrome Web Store and local files are off-limits to extensions. Open a website to track it.
-        </p>
+        <p class="note" data-i18n="popupCantTrackDetail">Extensions can't run on this page.</p>
       </section>
 
       <p id="loading" class="note" data-i18n="popupLoading">Loading…</p>

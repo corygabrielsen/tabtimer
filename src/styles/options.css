@@ -26,10 +26,87 @@ h1 {
   letter-spacing: -0.02em;
 }
 
-.lede {
+/* --- This week: one card above the settings ------------------------------ */
+
+.week-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'text bars'
+    'link link';
+  align-items: end;
+  gap: var(--s-4) var(--s-8);
+  margin-top: var(--s-8);
+  padding: var(--s-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.week-text {
+  grid-area: text;
+}
+
+.week-text h2 {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.week-total {
+  margin-top: var(--s-2);
+  font-size: 32px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.week-average {
   margin-top: var(--s-2);
   color: var(--ink-3);
-  font-size: var(--t-md);
+}
+
+.week-bars {
+  grid-area: bars;
+  display: grid;
+  grid-template-columns: repeat(7, 18px);
+  gap: var(--s-2);
+}
+
+.week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+/* A day's bar inside a fixed track, so the days line up at the baseline. */
+.week-bar {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.week-bar::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: calc(var(--v, 0) * 100%);
+  border-radius: 2px 2px 0 0;
+  background: var(--ink-3);
+}
+
+.week-bar[data-today]::before {
+  background: var(--ink);
+}
+
+.week-link {
+  grid-area: link;
+  justify-self: start;
+  font-weight: 600;
 }
 
 /* --- Sections ------------------------------------------------------------ */
@@ -130,12 +207,18 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
-/* Site rows: name | today | limit | stop. Shared track with .cols. The site
-   is each row's key, so it takes all spare width; the rest stay compact. */
+/* Site rows: name | today | limit | actions, on the same tracks as the
+   header (.cols). Every track but the site's is a fixed width, so the
+   header and each row resolve to the same columns whatever a row holds;
+   a content-sized track would size per row and shift the header. The site
+   is each row's key, so it takes all spare width. */
 .cols,
 .site-row {
+  --col-today: 9rem;
+  --col-limit: 6.5rem;
+  --col-actions: 7.5rem;
   display: grid;
-  grid-template-columns: minmax(12rem, 1fr) 7.5rem 6.5rem max-content;
+  grid-template-columns: minmax(12rem, 1fr) var(--col-today) var(--col-limit) var(--col-actions);
   align-items: center;
   gap: var(--s-4);
 }
@@ -277,6 +360,17 @@ h1 {
   .site-today {
     justify-self: end;
   }
+  /* The header is hidden here: each value names itself. */
+  .site-today::before,
+  .limit-toggle::before {
+    content: attr(data-label);
+    color: var(--ink-3);
+    font-family: var(--font-ui);
+    font-weight: 400;
+  }
+  .site-today::before {
+    margin-right: var(--s-2);
+  }
   .limit-toggle {
     grid-column: 1;
     justify-self: start;
@@ -357,15 +451,6 @@ h1 {
   font-weight: 600;
 }
 
-.setting-help {
-  margin-top: 2px;
-  color: var(--ink-3);
-}
-
-.section-body > .setting-help {
-  margin-top: var(--s-3);
-}
-
 .setting-control {
   display: flex;
   align-items: flex-start;
@@ -417,51 +502,6 @@ fieldset.setting legend {
 .segmented-wrap {
   display: flex;
   justify-content: space-between;
-}
-
-.segmented {
-  display: inline-flex;
-  margin-left: auto;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-}
-
-.segmented label {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 var(--s-3);
-  cursor: pointer;
-  color: var(--ink-2);
-}
-
-.segmented label + label {
-  border-left: 1px solid var(--rule-strong);
-}
-
-.segmented input {
-  position: absolute;
-  opacity: 0;
-  inset: 0;
-  margin: 0;
-  cursor: pointer;
-}
-
-.segmented label:has(input:checked) {
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.segmented label:has(input:focus-visible) {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  z-index: 1;
-}
-
-.segmented label:has(input:disabled) {
-  opacity: 0.45;
-  cursor: default;
 }
 
 /* --- Privacy ------------------------------------------------------------- */

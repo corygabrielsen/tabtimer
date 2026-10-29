@@ -10,6 +10,7 @@ describe('parseRequest', () => {
   it.each([
     [{ type: 'snooze' }, { type: 'snooze' }],
     [{ type: 'openOptions' }, { type: 'openOptions' }],
+    [{ type: 'openActivity', extra: 1 }, { type: 'openActivity' }],
     [
       { type: 'presence', ...PRESENT },
       { type: 'presence', ...PRESENT },

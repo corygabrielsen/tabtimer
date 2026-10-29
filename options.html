@@ -12,17 +12,25 @@
       <header class="page-head">
         <p class="brand" data-i18n="appName">Tab Timer</p>
         <h1 data-i18n="optionsTitle">Settings</h1>
-        <p class="lede" data-i18n="optionsIntro">Changes save as you make them.</p>
       </header>
+
+      <!-- This week at a glance; the detail is on the activity page. -->
+      <section id="week-card" class="week-card" aria-labelledby="week-h" hidden>
+        <div class="week-text">
+          <h2 id="week-h" data-i18n="optionsWeekHeading">This week</h2>
+          <p id="week-total" class="week-total"></p>
+          <p id="week-average" class="week-average"></p>
+        </div>
+        <div id="week-bars" class="week-bars" aria-hidden="true"></div>
+        <a id="week-link" class="week-link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
+          >See all activity</a
+        >
+      </section>
 
       <!-- Sites ------------------------------------------------------------ -->
       <section class="section" aria-labelledby="sites-h">
         <div class="section-head">
           <h2 id="sites-h" data-i18n="optionsSitesHeading">Sites</h2>
-          <p data-i18n="optionsSitesHelp">
-            Tab Timer counts time only on the sites listed here. Chrome asks for permission the first time you add each
-            one.
-          </p>
         </div>
         <div class="section-body">
           <form id="add-form" class="add" novalidate>
@@ -52,12 +60,10 @@
             <span data-i18n="optionsColSite">Site</span>
             <span data-i18n="optionsColToday">Today</span>
             <span data-i18n="optionsColLimit">Daily limit</span>
-            <span></span>
+            <span><span class="visually-hidden" data-i18n="optionsColActions">Actions</span></span>
           </div>
           <ul id="tracked-sites" class="list" aria-labelledby="tracked-h"></ul>
-          <p id="tracked-empty" class="empty" hidden data-i18n="optionsTrackedEmpty">
-            No sites yet. Add one above, or pick from the suggestions below.
-          </p>
+          <p id="tracked-empty" class="empty" hidden data-i18n="optionsTrackedEmpty">No sites yet.</p>
 
           <div class="list-head suggest-head">
             <h3 id="suggested-h" data-i18n="optionsSuggested">Suggested</h3>
@@ -66,9 +72,6 @@
             </button>
           </div>
           <ul id="suggested" class="chips" aria-labelledby="suggested-h"></ul>
-          <p id="suggested-empty" class="empty" hidden data-i18n="optionsSuggestedEmpty">
-            You're tracking every suggested site.
-          </p>
         </div>
       </section>
 
@@ -76,22 +79,17 @@
       <section class="section" aria-labelledby="limits-h">
         <div class="section-head">
           <h2 id="limits-h" data-i18n="optionsLimitsHeading">Daily limits</h2>
-          <p data-i18n="optionsLimitsHelp">
-            When a limit is reached, the site is covered by a full-page block. You can snooze it 5 minutes at a time.
-          </p>
         </div>
         <div class="section-body">
           <div class="setting setting-limit">
             <div class="setting-text">
-              <span class="setting-label" data-i18n="optionsGlobalLimit">All tracked sites combined</span>
-              <p class="setting-help" data-i18n="optionsGlobalHelp">One budget shared by every site.</p>
+              <span class="setting-label" data-i18n="optionsGlobalLimit">All sites</span>
             </div>
             <div class="setting-control">
               <span id="global-limit-saved" class="saved" role="status"></span>
               <div id="global-limit"></div>
             </div>
           </div>
-          <p class="setting-help" data-i18n="optionsPerSiteHint">Set a limit for one site in the Sites list above.</p>
         </div>
       </section>
 
@@ -99,7 +97,7 @@
       <section class="section" aria-labelledby="overlay-h">
         <div class="section-head">
           <h2 id="overlay-h" data-i18n="optionsOverlayHeading">On-page timer</h2>
-          <p data-i18n="optionsOverlayHelp">A small timer at the top of tracked pages. Click it to switch views.</p>
+          <p data-i18n="optionsOverlayHelp">Click the timer to switch views.</p>
         </div>
         <div class="section-body">
           <div class="setting">
@@ -145,10 +143,7 @@
           <h2 id="privacy-h" data-i18n="optionsPrivacyHeading">Privacy</h2>
         </div>
         <div class="section-body">
-          <p class="prose" data-i18n="optionsPrivacyBody">
-            Everything Tab Timer records stays in this browser. Nothing is sent anywhere: no accounts, no analytics, no
-            servers.
-          </p>
+          <p class="prose" data-i18n="optionsPrivacyBody">Your data stays in this browser.</p>
           <p class="links">
             <a
               id="privacy-link"

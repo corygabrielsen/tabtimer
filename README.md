@@ -24,6 +24,9 @@ limit you set for it.
 - **At a glance** — a small timer at the top of tracked pages (click to switch
   between today, this visit and time open), and a popup showing today's time
   against the limit.
+- **See where the time went** — an activity page shows today by hour or the
+  week by day, split by site, for the last 30 days. Pick a site to see it
+  against its limit and change the limit right there.
 - **Private by design** — everything stays in your browser's local storage;
   nothing is ever sent anywhere. See [PRIVACY.md](PRIVACY.md).
 

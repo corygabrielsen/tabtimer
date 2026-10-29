@@ -46,6 +46,8 @@ export type Contract = {
   setPrefs: { req: Partial<Prefs>; res: Prefs }
   // content: open the options page.
   openOptions: { req: Empty; res: null }
+  // content: open the activity page in a new tab (the block stays up).
+  openActivity: { req: Empty; res: null }
 }
 
 // The service worker's message to a tracked page (chrome.tabs.sendMessage):
@@ -74,6 +76,7 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   snooze: ['content', 'extension'],
   setPrefs: ['content', 'extension'],
   openOptions: ['content', 'extension'],
+  openActivity: ['content', 'extension'],
 }
 
 export const MAX_LIMIT_MS = 1440 * 60_000
@@ -178,6 +181,8 @@ export function parseRequest(raw: unknown): Request | null {
       return { type: 'snooze' }
     case 'openOptions':
       return { type: 'openOptions' }
+    case 'openActivity':
+      return { type: 'openActivity' }
     case 'presence': {
       const presence = parsePresence(raw)
       return presence ? { type: 'presence', ...presence } : null

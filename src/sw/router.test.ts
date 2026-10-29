@@ -17,6 +17,7 @@ let browser: FakeChrome
 let NOW = NOON
 let handle: Handler
 let openOptions: ReturnType<typeof vi.fn<() => Promise<void>>>
+let openActivity: ReturnType<typeof vi.fn<() => Promise<void>>>
 
 const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = {}): Sender => ({
   id: ID,
@@ -43,6 +44,7 @@ async function visit(sender = content(), extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   browser = fakeChrome()
   openOptions = vi.fn(() => Promise.resolve())
+  openActivity = vi.fn(() => Promise.resolve())
   NOW = NOON
   const clock = { now: () => NOW }
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
@@ -52,7 +54,7 @@ beforeEach(() => {
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
   })
-  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, openOptions })
+  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, openOptions, openActivity })
 })
 
 describe('sender policy', () => {
@@ -221,6 +223,12 @@ describe('handlers', () => {
   it('open the options page', async () => {
     await expect(handle({ type: 'openOptions' }, content())).resolves.toEqual({ ok: true, value: null })
     expect(openOptions).toHaveBeenCalledOnce()
+  })
+
+  it('open the activity page', async () => {
+    await expect(handle({ type: 'openActivity' }, content())).resolves.toEqual({ ok: true, value: null })
+    await expect(handle({ type: 'openActivity' }, page('usage.html'))).resolves.toEqual({ ok: true, value: null })
+    expect(openActivity).toHaveBeenCalledTimes(2)
   })
 
   it('answer internal when a handler fails', async () => {
