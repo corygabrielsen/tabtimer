@@ -1,8 +1,25 @@
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import { crx } from '@crxjs/vite-plugin'
 import baseManifest from './manifest.json'
 import pkg from './package.json'
 import { E2E, E2E_HOST_PERMISSIONS, OUT_DIR } from './build.e2e'
+
+// Non-release builds name the commit they came from, e.g. "1.1.0 (ff1e3e6)",
+// or "1.1.0 (ff1e3e6, modified)" with uncommitted changes to tracked files, so
+// the extensions page shows exactly which build is loaded. Release builds
+// (TABTIMER_RELEASE=1, set by the publish workflow) show the plain version.
+function versionName(): string | undefined {
+  if (process.env.TABTIMER_RELEASE === '1') return undefined
+  try {
+    const git = (args: string) => execSync(`git ${args}`, { encoding: 'utf8' }).trim()
+    const sha = git('rev-parse --short HEAD')
+    const modified = git('status --porcelain --untracked-files=no') !== ''
+    return `${pkg.version} (${sha}${modified ? ', modified' : ''})`
+  } catch {
+    return undefined // not a git checkout
+  }
+}
 
 // The version lives in package.json; stamp it onto the manifest at build time
 // so they can't diverge. The content script isn't declared here — it's built
@@ -11,9 +28,11 @@ import { E2E, E2E_HOST_PERMISSIONS, OUT_DIR } from './build.e2e'
 // The e2e variant (TABTIMER_E2E=1) also requests the fixture hosts up front,
 // standing in for the user's runtime grant, and builds to its own directory.
 // With the flag unset the manifest and output are exactly the production ones.
+const name = versionName()
 const manifest = {
   ...baseManifest,
   version: pkg.version,
+  ...(name ? { version_name: name } : {}),
   ...(E2E ? { host_permissions: E2E_HOST_PERMISSIONS } : {}),
 }
 
