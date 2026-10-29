@@ -68,6 +68,7 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
   const toggle = h('button', {
     type: 'button',
     class: 'limit-toggle',
+    'data-label': t('optionsColLimit'),
     'aria-expanded': 'false',
     'aria-controls': panelId,
     'data-host': host,
@@ -139,6 +140,7 @@ function siteRow(host: string, limitMs: number | undefined, todayMs: number): HT
     'span',
     {
       class: 'site-today figure',
+      'data-label': t('optionsColToday'),
       'data-today-host': host,
       'data-over': typeof limitMs === 'number' && todayMs >= limitMs,
       'aria-label': t('optionsTodayAria', [host, formatDuration(todayMs)]),

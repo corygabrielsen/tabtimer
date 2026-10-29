@@ -40,6 +40,48 @@ test('loads: service worker alive and options page renders', async ({ context, s
   await expect(page.locator('#tracked-sites')).toContainText(SITE_A)
 })
 
+test('the tracking table’s headers sit over their columns', async ({ context, serviceWorker, extensionId }) => {
+  // A long today value and an expanded limit, the cases that once pushed
+  // the header off its columns.
+  await seed(serviceWorker, {
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 30 * MINUTE } },
+    ...(await today(serviceWorker, { [SITE_A]: 125 * MINUTE })),
+  })
+  const page = await context.newPage()
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.goto(`chrome-extension://${extensionId}/options.html`)
+  const row = page.locator(`#tracked-sites li[data-host="${SITE_A}"]`)
+  await expect(row.locator('[data-today-host]')).toContainText('over')
+
+  const headers = await page.locator('.cols > span').evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect()
+      return { left: r.left, right: r.right }
+    })
+  )
+  const cells = await row.evaluate((li) =>
+    ['.site-name', '[data-today-host]', '.limit-toggle', '.stop'].map((sel) => {
+      const r = li.querySelector(sel)!.getBoundingClientRect()
+      return { left: r.left, right: r.right }
+    })
+  )
+  expect(headers).toHaveLength(4)
+  // Each cell lies within its header's column, give or take the stop
+  // button's bleed into the gutter.
+  cells.forEach((cell, i) => {
+    const header = headers[i]!
+    expect(header.right - header.left, `header ${i} width`).toBeGreaterThan(0)
+    const center = (cell.left + cell.right) / 2
+    expect(center, `cell ${i} centre`).toBeGreaterThan(header.left)
+    expect(center, `cell ${i} centre`).toBeLessThan(header.right)
+    expect(cell.left, `cell ${i} left`).toBeGreaterThanOrEqual(header.left - 1)
+    expect(cell.right, `cell ${i} right`).toBeLessThanOrEqual(header.right + 9)
+  })
+  // Numbers and the limit sit flush right under their right-aligned headers.
+  expect(Math.abs(cells[1]!.right - headers[1]!.right)).toBeLessThan(1)
+  expect(Math.abs(cells[2]!.right - headers[2]!.right)).toBeLessThan(1)
+})
+
 test('limits set from the options page: a preset chip and a custom value', async ({
   context,
   serviceWorker,

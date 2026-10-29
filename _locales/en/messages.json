@@ -129,6 +129,7 @@
   "optionsColSite": { "message": "Site" },
   "optionsColToday": { "message": "Today" },
   "optionsColLimit": { "message": "Daily limit" },
+  "optionsColActions": { "message": "Actions" },
   "optionsTrackedEmpty": { "message": "No sites yet. Add one above, or pick from the suggestions below." },
   "optionsTodayOver": { "message": "$time$ (over)", "placeholders": { "time": { "content": "$1" } } },
   "optionsTodayAria": {
