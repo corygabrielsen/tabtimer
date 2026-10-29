@@ -21,6 +21,7 @@ import {
   type DayUsage,
   type Prefs,
 } from '../core/schema'
+import { serial } from '../core/serial'
 import { normalizeTracker, type Accrual, type TrackerState } from '../core/tracker'
 import type { Site } from '../core/site'
 import type { Clock, Store } from '../ports'
@@ -55,14 +56,7 @@ export type Tx = {
 export type Ledger = ReturnType<typeof createLedger>
 
 export function createLedger(local: Store, session: Store, clock: Clock) {
-  let chain: Promise<unknown> = Promise.resolve()
-
-  function enqueue<T>(task: () => Promise<T>): Promise<T> {
-    const result = chain.then(task, task)
-    // A failed task must not wedge the queue or fail the next one.
-    chain = result.catch(() => undefined)
-    return result
-  }
+  const enqueue = serial()
 
   // Drop day:* keys outside the retention window.
   async function pruneNow(now: number): Promise<void> {
