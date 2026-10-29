@@ -34,7 +34,7 @@ export function createTracker(deps: TrackerDeps) {
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
     let ctx: Promise<[DayUsage, Limits, Prefs]> | null = null
-    return async (tabId: number, attest: Attest, s: TrackerState): Promise<TabState> => {
+    return async (tabId: number, attest: Pick<Attest, 'site'>, s: TrackerState): Promise<TabState> => {
       ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs()])
       const [usage, limits, prefs] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
@@ -143,6 +143,15 @@ export function createTracker(deps: TrackerDeps) {
   return {
     // A content script's presence message; replies with the tab's state.
     presence: (tabId: number, attest: Omit<Attest, 'at'>): Promise<TabState> => report(tabId, attest, false),
+
+    // An extension page's question: the state a tab on `site` is told. Its
+    // open interval counts only if it is on that site.
+    tabState: (tabId: number, site: Site): Promise<TabState> =>
+      ledger.transaction((tx) => {
+        const s = tx.tracker
+        const known = s.tabs[String(tabId)]?.site === site
+        return stater(tx)(tabId, { site }, known ? s : { ...s, open: null })
+      }),
 
     // A browser event (tab, window, idle, alarm).
     dispatch: async (event: TrackerEvent): Promise<void> => settle(await run(event)),

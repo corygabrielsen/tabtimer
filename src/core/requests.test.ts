@@ -26,6 +26,10 @@ describe('parseRequest', () => {
       { type: 'presence', visible: false, focused: false, media: true, blocked: true },
     ],
     [
+      { type: 'tabState', tabId: 4, site: 'reddit.com', extra: 1 },
+      { type: 'tabState', tabId: 4, site: 'reddit.com' },
+    ],
+    [
       { type: 'resetToday', site: 'reddit.com' },
       { type: 'resetToday', site: 'reddit.com' },
     ],
@@ -62,6 +66,10 @@ describe('parseRequest', () => {
     { type: 'presence', ...PRESENT, focused: 1 },
     { type: 'presence', ...PRESENT, media: null },
     { type: 'presence', visible: true, focused: true, media: false },
+    { type: 'tabState', site: 'reddit.com' },
+    { type: 'tabState', tabId: 1.5, site: 'reddit.com' },
+    { type: 'tabState', tabId: '4', site: 'reddit.com' },
+    { type: 'tabState', tabId: 4, site: 'www.reddit.com' },
     { type: 'resetToday' },
     { type: 'resetToday', site: '' },
     { type: 'open' },

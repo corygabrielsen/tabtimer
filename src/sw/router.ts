@@ -15,7 +15,7 @@ import type { Tracker } from './tracker'
 
 export type RouterDeps = {
   ledger: Pick<Ledger, 'setLimit' | 'snooze' | 'setPrefs'>
-  tracker: Pick<Tracker, 'presence' | 'resetToday'>
+  tracker: Pick<Tracker, 'presence' | 'tabState' | 'resetToday'>
   extensionId: string
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
@@ -74,6 +74,7 @@ export function createRouter(deps: RouterDeps): Handler {
       const { id, ...tab } = ctx.tab!
       return tracker.presence(id, { site: ctx.site!, ...tab, visible, focused, media, blocked })
     },
+    tabState: ({ tabId, site }) => tracker.tabState(tabId, site),
     resetToday: async ({ site }) => {
       await tracker.resetToday(site)
       return null

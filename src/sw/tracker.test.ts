@@ -113,6 +113,36 @@ describe('presence', () => {
   })
 })
 
+describe('tabState (an extension page asks)', () => {
+  // KNOWN-2 / A3: the popup read storage, which lacks the open interval's
+  // uncredited time, so it lagged the overlay by up to a checkpoint.
+  it('gives the state the tab is told, open interval included, telling no page', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 }, snoozeUntil: 0 } })
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now += 40 * S
+    sent = []
+    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({
+      site: 'a.com',
+      asOf: now,
+      today: 40 * S,
+      running: true,
+      blockAt: NOON + MIN,
+      limit: { scope: 'site', ms: MIN },
+    })
+    expect(sent).toEqual([])
+    expect(open()).toMatchObject({ tabId: 1, since: NOON })
+  })
+
+  it('counts no open interval for a tab on another site, or one never heard from', async () => {
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now += 40 * S
+    await expect(tracker.tabState(1, 'b.com')).resolves.toMatchObject({ site: 'b.com', today: 0, running: false })
+    await expect(tracker.tabState(2, 'a.com')).resolves.toMatchObject({ today: 0, running: false })
+  })
+})
+
 describe('failures', () => {
   it('a failing alarm doesn’t fail the report', async () => {
     alarm.mockRejectedValue(new Error('alarms'))

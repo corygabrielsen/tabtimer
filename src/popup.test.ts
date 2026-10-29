@@ -5,6 +5,7 @@ import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
 import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
+import { bus } from './chrome/bus'
 
 let browser: FakeChrome
 const MIN = 60_000
@@ -318,6 +319,45 @@ describe('popup on a tracked site', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // KNOWN-2 / A3: the face was worked out from storage, which lacks the open
+  // interval's uncredited part, so it lagged the page's overlay by up to a
+  // checkpoint (a minute), blocking included.
+  describe('A3: as the worker sees the tab', () => {
+    const page = { url: 'https://www.reddit.com/', frameId: 0, documentLifecycle: 'active' }
+    // Tab 1 reports itself in use, then `ms` pass.
+    const inUse = async (ms: number) => {
+      const popup = browser.sender
+      browser.sender = { ...page, id: browser.runtime.id, tab: { id: 1, windowId: 1 } }
+      await bus.send('presence', { visible: true, focused: true, media: false, blocked: false })
+      browser.sender = popup
+      vi.setSystemTime(Date.now() + ms)
+    }
+
+    it('counts the time not yet credited, and blocks when the page does', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
+      try {
+        browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 1 }, snoozeUntil: 0 } })
+        await inUse(50_000)
+        await openReddit()
+        expect(storedToday('reddit.com')).toBe(0)
+        expect($('today').textContent).toBe('00:00:50')
+        expect(face()).toBe('ok')
+        // It runs on while the tab does, and goes over when the page blocks.
+        vi.advanceTimersByTime(10_000)
+        expect($('today').textContent).toBe('00:01:00')
+        expect(face()).toBe('over')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('counts another tab’s running time only as that tab’s page is told', async () => {
+      await inUse(30_000)
+      await openPopup({ id: 2, url: 'https://www.reddit.com/' })
+      expect($('today').textContent).toBe('00:00:00')
+    })
   })
 
   it('keeps a write that lands while it is loading', async () => {
