@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { evaluateLimits, normalizeLimits, parseLimitMinutes, minutesToMs, msToMinutes, DEFAULT_LIMITS } from './limits'
+import {
+  applyLimit,
+  evaluateLimits,
+  normalizeLimits,
+  parseLimitMinutes,
+  minutesToMs,
+  msToMinutes,
+  DEFAULT_LIMITS,
+} from './limits'
 
 const limits = { global: minutesToMs(60), perSite: { 'reddit.com': minutesToMs(30) } }
 
@@ -63,5 +71,41 @@ describe('normalizeLimits', () => {
       global: 1000,
       perSite: { 'x.com': 60000 },
     })
+  })
+})
+
+describe('normalizeLimits per-site entries', () => {
+  it('drops entries that are not positive numbers', () => {
+    expect(
+      normalizeLimits({ global: -1, perSite: { 'a.com': 60000, 'b.com': 0, 'c.com': '5', 'd.com': NaN } })
+    ).toEqual({
+      global: null,
+      perSite: { 'a.com': 60000 },
+    })
+  })
+})
+
+describe('applyLimit', () => {
+  const base = { global: minutesToMs(60), perSite: { 'a.com': minutesToMs(10) } }
+
+  it('sets or clears the all-sites cap, keeping per-site limits', () => {
+    expect(applyLimit(base, { scope: 'global', ms: minutesToMs(90) })).toEqual({ ...base, global: minutesToMs(90) })
+    expect(applyLimit(base, { scope: 'global', ms: null })).toEqual({ ...base, global: null })
+  })
+
+  it('sets or clears one site, keeping the rest', () => {
+    expect(applyLimit(base, { scope: 'site', site: 'b.com', ms: minutesToMs(5) })).toEqual({
+      global: minutesToMs(60),
+      perSite: { 'a.com': minutesToMs(10), 'b.com': minutesToMs(5) },
+    })
+    expect(applyLimit(base, { scope: 'site', site: 'a.com', ms: null })).toEqual({
+      global: minutesToMs(60),
+      perSite: {},
+    })
+  })
+
+  it('does not modify its input', () => {
+    applyLimit(base, { scope: 'site', site: 'a.com', ms: null })
+    expect(base.perSite).toEqual({ 'a.com': minutesToMs(10) })
   })
 })
