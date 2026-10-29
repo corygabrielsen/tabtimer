@@ -102,3 +102,24 @@ export function todayKeyForHost(hostname: string, date: Date = new Date()): stri
 export function isElapsedKeyForDay(key: string, date: Date): boolean {
   return key.startsWith(`${ELAPSED_KEY_PREFIX}_`) && key.endsWith(`_${dateStamp(date)}`)
 }
+
+// Sum today's stored focus time across every tracked host (the global daily
+// total). Excludes in-flight, not-yet-flushed deltas, so it can lag a live
+// counter by a few seconds — fine for a minute-scale limit.
+export function readGlobalElapsedToday(date: Date = new Date()): Promise<number> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(null, (items: Record<string, unknown>) => {
+      if (chrome.runtime.lastError) {
+        resolve(0)
+        return
+      }
+      let total = 0
+      for (const [key, value] of Object.entries(items)) {
+        if (isElapsedKeyForDay(key, date) && typeof value === 'number') {
+          total += value
+        }
+      }
+      resolve(total)
+    })
+  })
+}

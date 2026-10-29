@@ -18,9 +18,9 @@ export default defineConfig({
       // Just below current coverage so a regression fails CI; raise as it grows.
       thresholds: {
         lines: 97,
-        branches: 89,
-        functions: 89,
-        statements: 96,
+        branches: 90,
+        functions: 94,
+        statements: 97,
       },
     },
   },

@@ -1,0 +1,408 @@
+/*
+ * Shared design tokens and base components for the popup and options page.
+ *
+ * Identity: a monochrome instrument, the same family as the on-page overlay and
+ * the block screen. Hierarchy comes from luminance, size and weight only; there
+ * is no hue. The one emphatic device is inversion (ink becomes paper), reserved
+ * for "over the limit".
+ *
+ * Contrast floor: every text token reaches >= 4.5:1 on both --paper and
+ * --surface in its theme.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* light */
+  --paper: #ffffff;
+  --surface: #f3f3f3;
+  --ink: #000000;
+  --ink-2: #3d3d3d; /* 10.8:1 on paper */
+  --ink-3: #646464; /* 5.9:1 on paper, 5.4:1 on surface */
+  --rule: #d6d6d6;
+  --rule-strong: #8f8f8f;
+  --focus: #000000;
+
+  --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-figure: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* type scale (px): 12 / 13 / 15 / 20 / 44 */
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-md: 15px;
+  --t-lg: 20px;
+  --t-xl: 44px;
+
+  /* 4px spacing grid */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-12: 48px;
+
+  --radius: 3px;
+  --control-h: 32px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #000000;
+    --surface: #161616;
+    --ink: #f5f5f5;
+    --ink-2: #c4c4c4; /* 12.4:1 on paper */
+    --ink-3: #949494; /* 7.0:1 on paper, 6.1:1 on surface */
+    --rule: #2c2c2c;
+    --rule-strong: #6e6e6e;
+    --focus: #f5f5f5;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.figure {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.muted {
+  color: var(--ink-3);
+}
+
+/* --- Buttons ------------------------------------------------------------ */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  min-height: var(--control-h);
+  padding: 0 var(--s-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--surface);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+/* The one filled button per view: the primary action for the current state. */
+.btn-primary {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
+/* Text-only action: quiet, still a 32px target. */
+.btn-quiet {
+  border-color: transparent;
+  color: var(--ink-2);
+  padding: 0 var(--s-2);
+}
+
+.btn-quiet:hover {
+  color: var(--ink);
+}
+
+.btn[aria-disabled='true'],
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- Text and minute fields ---------------------------------------------- */
+
+.field {
+  min-height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.field::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
+}
+
+.field:hover {
+  border-color: var(--ink-2);
+}
+
+.field:focus-visible {
+  outline-offset: 0;
+  border-color: var(--ink);
+}
+
+.field[aria-invalid='true'] {
+  border-color: var(--ink);
+  border-width: 2px;
+  border-style: dashed;
+}
+
+/* "[ 60 ] min" — a minutes field with its unit. */
+.minutes {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.minutes .field {
+  width: 64px;
+  text-align: right;
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+}
+
+.unit {
+  color: var(--ink-3);
+}
+
+.error {
+  color: var(--ink);
+  font-size: var(--t-xs);
+  font-weight: 500;
+}
+
+.error::before {
+  content: '! ';
+  font-weight: 700;
+}
+
+/* Autosave acknowledgement: appears, then fades. */
+.saved {
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+  opacity: 0;
+  transition: opacity 0.6s var(--ease);
+}
+
+.saved.is-on {
+  opacity: 1;
+  transition-duration: 0.1s;
+}
+
+/* --- Limit picker: preset chips in one strip, plus a custom minutes field --
+   A radio group (role="radiogroup"). The checked chip inverts, like the size
+   control; a saved custom value takes the Custom chip's place. */
+
+.limit-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.limit-chips {
+  display: flex;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.limit-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.limit-chip + .limit-chip {
+  border-left: 1px solid var(--rule-strong);
+}
+
+.limit-chip:first-child {
+  border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px);
+}
+
+.limit-chip:last-child {
+  border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0;
+}
+
+.limit-chip:hover {
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.limit-chip[aria-checked='true'] {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.limit-chip:focus-visible {
+  position: relative;
+  z-index: 1;
+}
+
+.limit-custom {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.limit-hint {
+  color: var(--ink-3);
+  font-size: var(--t-xs);
+}
+
+/* --- Switch (role="switch" button) --------------------------------------- */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+
+.switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  transition:
+    transform 0.15s var(--ease),
+    background 0.15s var(--ease);
+}
+
+.switch[aria-checked='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.switch[aria-checked='true']::after {
+  background: var(--paper);
+  transform: translateX(16px);
+}
+
+/* --- Meter: a graduated rule that fills with ink toward the limit -------- */
+
+.meter {
+  --fill: 0%;
+  --tick: 6px; /* pitch of the minor graduations; every 6th is major */
+  position: relative;
+  height: 14px;
+  background:
+    repeating-linear-gradient(to right, var(--meter-off, var(--rule)) 0 1px, transparent 1px calc(var(--tick) * 6)) 0
+      0 / 100% 14px no-repeat,
+    repeating-linear-gradient(to right, var(--meter-off, var(--rule)) 0 1px, transparent 1px var(--tick)) 0 6px / 100%
+      8px no-repeat;
+}
+
+.meter::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill);
+  background:
+    repeating-linear-gradient(to right, var(--meter-on, var(--ink)) 0 2px, transparent 2px calc(var(--tick) * 6)) 0 0 /
+      100% 14px no-repeat,
+    repeating-linear-gradient(to right, var(--meter-on, var(--ink)) 0 2px, transparent 2px var(--tick)) 0 3px / 100%
+      11px no-repeat;
+  transition: width 0.4s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+  .btn:active {
+    transform: none;
+  }
+}

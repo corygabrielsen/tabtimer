@@ -147,6 +147,7 @@ export class FakeChrome {
 
   readonly i18n = {
     getMessage: (key: string, substitutions?: string | string[]) => getMessage(key, substitutions),
+    getUILanguage: () => 'en-US',
   }
 
   // Origins currently granted, and whether a permission prompt is accepted.

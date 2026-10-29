@@ -1,0 +1,66 @@
+// @vitest-environment happy-dom
+import { describe, it, expect, vi } from 'vitest'
+import { h, formatDuration, validateMinutes, flashSaved, MAX_LIMIT_MINUTES } from './ui'
+
+describe('h', () => {
+  it('builds an element with attributes and text children, never parsing HTML', () => {
+    const el = h('p', { id: 'x', hidden: true, title: undefined, 'data-on': false }, 'a <b>', null, h('span', {}, 'c'))
+    expect(el.id).toBe('x')
+    expect(el.hasAttribute('hidden')).toBe(true)
+    expect(el.hasAttribute('title')).toBe(false)
+    expect(el.hasAttribute('data-on')).toBe(false)
+    expect(el.textContent).toBe('a <b>c')
+    expect(el.querySelector('b')).toBeNull()
+  })
+})
+
+describe('formatDuration', () => {
+  it.each([
+    [0, '0 min'],
+    [-5 * 60_000, '0 min'],
+    [45 * 60_000, '45 min'],
+    [89_999, '1 min'],
+    [60 * 60_000, '1 h'],
+    [65 * 60_000, '1 h 05 min'],
+    [180 * 60_000, '3 h'],
+  ])('%i ms reads as %s', (ms, expected) => {
+    expect(formatDuration(ms)).toBe(expected)
+  })
+})
+
+describe('validateMinutes', () => {
+  it('accepts blank (no limit) and whole minutes in range, canonicalized', () => {
+    expect(validateMinutes('  ')).toEqual({ ok: true, value: '' })
+    expect(validateMinutes(' 30 ')).toEqual({ ok: true, value: '30' })
+    expect(validateMinutes('007')).toEqual({ ok: true, value: '7' })
+    expect(validateMinutes(String(MAX_LIMIT_MINUTES))).toEqual({ ok: true, value: '1440' })
+  })
+
+  it.each(['0', '1441', '-1', '1.5', '1e3', 'ten'])('rejects %s', (raw) => {
+    expect(validateMinutes(raw)).toEqual({ ok: false })
+  })
+})
+
+describe('flashSaved', () => {
+  it('shows "Saved", then fades it out; a repeat restarts the clock', () => {
+    vi.useFakeTimers()
+    try {
+      const el = document.createElement('span')
+      flashSaved(el)
+      expect(el.textContent).toBe('Saved')
+      expect(el.classList.contains('is-on')).toBe(true)
+      vi.advanceTimersByTime(1000)
+      flashSaved(el)
+      vi.advanceTimersByTime(1000)
+      expect(el.classList.contains('is-on')).toBe(true)
+      vi.advanceTimersByTime(600)
+      expect(el.classList.contains('is-on')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a missing element', () => {
+    expect(() => flashSaved(null)).not.toThrow()
+  })
+})

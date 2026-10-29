@@ -2,226 +2,173 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Tab Timer — Settings</title>
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        font-family:
-          system-ui,
-          -apple-system,
-          sans-serif;
-        background: #0e1016;
-        color: #e5e7eb;
-      }
-      .card {
-        max-width: 520px;
-        margin: 0 auto;
-        padding: 28px 24px 40px;
-      }
-      .brand {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 11px;
-        color: #8a8a8a;
-      }
-      h1 {
-        font-size: 20px;
-        margin: 10px 0 6px;
-      }
-      .intro {
-        color: #9aa0ad;
-        font-size: 13px;
-        line-height: 1.5;
-        margin: 0 0 18px;
-      }
-      h2 {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #c7c9d1;
-        margin: 22px 0 8px;
-      }
-      .btn {
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 8px 14px;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        background: rgba(255, 255, 255, 0.08);
-        color: #f5f5f5;
-      }
-      .btn:hover {
-        background: rgba(255, 255, 255, 0.14);
-      }
-      .btn:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 2px;
-      }
-      .list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 2px;
-        overflow: hidden;
-      }
-      .item {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 10px 14px;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
-      }
-      .item:first-child {
-        border-top: 0;
-      }
-      .left {
-        display: flex;
-        flex: 1;
-        flex-direction: column;
-        gap: 2px;
-        min-width: 0;
-      }
-      .name {
-        font-size: 14px;
-        font-weight: 500;
-      }
-      .host {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 11px;
-        color: #9aa0ad;
-      }
-      .limitrow {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 6px;
-      }
-      .limitfield {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .limitfield input {
-        width: 60px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 6px 8px;
-        font: inherit;
-        font-size: 13px;
-        background: #161922;
-        color: #e5e7eb;
-        text-align: right;
-      }
-      .limitfield input:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 0;
-      }
-      .unit {
-        font-size: 11px;
-        color: #5f5f5f;
-      }
-      .toggle {
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 5px 12px;
-        font: inherit;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        background: transparent;
-        color: #8a8a8a;
-        white-space: nowrap;
-      }
-      .toggle:hover {
-        border-color: rgba(255, 255, 255, 0.3);
-        color: #e5e7eb;
-      }
-      .toggle.on {
-        background: rgba(255, 255, 255, 0.1);
-        border-color: rgba(255, 255, 255, 0.4);
-        color: #f5f5f5;
-      }
-      .toggle:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 2px;
-      }
-      .addrow {
-        display: flex;
-        gap: 8px;
-      }
-      .addrow input {
-        flex: 1;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        border-radius: 2px;
-        padding: 8px 12px;
-        font: inherit;
-        font-size: 13px;
-        background: #161922;
-        color: #e5e7eb;
-      }
-      .addrow input:focus-visible {
-        outline: 1px solid #9a9a9a;
-        outline-offset: 0;
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="optionsDocTitle">Tab Timer settings</title>
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/options.css" />
   </head>
   <body>
-    <main class="card">
-      <div class="brand" data-i18n="overlayLabel">Tab Timer</div>
-      <h1 data-i18n="optionsTitle">Settings</h1>
-      <p class="intro" data-i18n="optionsIntro">
-        Tab Timer only tracks time on sites you enable here, and everything stays on your device — nothing is ever sent
-        off your browser.
-      </p>
+    <main class="page">
+      <header class="page-head">
+        <p class="brand" data-i18n="appName">Tab Timer</p>
+        <h1 data-i18n="optionsTitle">Settings</h1>
+        <p class="lede" data-i18n="optionsIntro">Changes save as you make them.</p>
+      </header>
 
-      <h2 data-i18n="optionsLimitsHeading">Daily limits</h2>
-      <p class="intro" data-i18n="optionsLimitsHelp">
-        Block a site after this many minutes of active use today. Blank = no limit.
-      </p>
-      <div class="limitrow">
-        <span data-i18n="optionsGlobalLimit">All tracked sites</span>
-        <span class="limitfield">
-          <input
-            id="global-limit"
-            type="number"
-            min="1"
-            inputmode="numeric"
-            placeholder="off"
-            aria-label="Daily limit in minutes across all sites"
-            data-i18n-attr="placeholder=optionsLimitOff;aria-label=optionsGlobalLimit"
-          />
-          <span class="unit" data-i18n="optionsMinutes">min</span>
-        </span>
-      </div>
+      <!-- Sites ------------------------------------------------------------ -->
+      <section class="section" aria-labelledby="sites-h">
+        <div class="section-head">
+          <h2 id="sites-h" data-i18n="optionsSitesHeading">Sites</h2>
+          <p data-i18n="optionsSitesHelp">
+            Tab Timer counts time only on the sites listed here. Chrome asks for permission the first time you add each
+            one.
+          </p>
+        </div>
+        <div class="section-body">
+          <form id="add-form" class="add" novalidate>
+            <label for="add-input" class="add-label" data-i18n="optionsAddHeading">Add a site</label>
+            <div class="add-row">
+              <input
+                id="add-input"
+                class="field"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="example.com"
+                aria-describedby="add-error"
+                data-i18n-attr="placeholder=optionsAddPlaceholder"
+              />
+              <button class="btn btn-primary" type="submit" data-i18n="optionsAddButton">Add site</button>
+            </div>
+            <p id="add-error" class="error" hidden></p>
+          </form>
 
-      <button id="enable-suggested" type="button" class="btn" data-i18n="optionsEnableAll">
-        Enable all suggested sites
-      </button>
+          <h3 id="tracked-h" class="list-head">
+            <span data-i18n="optionsYourSites">Tracking</span>
+            <span id="tracked-count" class="count"></span>
+          </h3>
+          <div class="cols" aria-hidden="true">
+            <span data-i18n="optionsColSite">Site</span>
+            <span data-i18n="optionsColToday">Today</span>
+            <span data-i18n="optionsColLimit">Daily limit</span>
+            <span></span>
+          </div>
+          <ul id="tracked-sites" class="list" aria-labelledby="tracked-h"></ul>
+          <p id="tracked-empty" class="empty" hidden data-i18n="optionsTrackedEmpty">
+            No sites yet. Add one above, or pick from the suggestions below.
+          </p>
 
-      <h2 data-i18n="optionsSuggested">Suggested</h2>
-      <ul id="suggested" class="list"></ul>
+          <div class="list-head suggest-head">
+            <h3 id="suggested-h" data-i18n="optionsSuggested">Suggested</h3>
+            <button id="enable-suggested" type="button" class="btn" data-i18n="optionsEnableAll">
+              Track all suggested
+            </button>
+          </div>
+          <ul id="suggested" class="chips" aria-labelledby="suggested-h"></ul>
+          <p id="suggested-empty" class="empty" hidden data-i18n="optionsSuggestedEmpty">
+            You're tracking every suggested site.
+          </p>
+        </div>
+      </section>
 
-      <h2 data-i18n="optionsAddHeading">Add a site</h2>
-      <form id="add-form" class="addrow">
-        <input
-          id="add-input"
-          type="text"
-          placeholder="example.com"
-          aria-label="Site to track"
-          data-i18n-attr="placeholder=optionsAddPlaceholder;aria-label=optionsAddAria"
-        />
-        <button class="btn" type="submit" data-i18n="optionsAddButton">Add</button>
-      </form>
+      <!-- Limits ----------------------------------------------------------- -->
+      <section class="section" aria-labelledby="limits-h">
+        <div class="section-head">
+          <h2 id="limits-h" data-i18n="optionsLimitsHeading">Daily limits</h2>
+          <p data-i18n="optionsLimitsHelp">
+            When a limit is reached, the site is covered by a full-page block. You can snooze it 5 minutes at a time.
+          </p>
+        </div>
+        <div class="section-body">
+          <div class="setting setting-limit">
+            <div class="setting-text">
+              <span class="setting-label" data-i18n="optionsGlobalLimit">All tracked sites combined</span>
+              <p class="setting-help" data-i18n="optionsGlobalHelp">One budget shared by every site.</p>
+            </div>
+            <div class="setting-control">
+              <span id="global-limit-saved" class="saved" role="status"></span>
+              <div id="global-limit"></div>
+            </div>
+          </div>
+          <p class="setting-help" data-i18n="optionsPerSiteHint">Set a limit for one site in the Sites list above.</p>
+        </div>
+      </section>
 
-      <h2 id="custom-h" hidden data-i18n="optionsYourSites">Your sites</h2>
-      <ul id="custom" class="list"></ul>
+      <!-- Overlay ---------------------------------------------------------- -->
+      <section class="section" aria-labelledby="overlay-h">
+        <div class="section-head">
+          <h2 id="overlay-h" data-i18n="optionsOverlayHeading">On-page timer</h2>
+          <p data-i18n="optionsOverlayHelp">A small timer at the top of tracked pages. Click it to switch views.</p>
+        </div>
+        <div class="section-body">
+          <div class="setting">
+            <div class="setting-text">
+              <span id="overlay-switch-label" class="setting-label" data-i18n="overlaySwitchLabel">
+                Show timer on the page
+              </span>
+            </div>
+            <span class="minutes">
+              <span id="overlay-saved" class="saved" role="status"></span>
+              <button
+                id="overlay-switch"
+                type="button"
+                class="switch"
+                role="switch"
+                aria-checked="true"
+                aria-labelledby="overlay-switch-label"
+              ></button>
+            </span>
+          </div>
+          <fieldset id="overlay-size" class="setting segmented-wrap">
+            <legend class="setting-label" data-i18n="optionsOverlaySize">Size</legend>
+            <div class="segmented">
+              <label
+                ><input type="radio" name="overlay-size" value="0.5" /><span data-i18n="sizeSmall">Small</span></label
+              >
+              <label
+                ><input type="radio" name="overlay-size" value="0.75" /><span data-i18n="sizeMedium"
+                  >Medium</span
+                ></label
+              >
+              <label
+                ><input type="radio" name="overlay-size" value="1" /><span data-i18n="sizeLarge">Large</span></label
+              >
+            </div>
+          </fieldset>
+        </div>
+      </section>
+
+      <!-- Privacy ---------------------------------------------------------- -->
+      <section class="section" aria-labelledby="privacy-h">
+        <div class="section-head">
+          <h2 id="privacy-h" data-i18n="optionsPrivacyHeading">Privacy</h2>
+        </div>
+        <div class="section-body">
+          <p class="prose" data-i18n="optionsPrivacyBody">
+            Everything Tab Timer records stays in this browser. Nothing is sent anywhere: no accounts, no analytics, no
+            servers.
+          </p>
+          <p class="links">
+            <a
+              id="privacy-link"
+              href="https://github.com/corygabrielsen/tabtimer/blob/master/PRIVACY.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="optionsPrivacyLink"
+              >Privacy policy</a
+            >
+            <a
+              id="source-link"
+              href="https://github.com/corygabrielsen/tabtimer"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-i18n="optionsSourceLink"
+              >Source code</a
+            >
+          </p>
+        </div>
+      </section>
     </main>
     <script type="module" src="/src/options.ts"></script>
   </body>

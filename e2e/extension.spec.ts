@@ -33,9 +33,45 @@ test('loads: service worker alive and options page renders', async ({ context, s
   const page = await context.newPage()
   await page.goto(`chrome-extension://${extensionId}/options.html`)
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
-  await expect(page.getByRole('spinbutton', { name: 'All tracked sites' })).toBeVisible()
-  // The fixture hosts are granted, so they list as enabled custom sites.
-  await expect(page.locator('#custom')).toContainText(SITE_A)
+  await expect(page.getByRole('radiogroup', { name: 'All tracked sites combined' })).toBeVisible()
+  // The fixture hosts are granted, so they list as tracked sites.
+  await expect(page.locator('#tracked-sites')).toContainText(SITE_A)
+})
+
+test('limits set from the options page: a preset chip and a custom value', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage()
+  await page.goto(`chrome-extension://${extensionId}/options.html`)
+
+  // All-sites cap: one tap on a preset saves it.
+  const cap = page.getByRole('radiogroup', { name: 'All tracked sites combined' })
+  await cap.getByRole('radio', { name: '2 h' }).click()
+  await expect(cap.getByRole('radio', { name: '2 h' })).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(() => read(serviceWorker, LIMITS_KEY)).toEqual({ global: 120 * MINUTE, perSite: {} })
+
+  // Per-site: expand the row, pick Custom, type minutes, Enter.
+  await page.getByRole('button', { name: `Daily limit for ${SITE_A}: Off` }).click()
+  const picker = page.getByRole('radiogroup', { name: `Daily limit for ${SITE_A}` })
+  await picker.getByRole('radio', { name: 'Custom' }).click()
+  await page.getByRole('textbox', { name: `Custom daily limit for ${SITE_A}, in minutes` }).fill('50')
+  await page.keyboard.press('Enter')
+  await expect(picker.getByRole('radio', { name: 'Custom: 50 min' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('button', { name: `Daily limit for ${SITE_A}: 50 min` })).toHaveText('50m')
+  await expect
+    .poll(() => read(serviceWorker, LIMITS_KEY))
+    .toEqual({ global: 120 * MINUTE, perSite: { [SITE_A]: 50 * MINUTE } })
+
+  // Arrow keys move and select; the value saves once the keys settle.
+  await picker.getByRole('radio', { name: 'Custom: 50 min' }).focus()
+  await page.keyboard.press('Home')
+  await page.keyboard.press('ArrowRight')
+  await expect(picker.getByRole('radio', { name: '15 min' })).toBeFocused()
+  await expect
+    .poll(() => read(serviceWorker, LIMITS_KEY))
+    .toEqual({ global: 120 * MINUTE, perSite: { [SITE_A]: 15 * MINUTE } })
 })
 
 test('tracked site shows the overlay and its time increases', async ({ context, serviceWorker, site }) => {
