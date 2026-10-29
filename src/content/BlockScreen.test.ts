@@ -4,21 +4,26 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import { bus } from '../chrome/bus'
-import { SNOOZE_MS, type Limits } from '../core/limits'
+import { SNOOZE_MS } from '../core/limits'
 import { LIMITS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
-import { click, flush, text, trackShadowRoots } from '../test/dom'
-import { disposeTrackers, minutes, seedToday, startBackground, trackTracker, useClock } from '../test/content'
+import { click, flush, normText, trackShadowRoots } from '../test/dom'
+import {
+  disposeTrackers,
+  isBlocked,
+  minutes,
+  seedLimits,
+  seedToday,
+  startBackground,
+  trackTracker,
+  useClock,
+} from '../test/content'
 
 const NOON = new Date(2026, 5, 10, 12, 0, 0)
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
 const blockers: BlockScreen[] = []
-
-function limits(l: Partial<Limits>): void {
-  browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: {}, ...l } })
-}
 
 function logged(host: string, ms: number): void {
   seedToday({ [host]: ms })
@@ -34,7 +39,6 @@ async function mount(): Promise<BlockScreen> {
 }
 
 const host = () => document.getElementById('tabtimer-block')!
-const isBlocked = () => host().style.getPropertyValue('display') === 'block'
 const screen = () => shadowOf('tabtimer-block')
 const snoozeButton = () => screen().querySelector<HTMLButtonElement>('.snooze')
 
@@ -72,24 +76,24 @@ describe('deciding to block', () => {
   })
 
   it('stays out of the way under the per-site limit', async () => {
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(29))
     await mount()
     expect(isBlocked()).toBe(false)
   })
 
   it('blocks once today’s time reaches the per-site limit', async () => {
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(30))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(text(screen(), '.title')).toBe("Time's up")
-    expect(text(screen(), '.host')).toBe('reddit.com')
-    expect(text(screen(), '.detail')).toBe('00:30:00 today · 00:30:00 limit')
+    expect(normText(screen().querySelector('.title'))).toBe("Time's up")
+    expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
+    expect(normText(screen().querySelector('.detail'))).toBe('00:30:00 today · 00:30:00 limit')
   })
 
   it('counts this tab’s not-yet-reported time toward the limit', async () => {
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(30) - 5000)
     const blocker = await mount()
     expect(isBlocked()).toBe(false)
@@ -99,7 +103,7 @@ describe('deciding to block', () => {
   })
 
   it('ignores another site’s per-site limit', async () => {
-    limits({ perSite: { 'x.com': 1 } })
+    seedLimits({ perSite: { 'x.com': 1 } })
     logged('reddit.com', minutes(60))
     logged('x.com', minutes(60))
     await mount()
@@ -107,18 +111,18 @@ describe('deciding to block', () => {
   })
 
   it('blocks on the global cap summed across all tracked sites', async () => {
-    limits({ global: 60 })
+    seedLimits({ global: 60 })
     logged('reddit.com', minutes(10))
     logged('x.com', minutes(30))
     logged('youtube.com', minutes(20))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(text(screen(), '.host')).toBe('all tracked sites')
-    expect(text(screen(), '.detail')).toBe('01:00:00 today · 01:00:00 limit')
+    expect(normText(screen().querySelector('.host'))).toBe('all tracked sites')
+    expect(normText(screen().querySelector('.detail'))).toBe('01:00:00 today · 01:00:00 limit')
   })
 
   it('does not count earlier days toward the global cap', async () => {
-    limits({ global: 60 })
+    seedLimits({ global: 60 })
     logged('reddit.com', minutes(10))
     seedToday({ 'x.com': minutes(500) }, new Date(2026, 5, 9, 12))
     await mount()
@@ -126,16 +130,16 @@ describe('deciding to block', () => {
   })
 
   it('names the site, not the global cap, when both are exceeded', async () => {
-    limits({ global: 20, perSite: { 'reddit.com': 15 } })
+    seedLimits({ global: 20, perSite: { 'reddit.com': 15 } })
     logged('reddit.com', minutes(16))
     logged('x.com', minutes(10))
     await mount()
-    expect(text(screen(), '.host')).toBe('reddit.com')
-    expect(text(screen(), '.detail')).toBe('00:16:00 today · 00:15:00 limit')
+    expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
+    expect(normText(screen().querySelector('.detail'))).toBe('00:16:00 today · 00:15:00 limit')
   })
 
   it('fails open when limits cannot be read', async () => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(5))
     browser.storage.local.error = 'storage unavailable'
     await mount()
@@ -143,11 +147,11 @@ describe('deciding to block', () => {
   })
 
   it('locks page scrolling only while blocked', async () => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(5))
     await mount()
     expect(document.documentElement.style.getPropertyValue('overflow')).toBe('hidden')
-    limits({ perSite: {} })
+    seedLimits({ perSite: {} })
     await flush()
     expect(isBlocked()).toBe(false)
     expect(document.documentElement.style.getPropertyValue('overflow')).toBe('')
@@ -159,23 +163,23 @@ describe('live re-evaluation', () => {
     logged('reddit.com', minutes(45))
     await mount()
     expect(isBlocked()).toBe(false)
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     await flush()
     expect(isBlocked()).toBe(true)
   })
 
   it('lifts the block when the limit is raised or removed', async () => {
-    limits({ global: 30 })
+    seedLimits({ global: 30 })
     logged('reddit.com', minutes(45))
     await mount()
     expect(isBlocked()).toBe(true)
-    limits({ global: 60 })
+    seedLimits({ global: 60 })
     await flush()
     expect(isBlocked()).toBe(false)
   })
 
   it('lifts the block when today is reset from the popup', async () => {
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(45))
     const blocker = await mount()
     expect(isBlocked()).toBe(true)
@@ -198,13 +202,13 @@ describe('live re-evaluation', () => {
 
 describe('snooze', () => {
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 30 } })
+    seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(30))
   })
 
   it('offers five more minutes, then blocks again', async () => {
     const blocker = await mount()
-    expect(text(screen(), '.snooze')).toBe('5 more minutes')
+    expect(normText(screen().querySelector('.snooze'))).toBe('5 more minutes')
     click(snoozeButton())
     expect(isBlocked()).toBe(false)
     await flush()
@@ -222,13 +226,13 @@ describe('snooze', () => {
   it('applies a snooze taken in another tab', async () => {
     await mount()
     expect(isBlocked()).toBe(true)
-    limits({ perSite: { 'reddit.com': 30 }, snoozeUntil: Date.now() + SNOOZE_MS })
+    seedLimits({ perSite: { 'reddit.com': 30 }, snoozeUntil: Date.now() + SNOOZE_MS })
     await flush()
     expect(isBlocked()).toBe(false)
   })
 
   it('honours a snooze already running when the page loads', async () => {
-    limits({ perSite: { 'reddit.com': 30 }, snoozeUntil: Date.now() + 60_000 })
+    seedLimits({ perSite: { 'reddit.com': 30 }, snoozeUntil: Date.now() + 60_000 })
     await mount()
     expect(isBlocked()).toBe(false)
   })
@@ -236,7 +240,7 @@ describe('snooze', () => {
 
 describe('block screen', () => {
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(2))
   })
 
@@ -279,7 +283,7 @@ describe('block screen', () => {
     expect(document.getElementById('tabtimer-block')).toBeNull()
     expect(document.documentElement.style.getPropertyValue('overflow')).toBe('')
     // No longer reacts to storage changes.
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     await flush()
     expect(document.getElementById('tabtimer-block')).toBeNull()
   })
@@ -392,13 +396,13 @@ describe('block screen', () => {
 
   it('takes the snooze length from SNOOZE_MS', async () => {
     await mount()
-    expect(text(screen(), '.snooze')).toBe(`${SNOOZE_MS / 60_000} more minutes`)
+    expect(normText(screen().querySelector('.snooze'))).toBe(`${SNOOZE_MS / 60_000} more minutes`)
   })
 })
 
 describe('media behind the block screen', () => {
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(2))
   })
 
@@ -447,7 +451,7 @@ describe('fullscreen', () => {
   let exitFullscreen: ReturnType<typeof vi.fn<() => Promise<void>>>
 
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(2))
     fullscreenElement = null
     exitFullscreen = vi.fn(() => {
@@ -501,7 +505,7 @@ describe('page scroll lock', () => {
   const style = () => document.documentElement.style
 
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(2))
   })
 
@@ -537,7 +541,7 @@ describe('page scroll lock', () => {
   })
 
   it('leaves the page’s overflow alone if it never blocked', async () => {
-    limits({ perSite: {} })
+    seedLimits({ perSite: {} })
     style().setProperty('overflow', 'clip')
     const blocker = await mount()
     expect(isBlocked()).toBe(false)
@@ -584,7 +588,7 @@ describe('page scroll lock', () => {
 
 describe('scroll input while blocked', () => {
   beforeEach(() => {
-    limits({ perSite: { 'reddit.com': 1 } })
+    seedLimits({ perSite: { 'reddit.com': 1 } })
     logged('reddit.com', minutes(2))
   })
 

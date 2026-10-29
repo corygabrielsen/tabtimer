@@ -71,15 +71,25 @@ export async function flush(rounds = 200): Promise<void> {
   }
 }
 
-export function text(root: ParentNode, selector: string): string | null {
-  return root.querySelector(selector)?.textContent ?? null
-}
+export const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
+
+// An element's text, whitespace collapsed.
+export const normText = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim()
 
 export function click(el: Element | null | undefined): void {
   if (!el) {
     throw new Error('click target not found')
   }
   ;(el as HTMLElement).click()
+}
+
+// In a limit picker, pick Custom (the last chip), type `value`, then press
+// `key`.
+export function enterCustom(picker: Element | null | undefined, value: string, key = 'Enter'): void {
+  click([...(picker?.querySelectorAll('[role="radio"]') ?? [])].at(-1))
+  const input = picker!.querySelector<HTMLInputElement>('input')!
+  input.value = value
+  input.dispatchEvent(new KeyboardEvent('keydown', { key }))
 }
 
 // Load the <body> of one of the extension's HTML pages into the document.

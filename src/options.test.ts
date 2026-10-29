@@ -3,14 +3,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { SUGGESTED_SITES, originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, loadPageBody } from './test/dom'
+import { $, click, enterCustom, flush, loadPageBody, normText } from './test/dom'
 import { dayEntry, seedToday, startBackground } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
-const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim()
+const text = normText
 
 async function openOptions(): Promise<void> {
   loadPageBody('options.html')
@@ -42,14 +41,6 @@ const todayCell = (host: string) => row(host)?.querySelector<HTMLElement>('[data
 // Suggested sites that aren't tracked yet, as one-tap buttons.
 const chips = () => [...$('suggested').querySelectorAll<HTMLButtonElement>('button')]
 const chip = (host: string) => chips().find((b) => b.dataset.host === host)
-
-// Pick Custom in a picker and type a value, then press `key`.
-function enterCustom(root: Element | null | undefined, value: string, key = 'Enter'): void {
-  click(radios(root).at(-1))
-  const input = root!.querySelector<HTMLInputElement>('input')!
-  input.value = value
-  input.dispatchEvent(new KeyboardEvent('keydown', { key }))
-}
 
 function submitAdd(value: string): Event {
   $<HTMLInputElement>('add-input').value = value

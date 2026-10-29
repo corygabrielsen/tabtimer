@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createLedger, PRUNED_DAY_KEY, type Ledger } from './ledger'
 import { chromeStore } from '../chrome/store'
-import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
+import { normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
 import { normalizeAway, AWAY_KEY, type IdleState, type Span } from '../core/away'
 import { SNOOZE_MS } from '../core/limits'
+import { at, bucketsOf } from '../test/data'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const MIN = 60_000
-const at = (...args: [number, number, number, number?, number?, number?]) => new Date(...args).getTime()
 const NOON = at(2026, 5, 10, 12)
 
 let browser: FakeChrome
@@ -15,14 +15,6 @@ let now: number
 let ledger: Ledger
 
 const data = () => browser.storage.local.data
-const buckets = (byHour: Record<number, number>) => {
-  const b = emptyBuckets()
-  for (const [h, ms] of Object.entries(byHour)) {
-    b[Number(h)] = ms
-  }
-  return b
-}
-
 // The transaction operations, each in a transaction of its own.
 const addElapsed = (site: string, spans: Span[], media = false, on: Ledger = ledger): Promise<number> =>
   on.transaction(async (tx) => {
@@ -42,7 +34,7 @@ describe('credit', () => {
   it('adds time to the site’s hour and returns its total today', async () => {
     await expect(addElapsed('reddit.com', [[NOON - 5000, NOON - 2000]])).resolves.toBe(3000)
     await expect(addElapsed('reddit.com', [[NOON - 2000, NOON]])).resolves.toBe(5000)
-    expect(data()['day:2026-06-10']).toEqual({ 'reddit.com': buckets({ 11: 5000 }) })
+    expect(data()['day:2026-06-10']).toEqual({ 'reddit.com': bucketsOf({ 11: 5000 }) })
   })
 
   it('splits spans at hour boundaries and midnight into each day’s own key', async () => {
@@ -52,14 +44,14 @@ describe('credit', () => {
       [at(2026, 5, 10, 23, 58), at(2026, 5, 11, 0, 2)],
     ])
     expect(total).toBe(2 * MIN)
-    expect(data()['day:2026-06-10']).toEqual({ 'x.com': buckets({ 22: 10 * MIN, 23: 2 * MIN }) })
-    expect(data()['day:2026-06-11']).toEqual({ 'x.com': buckets({ 0: 2 * MIN }) })
+    expect(data()['day:2026-06-10']).toEqual({ 'x.com': bucketsOf({ 22: 10 * MIN, 23: 2 * MIN }) })
+    expect(data()['day:2026-06-11']).toEqual({ 'x.com': bucketsOf({ 0: 2 * MIN }) })
   })
 
   it('keeps every other site’s time', async () => {
     await addElapsed('a.com', [[NOON - 1000, NOON]])
     await addElapsed('b.com', [[NOON - 2000, NOON]])
-    expect(data()['day:2026-06-10']).toEqual({ 'a.com': buckets({ 11: 1000 }), 'b.com': buckets({ 11: 2000 }) })
+    expect(data()['day:2026-06-10']).toEqual({ 'a.com': bucketsOf({ 11: 1000 }), 'b.com': bucketsOf({ 11: 2000 }) })
   })
 
   it('never loses an update when many tabs report at once', async () => {
@@ -67,7 +59,7 @@ describe('credit', () => {
     // writer would lose updates in.
     browser.latency = 3
     const totals = await Promise.all(Array.from({ length: 10 }, () => addElapsed('a.com', [[NOON - 1000, NOON]])))
-    expect(data()['day:2026-06-10']).toEqual({ 'a.com': buckets({ 11: 10_000 }) })
+    expect(data()['day:2026-06-10']).toEqual({ 'a.com': bucketsOf({ 11: 10_000 }) })
     expect(totals.sort((a, b) => a - b)).toEqual(Array.from({ length: 10 }, (_, i) => (i + 1) * 1000))
   })
 
@@ -92,7 +84,7 @@ describe('credit', () => {
 
 describe('retention', () => {
   const seedDays = (...days: string[]) =>
-    browser.storage.local.seed(Object.fromEntries(days.map((d) => [`day:${d}`, { 'a.com': buckets({ 1: 1 }) }])))
+    browser.storage.local.seed(Object.fromEntries(days.map((d) => [`day:${d}`, { 'a.com': bucketsOf({ 1: 1 }) }])))
 
   it('the first write of a new day prunes days older than 30, and only once that day', async () => {
     seedDays('2026-05-11', '2026-05-12', '2026-06-09')
@@ -149,12 +141,12 @@ describe('ensureSchema', () => {
 describe('resetToday', () => {
   it('zeroes one site today, keeping other sites and other days', async () => {
     browser.storage.local.seed({
-      'day:2026-06-09': { 'a.com': buckets({ 3: 100 }) },
-      'day:2026-06-10': { 'a.com': buckets({ 3: 100 }), 'b.com': buckets({ 4: 200 }) },
+      'day:2026-06-09': { 'a.com': bucketsOf({ 3: 100 }) },
+      'day:2026-06-10': { 'a.com': bucketsOf({ 3: 100 }), 'b.com': bucketsOf({ 4: 200 }) },
     })
     await resetToday('a.com')
-    expect(data()['day:2026-06-10']).toEqual({ 'b.com': buckets({ 4: 200 }) })
-    expect(data()['day:2026-06-09']).toEqual({ 'a.com': buckets({ 3: 100 }) })
+    expect(data()['day:2026-06-10']).toEqual({ 'b.com': bucketsOf({ 4: 200 }) })
+    expect(data()['day:2026-06-09']).toEqual({ 'a.com': bucketsOf({ 3: 100 }) })
   })
 
   it('writes nothing for a site with no time today', async () => {
@@ -237,7 +229,7 @@ describe('time away from the computer', () => {
     }
     expect(siteTotal(normalizeDay(day()), 'a.com')).toBe(10 * MIN)
     await setIdleState('idle')
-    expect(day()).toEqual({ 'a.com': buckets({ 11: 5 * MIN }) })
+    expect(day()).toEqual({ 'a.com': bucketsOf({ 11: 5 * MIN }) })
     // Late reports from inside the idle period are trimmed too.
     now = NOON + 10_000
     await expect(addElapsed('a.com', [[NOON - 20_000, now]])).resolves.toBe(5 * MIN)
@@ -252,7 +244,7 @@ describe('time away from the computer', () => {
     now = NOON + MIN
     await addElapsed('video.com', [[NOON, now]], true)
     await addElapsed('news.com', [[NOON, now]], false)
-    expect(day()).toEqual({ 'video.com': buckets({ 11: MIN, 12: MIN }), 'news.com': buckets({}) })
+    expect(day()).toEqual({ 'video.com': bucketsOf({ 11: MIN, 12: MIN }), 'news.com': bucketsOf({}) })
     // A lock pauses even media.
     await setIdleState('locked')
     now = NOON + 2 * MIN
@@ -266,8 +258,8 @@ describe('time away from the computer', () => {
     await addElapsed('a.com', [[midnight - 4 * MIN, now]])
     await setIdleState('idle')
     // Idle since 23:58 on the 10th: two minutes back before midnight, three after.
-    expect(day('2026-06-10')).toEqual({ 'a.com': buckets({ 23: 2 * MIN }) })
-    expect(day('2026-06-11')).toEqual({ 'a.com': buckets({}) })
+    expect(day('2026-06-10')).toEqual({ 'a.com': bucketsOf({ 23: 2 * MIN }) })
+    expect(day('2026-06-11')).toEqual({ 'a.com': bucketsOf({}) })
   })
 
   it('never takes back below zero, nor time reset since it was credited', async () => {
@@ -276,9 +268,9 @@ describe('time away from the computer', () => {
     await addElapsed('b.com', [[NOON - MIN, NOON]])
     await resetToday('a.com')
     await addElapsed('a.com', [[NOON - 1000, NOON]])
-    browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': buckets({ 11: 500 }) } })
+    browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': bucketsOf({ 11: 500 }) } })
     await setIdleState('idle')
-    expect(day()).toEqual({ 'a.com': buckets({ 11: 0 }) })
+    expect(day()).toEqual({ 'a.com': bucketsOf({ 11: 0 }) })
     expect(away().recent).toEqual([])
   })
 

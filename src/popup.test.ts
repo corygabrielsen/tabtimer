@@ -3,16 +3,15 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
-import { click, flush, loadPageBody } from './test/dom'
+import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
 import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 
 let browser: FakeChrome
 const MIN = 60_000
 
-const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 const visibleSection = () => ['tracked', 'enable', 'untracked', 'loading'].filter((id) => !$(id).hasAttribute('hidden'))
 const face = () => $('hero').getAttribute('data-state')
-const text = (id: string) => $(id).textContent?.replace(/\s+/g, ' ').trim()
+const text = (id: string) => normText($(id))
 
 // Open the popup: load its markup, run popup.ts, fire DOMContentLoaded at
 // this instance only (earlier tests' instances must not re-run).
@@ -36,11 +35,7 @@ const limitChip = (label: string) => limitChips().find((c) => c.textContent === 
 const checkedChip = () => limitChips().find((c) => c.getAttribute('aria-checked') === 'true')
 const customField = () => $<HTMLInputElement>('site-limit-custom')
 
-function enterCustom(value: string, key = 'Enter'): void {
-  click(limitChip('Custom') ?? limitChips().at(-1))
-  customField().value = value
-  customField().dispatchEvent(new KeyboardEvent('keydown', { key }))
-}
+const enterCustom = (value: string, key = 'Enter') => enterCustomIn($('site-limit'), value, key)
 
 const storedLimits = () => browser.storage.local.data[LIMITS_KEY]
 
