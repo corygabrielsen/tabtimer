@@ -16,6 +16,12 @@ afterEach(() => {
   vi.restoreAllMocks()
   if (typeof document !== 'undefined') {
     document.body.replaceChildren()
+    // The content UI mounts on <html>, beside <body>.
+    for (const el of [...document.documentElement.children]) {
+      if (el !== document.head && el !== document.body) {
+        el.remove()
+      }
+    }
     document.documentElement.removeAttribute('style')
   }
 })

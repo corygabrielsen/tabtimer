@@ -141,6 +141,33 @@ test('tracked site shows the overlay and its time increases', async ({ context, 
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
 })
 
+test('the overlay stays pinned to the top of the viewport under a page transform', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 65_000 }))
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/scroll-document'))
+  await expect.poll(async () => seconds(await shadowText(page, OVERLAY_ID))).toBeGreaterThanOrEqual(65)
+
+  // As smooth-scroll libraries and filter-based dark modes do.
+  await page.evaluate(() => {
+    document.documentElement.style.transform = 'translateZ(0)'
+    document.body.style.filter = 'invert(1)'
+    window.scrollTo(0, 2000)
+  })
+  const { width } = page.viewportSize()!
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ([id, x]) => [document.getElementById(id)!.getBoundingClientRect().top, document.elementFromPoint(x, 2)?.id],
+        [OVERLAY_ID, width / 2] as const
+      )
+    )
+    .toEqual([0, OVERLAY_ID])
+})
+
 test('per-site limit blocks and names the site', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 } },

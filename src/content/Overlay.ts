@@ -129,6 +129,7 @@ const STYLES = `
 export default class Overlay {
   private host: HTMLDivElement
   private shadow: ShadowRoot
+  private attach: () => boolean
   private mount: HTMLDivElement
   private expanded = false
   // Hidden until the service worker sends the preferences.
@@ -147,10 +148,12 @@ export default class Overlay {
     private tracker: Pick<FocusTracker, 'readElapsed' | 'onState' | 'prefs'>,
     private bus: Bus = chromeBus
   ) {
-    const { host, shadow } = mountShadowHost(HOST_ID, STYLES)
+    const { host, shadow, attach } = mountShadowHost(HOST_ID, STYLES)
     this.host = host
     this.shadow = shadow
+    this.attach = attach
     this.applyHostStyles()
+    this.raise()
     this.mount = h('div', { class: 'widget' })
     this.shadow.append(this.mount)
 
@@ -185,16 +188,42 @@ export default class Overlay {
 
   private applyHostStyles() {
     // Structural styles only, marked important so page rules can't dislodge the
-    // widget; everything visual is handled inside the shadow root.
+    // widget; everything visual is handled inside the shadow root. A manual
+    // popover, in the top layer: a transform or filter the page puts on <html>
+    // or <body> can't become its containing block and move it. The rest
+    // undoes the browser's popover box.
+    this.host.popover = 'manual'
     const s = this.host.style
+    for (const [prop, value] of [
+      ['inset', 'auto'],
+      ['margin', '0'],
+      ['padding', '0'],
+      ['border', '0'],
+      ['background', 'transparent'],
+      ['overflow', 'visible'],
+    ] as const) {
+      s.setProperty(prop, value, 'important')
+    }
     s.setProperty('top', '0', 'important')
     s.setProperty('left', '50%', 'important')
     s.setProperty('transform-origin', 'top center', 'important')
     this.applyScale()
   }
 
+  // Into the top layer; again after the page took the host off.
+  private raise() {
+    try {
+      this.host.showPopover()
+    } catch {
+      // Already showing, or popovers unsupported: it stays a fixed element.
+    }
+  }
+
   // Draw the current times: in place when only they changed.
   render() {
+    if (this.attach()) {
+      this.raise()
+    }
     if (this.hidden) {
       this.timeElements.clear()
       this.mount.replaceChildren()

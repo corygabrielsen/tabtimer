@@ -321,3 +321,120 @@ test('is fully opaque over a bright page, in light and dark', async ({ context, 
   await page.emulateMedia({ colorScheme: 'dark' })
   expect(await brightest()).toBe(0)
 })
+
+// The id of the element on top at (x, y): a host's, for anything in its
+// closed shadow root.
+const topId = (page: Page, x = 5, y = 5) =>
+  page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [x, y] as const)
+
+test('survives the page replacing <body> or removing it', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A, '/interactive'))
+
+  // A Turbo-style navigation: a whole new <body>.
+  await page.evaluate(() => document.body.replaceWith(document.createElement('body')))
+  await expect.poll(() => topId(page)).toBe(BLOCK_ID)
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+
+  // The page removes the block screen itself: back, on top, within a tick.
+  await page.evaluate((id) => document.getElementById(id)!.remove(), BLOCK_ID)
+  await expect.poll(() => topId(page)).toBe(BLOCK_ID)
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+
+  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+})
+
+test('keeps a <body> the page swaps in from scrolling', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A, '/scroll-body'))
+  await page.evaluate(() => {
+    const body = document.createElement('body')
+    body.innerHTML = document.body.innerHTML
+    document.body.replaceWith(body)
+  })
+  await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden')
+  const blocked = await scrollState(page)
+  await tryToScroll(page)
+  expect((await scrollState(page)).body).toEqual(blocked.body)
+
+  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+  expect(await page.evaluate(() => document.body.getAttribute('style') ?? '')).toBe('')
+})
+
+test('stays on top of a dialog or popover the page opens over it', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A, '/interactive'))
+  const { width, height } = page.viewportSize()!
+
+  // A timed sign-up modal.
+  const button = await page.evaluate(() => {
+    const dialog = document.createElement('dialog')
+    const button = dialog.appendChild(document.createElement('button'))
+    button.textContent = 'page dialog'
+    button.addEventListener('click', () => (window as unknown as { pageClicks: number }).pageClicks++)
+    document.body.append(dialog)
+    dialog.showModal()
+    const r = button.getBoundingClientRect()
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 }
+  })
+  await expect.poll(() => topId(page, button.x, button.y)).toBe(BLOCK_ID)
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  await page.mouse.click(button.x, button.y)
+  expect(await page.evaluate(() => (window as unknown as { pageClicks: number }).pageClicks)).toBe(0)
+
+  // Popovers, in the document and in a shadow root (no toggle event reaches
+  // the document from there).
+  for (const inShadow of [false, true]) {
+    await page.evaluate((inShadow) => {
+      const popover = document.createElement('div')
+      popover.popover = 'manual'
+      popover.style.cssText = 'inset:0;width:100vw;height:100vh;margin:0;background:#fff'
+      const parent = inShadow
+        ? document.body.appendChild(document.createElement('div')).attachShadow({ mode: 'open' })
+        : document.body
+      parent.append(popover)
+      popover.showPopover()
+    }, inShadow)
+    await expect.poll(() => topId(page, width / 2, height - 5)).toBe(BLOCK_ID)
+  }
+
+  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+})
+
+test('pauses media in shadow roots and same-origin frames', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/interactive'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  type Players = { players: HTMLAudioElement[] }
+  await page.evaluate(async () => {
+    const player = (parent: ParentNode) => {
+      const audio = document.createElement('audio')
+      audio.src = `${location.origin}/silence.wav`
+      audio.loop = true
+      parent.append(audio)
+      return audio
+    }
+    const shadow = (mode: ShadowRootMode) =>
+      document.body.appendChild(document.createElement('div')).attachShadow({ mode })
+    const frame = document.body.appendChild(document.createElement('iframe'))
+    const players = [player(shadow('open')), player(shadow('closed')), player(frame.contentDocument!.body)]
+    ;(window as unknown as Players).players = players
+    await Promise.all(players.map((p) => p.play()))
+  })
+  const paused = () => page.evaluate(() => (window as unknown as Players).players.map((p) => p.paused))
+  expect(await paused()).toEqual([false, false, false])
+
+  await seed(serviceWorker, BLOCKING)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  await expect.poll(paused).toEqual([true, true, true])
+
+  // The page's own script tries to resume them.
+  await page.evaluate(() => (window as unknown as Players).players.forEach((p) => void p.play().catch(() => {})))
+  await page.waitForTimeout(300)
+  expect(await paused()).toEqual([true, true, true])
+})
