@@ -33,6 +33,10 @@ Counts your active time on chosen sites and blocks them when you reach your dail
   when the screen locks. Time spent away is not counted (unless audio or video
   is playing on the tracked site while idle). Only the active/idle/locked state
   is read, locally; it is never transmitted.
+- **alarms** — Save the active time counted so far once a minute, only while a
+  tracked page is in use, so it stays exact when Chrome suspends the extension
+  in the background and at most a minute is lost if the browser crashes. The
+  alarm carries no data and reads nothing.
 - **optional host access** — No host access is requested at install. When the
   user enables a site (from the popup or the options page), the extension
   requests access to just that origin; grants are per-site and revocable. The

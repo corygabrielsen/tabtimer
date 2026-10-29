@@ -4,6 +4,19 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-10-28
+
+### Changed
+
+- Counting is now managed in one place for the whole browser, so it stays
+  exact across windows: with two windows open side by side, only the one
+  you're using counts, never both at once.
+- Time stays exact after the browser suspends the extension in the
+  background, and if the browser crashes, at most a minute is lost.
+- Tab Timer now uses Chrome's alarms (the `alarms` permission) to save time
+  once a minute while a tracked page is in use. This adds no install or
+  update prompt.
+
 ## [1.4.0] - 2026-10-28
 
 ### Changed
@@ -150,6 +163,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.5.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.2.1...v1.2.2
