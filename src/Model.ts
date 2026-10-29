@@ -17,6 +17,9 @@ export default class Model {
   private countupTimer: Timer
   private focusTimer: Timer
   private started: boolean = false
+  // Local midnight that starts the day this tab is accounting to, and the
+  // next one (when it rolls over).
+  private day: Date
   private resetTimersAtTime: Date
   // Focus elapsed last successfully reported to the background writer.
   private previousStorageUpdateElapsedValue: number = 0
@@ -34,6 +37,7 @@ export default class Model {
     this.countupTimer = new Timer(TimerType.COUNTUP, 1000, () => ({}), Infinity)
     this.focusTimer = new Timer(TimerType.FOCUS, 1000, this.reportElapsed)
     this.host = window.location.hostname
+    this.day = startOfDay(new Date())
     this.resetTimersAtTime = this.getResetTime()
   }
 
@@ -46,7 +50,7 @@ export default class Model {
   }
 
   isResetTime(): boolean {
-    return new Date() > this.resetTimersAtTime
+    return new Date() >= this.resetTimersAtTime
   }
 
   start() {
@@ -82,18 +86,25 @@ export default class Model {
     // doesn't grow without bound (one new key per tracked site per day).
     this.pruneOldKeys()
 
-    const millisecondsUntilResetTime = this.resetTimersAtTime.getTime() - new Date().getTime()
+    this.scheduleRollover()
+  }
 
+  // The key this tab's focus time is credited to: the day it is accounting
+  // for, which only advances when the rollover is noticed.
+  getTodayKey(): string {
+    return todayKeyForHost(this.host, this.day)
+  }
+
+  private scheduleRollover(): void {
     if (this.resetTimeoutId !== null) {
       clearTimeout(this.resetTimeoutId)
     }
     this.resetTimeoutId = setTimeout(() => {
-      this.reset()
-    }, millisecondsUntilResetTime)
-  }
-
-  getTodayKey(): string {
-    return todayKeyForHost(this.host)
+      // Credit the focus time since the last tick first (its callback rolls
+      // the day over), so the old day keeps its final partial second.
+      this.focusTimer.tick()
+      this.maybeRollover()
+    }, this.resetTimersAtTime.getTime() - Date.now())
   }
 
   // Fallback rollover: the daily reset is normally driven by a setTimeout,
@@ -102,17 +113,36 @@ export default class Model {
   // on the hot paths so the day still rolls over. Returns true if it reset.
   private maybeRollover(): boolean {
     if (this.isResetTime()) {
-      this.reset()
+      this.rollover()
       return true
     }
     return false
   }
 
+  // Start a new day. Stored totals are keyed by date, so the new day's key
+  // needs no reset; other tabs may already have logged time to it after
+  // 00:00, and zeroing it here would erase that. Only this tab's local
+  // baselines restart. Time accrued but not yet reported still belongs to
+  // the old day, so it is sent to the old day's key rather than dropped.
+  private rollover(): void {
+    const oldKey = this.getTodayKey()
+    const unreported = this.elapsedFocusTime() - this.previousStorageUpdateElapsedValue
+    // Advance the boundary before resetting the timers: stopping the focus
+    // timer runs reportElapsed, which re-checks maybeRollover().
+    this.day = startOfDay(new Date())
+    this.resetTimersAtTime = this.getResetTime()
+    if (unreported > 0) {
+      void sendMessage({ type: 'addElapsed', key: oldKey, delta: unreported }).catch(() => undefined)
+    }
+    this.resetTimers()
+    this.scheduleRollover()
+  }
+
   // Focus-timer tick callback: throttled to ~10s, reports accrued focus time
   // to the background single-writer.
   reportElapsed = (elapsed: number) => {
-    // If we crossed the reset boundary, reset() has already zeroed today's
-    // key and the timers; the `elapsed` argument is now stale, so bail.
+    // If we crossed the reset boundary, rollover() has already restarted the
+    // timers; the `elapsed` argument is now stale, so bail.
     if (this.maybeRollover()) {
       return
     }
@@ -233,22 +263,12 @@ export default class Model {
     this.previousStorageUpdateTime = new Date(0)
   }
 
+  // Zero today's total: this tab's timers and the stored counter.
   reset(): void {
-    // Advance the boundary first. Resetting the timers stops the focus timer,
-    // whose tick callback (reportElapsed) re-checks maybeRollover(); with the
-    // old boundary still in place that re-entered reset() until the stack
-    // overflowed whenever the rollover was noticed after midnight.
-    this.resetTimersAtTime = this.getResetTime()
+    // Roll over first if due, so the reset applies to the current day.
+    this.maybeRollover()
     this.resetTimers()
     void this.resetStorageValues()
-
-    if (this.resetTimeoutId !== null) {
-      clearTimeout(this.resetTimeoutId)
-    }
-    const millisecondsUntilResetTime = this.resetTimersAtTime.getTime() - new Date().getTime()
-    this.resetTimeoutId = setTimeout(() => {
-      this.reset()
-    }, millisecondsUntilResetTime)
   }
 
   handleBlur = () => {
@@ -283,4 +303,8 @@ export default class Model {
       this.resetTimers()
     }
   }
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }

@@ -242,8 +242,7 @@ describe('resets', () => {
     expect(await today(model)).toBeLessThanOrEqual(seconds(5))
   })
 
-  // Reaches the rollover through the late path, so it also depends on B8.
-  it.fails('B2: midnight rollover keeps time other tabs logged after 00:00', async () => {
+  it('B2: midnight rollover keeps time other tabs logged after 00:00', async () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 0, 0))
     const model = started()
     await vi.advanceTimersByTimeAsync(minutes(1))
@@ -254,6 +253,15 @@ describe('resets', () => {
     await model.readElapsed()
     await flush()
     expect(storedToday()).toBe(minutes(5))
+  })
+
+  it('B2: credits the old day’s unreported seconds to the old day', async () => {
+    vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 50))
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(15)) // 00:00:05 next day
+    // 23:59:50 → 00:00:00 is the old day's, reported (1s, then 9s) to its key.
+    expect(storedToday('reddit.com', new Date(2026, 5, 10))).toBe(seconds(10))
+    expect(await today(model)).toBe(seconds(5))
   })
 
   it('prunes this site’s past days but keeps today and other sites', async () => {
