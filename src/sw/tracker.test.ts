@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi, type Mock } from 'vitest'
 import { createTracker, type TrackerDeps } from './tracker'
+import { checkpointAlarm, CHECKPOINT_ALARM } from './checkpoint'
 import { createLedger, WORKER_KEY } from './ledger'
 import { chromeStore } from '../chrome/store'
 import { bus } from '../chrome/bus'
@@ -25,7 +26,7 @@ let alarm: ReturnType<typeof vi.fn<TrackerDeps['alarm']>>
 
 // A fresh worker on the same storage: what the browser starts after it
 // stopped the previous one.
-function worker() {
+function worker(alarmDep: TrackerDeps['alarm'] = alarm) {
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), { now: () => now })
   return createTracker({
     ledger,
@@ -33,7 +34,7 @@ function worker() {
       sent.push([tabId, doc, push])
       return replies.has(tabId) ? Promise.resolve(replies.get(tabId)) : Promise.reject(new Error('no page'))
     },
-    alarm,
+    alarm: alarmDep,
   })
 }
 
@@ -129,6 +130,73 @@ describe('restart', () => {
     alarm.mockClear()
     await worker().resume()
     expect(alarm).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('the checkpoint alarm under events in quick succession', () => {
+  // chrome.alarms, a moment per call: overlapping events interleave.
+  function slowAlarms() {
+    const slow = <A extends unknown[], R>(method: Mock<(...args: A) => Promise<R>>) => {
+      const real = method.getMockImplementation()!
+      method.mockImplementation(async (...args) => {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        return real(...args)
+      })
+    }
+    slow(browser.alarms.get)
+    slow(browser.alarms.create)
+    slow(browser.alarms.clear)
+  }
+
+  const running = () => browser.alarmTimers.has(CHECKPOINT_ALARM)
+  const B = { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false }
+
+  async function settled<T>(work: Promise<T>): Promise<T> {
+    await vi.advanceTimersByTimeAsync(50)
+    return work
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOON })
+  })
+
+  afterEach(() => {
+    browser.alarmTimers.forEach(({ timer }) => clearInterval(timer))
+    vi.useRealTimers()
+  })
+
+  it('keeps the alarm when the open interval moves to another window', async () => {
+    const tracker = worker(checkpointAlarm(browser.alarms))
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    slowAlarms()
+    await settled(
+      Promise.all([tracker.dispatch({ kind: 'windowFocus', windowId: 2 }), tracker.presence(2, { ...B, ...SHOWN })])
+    )
+    expect(open()).toMatchObject({ tabId: 2 })
+    expect(running()).toBe(true)
+  })
+
+  it('doesn’t leave it running when an interval opens and closes at once', async () => {
+    const tracker = worker(checkpointAlarm(browser.alarms))
+    slowAlarms()
+    await settled(
+      Promise.all([
+        tracker.presence(1, { ...PAGE, ...SHOWN }),
+        tracker.dispatch({ kind: 'windowFocus', windowId: null }),
+      ])
+    )
+    expect(open()).toBeNull()
+    expect(running()).toBe(false)
+  })
+
+  it('keeps the alarm a restarted browser kept when a page opens as the worker starts', async () => {
+    // Chrome keeps the alarm across a restart; storage.session starts empty.
+    await browser.alarms.create(CHECKPOINT_ALARM, { periodInMinutes: 1 })
+    slowAlarms()
+    const tracker = worker(checkpointAlarm(browser.alarms))
+    await settled(Promise.all([tracker.resume(), tracker.presence(1, { ...PAGE, ...SHOWN })]))
+    expect(open()).toMatchObject({ tabId: 1 })
+    expect(running()).toBe(true)
   })
 })
 
