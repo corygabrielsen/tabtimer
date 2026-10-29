@@ -3,14 +3,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import FocusTracker from './FocusTracker'
 import { TimerState } from './Timer'
-import { todayKeyForHost } from '../storage'
-import { sendMessage } from '../messages'
+import { bus } from '../chrome/bus'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush, setPageState } from '../test/dom'
 import {
+  dayKeyOf,
   disposeTrackers,
   minutes,
   seconds,
+  seedToday,
   startBackground,
   storedToday,
   trackTracker,
@@ -34,9 +35,9 @@ async function today(model: FocusTracker): Promise<number> {
 function addElapsedReports(): number[] {
   const deltas: number[] = []
   browser.runtime.onMessage.addListener((message) => {
-    const m = message as { type: string; delta?: number }
+    const m = message as { type: string; spans?: Array<[number, number]> }
     if (m.type === 'addElapsed') {
-      deltas.push(m.delta!)
+      deltas.push(m.spans!.reduce((total, [start, end]) => total + end - start, 0))
     }
   })
   return deltas
@@ -128,7 +129,7 @@ describe('focus time accrual', () => {
   })
 
   it('adds this tab’s time to what other tabs already logged today', async () => {
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(7) })
+    seedToday({ 'reddit.com': minutes(7) })
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(30))
     expect(await today(model)).toBe(minutes(7) + seconds(30))
@@ -244,9 +245,9 @@ describe('reporting to the background writer', () => {
   })
 
   it('retries loading the global total after a storage failure', async () => {
-    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(3) })
-    const model = started()
+    seedToday({ 'x.com': minutes(3) })
     browser.storage.local.error = 'storage unavailable'
+    const model = started()
     await expect(model.readGlobalToday()).rejects.toThrow('storage unavailable')
     browser.storage.local.error = null
     await expect(model.readGlobalToday()).resolves.toBe(minutes(3))
@@ -293,7 +294,10 @@ describe('resets', () => {
   it('drops in-memory time when today is reset elsewhere (popup)', async () => {
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(25))
-    await sendMessage({ type: 'resetKey', key: todayKeyForHost('reddit.com') })
+    // The popup's reset, from an extension page.
+    browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('popup.html') }
+    await bus.send('resetToday', { site: 'reddit.com' })
+    browser.sender = null
     await flush()
     expect(await today(model)).toBe(0)
     // And it doesn't re-report the stale delta onto the zeroed key.
@@ -302,22 +306,11 @@ describe('resets', () => {
     expect(await today(model)).toBe(seconds(5))
   })
 
-  it('reset zeroes the counters and the stored total', async () => {
-    const model = started()
-    await vi.advanceTimersByTimeAsync(seconds(15))
-    expect(storedToday()).toBeGreaterThan(0)
-    model.reset()
-    await flush()
-    expect(storedToday()).toBe(0)
-    expect(await today(model)).toBe(0)
-    expect((await model.readElapsed()).focus.elapsed).toBe(0)
-  })
-
   it('ignores other keys and other storage areas', async () => {
     const model = started()
     await vi.advanceTimersByTimeAsync(seconds(5))
-    browser.storage.local.seed({ [todayKeyForHost('x.com')]: 0 })
-    browser.storage.onChanged.dispatch({ [todayKeyForHost('reddit.com')]: { newValue: 0 } }, 'sync')
+    seedToday({ 'x.com': 0 })
+    browser.storage.onChanged.dispatch({ [dayKeyOf()]: { oldValue: { 'reddit.com': [5000] }, newValue: {} } }, 'sync')
     expect(await today(model)).toBe(seconds(5))
   })
 
@@ -343,7 +336,7 @@ describe('resets', () => {
     // Jump the wall clock without running timers, as after a suspend.
     vi.setSystemTime(new Date(2026, 5, 11, 7, 0, 0))
     expect(await today(model)).toBe(0)
-    expect(model.getTodayKey()).toBe(todayKeyForHost('reddit.com', new Date(2026, 5, 11)))
+    expect(model.getTodayKey()).toBe(dayKeyOf(new Date(2026, 5, 11)))
   })
 
   it('B8: a midnight timer that fires late still rolls the day over', async () => {
@@ -352,7 +345,8 @@ describe('resets', () => {
     await vi.advanceTimersByTimeAsync(seconds(20))
     vi.setSystemTime(Date.now() + 50) // the timeout will fire 50ms after midnight
     await vi.advanceTimersByTimeAsync(seconds(15))
-    expect(await today(model)).toBeLessThanOrEqual(seconds(5))
+    // Every millisecond since 00:00, now 00:00:05.05, and none before it.
+    expect(await today(model)).toBe(seconds(5) + 50)
   })
 
   it('B2: midnight rollover keeps time other tabs logged after 00:00', async () => {
@@ -362,7 +356,7 @@ describe('resets', () => {
     // Another tab already rolled over and logged 5 minutes into the new day
     // before this (throttled/suspended) tab notices midnight.
     vi.setSystemTime(new Date(2026, 5, 11, 0, 10, 0))
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(5) })
+    seedToday({ 'reddit.com': minutes(5) })
     await model.readElapsed()
     await flush()
     expect(storedToday()).toBe(minutes(5))
@@ -377,13 +371,15 @@ describe('resets', () => {
     expect(await today(model)).toBe(seconds(5))
   })
 
-  it('prunes this site’s past days but keeps today and other sites', async () => {
-    const old = todayKeyForHost('reddit.com', new Date(2026, 5, 1))
-    const otherSiteOld = todayKeyForHost('x.com', new Date(2026, 5, 1))
-    const todayKey = todayKeyForHost('reddit.com')
-    browser.storage.local.seed({ [old]: 1, [otherSiteOld]: 2, [todayKey]: 3, tabtimer_limits: { global: 1 } })
-    started()
-    await flush()
-    expect(Object.keys(browser.storage.local.data).sort()).toEqual([otherSiteOld, todayKey, 'tabtimer_limits'].sort())
+  it('splits time across midnight by when it was spent, wherever it is in flight', async () => {
+    browser.latency = 100 // reports land well after the tick that sent them
+    vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 58))
+    const model = started()
+    await vi.advanceTimersByTimeAsync(seconds(3)) // 00:00:01
+    model.flush()
+    setPageState({ hidden: true })
+    await vi.advanceTimersByTimeAsync(seconds(10))
+    expect(storedToday('reddit.com', new Date(2026, 5, 10))).toBe(seconds(2))
+    expect(storedToday('reddit.com', new Date(2026, 5, 11))).toBe(seconds(1))
   })
 })

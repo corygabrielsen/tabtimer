@@ -1,18 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
-import { sendMessage, type MessageResponse } from '../messages'
-import { originsForHost } from '../sites'
-
-// Send an arbitrary (possibly malformed) payload, resolving with the response
-// or the lastError message.
-function rawSend(message: unknown): Promise<unknown> {
-  return new Promise((resolve) => {
-    fakeChrome().runtime.sendMessage(message, (response) => {
-      resolve(fakeChrome().runtime.lastError?.message ?? response)
-    })
-  })
-}
+import { bus } from '../chrome/bus'
+import { originsForSite } from '../core/site'
+import { SCHEMA } from '../core/schema'
 
 let browser: FakeChrome
 
@@ -22,67 +13,45 @@ beforeEach(async () => {
   await import('./background')
 })
 
-describe('background single writer', () => {
-  it('adds focus time to a key and returns the new total', async () => {
-    await expect(sendMessage({ type: 'addElapsed', key: 'k', delta: 1500 })).resolves.toEqual({ ok: true, total: 1500 })
-    await expect(sendMessage({ type: 'addElapsed', key: 'k', delta: 500 })).resolves.toEqual({ ok: true, total: 2000 })
-    expect(browser.storage.local.data.k).toBe(2000)
+describe('storage on install and startup', () => {
+  it('clears data from an older storage format, then writes the defaults', async () => {
+    browser.storage.local.seed({
+      focusTimer_elapsed_today_reddit_com_2026_06_10: 5000,
+      tabtimer_limits: { global: 60_000, perSite: {} },
+    })
+    browser.runtime.onInstalled.dispatch({ reason: 'update' })
+    await flush()
+    expect(browser.storage.local.data).toEqual({
+      schema: SCHEMA,
+      limits: { global: null, perSite: {} },
+      prefs: { hidden: false, scale: 1 },
+      snoozeUntil: 0,
+    })
   })
 
-  it('never loses an update when many tabs report at once', async () => {
-    // Slow storage widens the read-modify-write window an unserialized
-    // writer would lose updates in.
-    browser.latency = 3
-    const reports = Array.from({ length: 10 }, () => sendMessage({ type: 'addElapsed', key: 'k', delta: 1000 }))
-    const responses = await Promise.all(reports)
-    expect(browser.storage.local.data.k).toBe(10_000)
-    expect(responses.map((r) => (r.ok ? r.total : -1)).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 10 }, (_, i) => (i + 1) * 1000)
-    )
+  it('keeps data in the current format and prunes expired days on startup', async () => {
+    const today = new Date()
+    const old = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 45, 12)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const oldKey = `day:${old.getFullYear()}-${pad(old.getMonth() + 1)}-${pad(old.getDate())}`
+    browser.storage.local.seed({ schema: SCHEMA, limits: { global: 60_000, perSite: {} }, [oldKey]: {} })
+    browser.runtime.onStartup.dispatch()
+    await flush()
+    expect(browser.storage.local.data).toEqual({ schema: SCHEMA, limits: { global: 60_000, perSite: {} } })
   })
+})
 
-  it.each([
-    { type: 'addElapsed', key: 'k', delta: 0 },
-    { type: 'addElapsed', key: 'k', delta: -5 },
-    { type: 'addElapsed', key: 'k', delta: '5' },
-    { type: 'addElapsed', delta: 5 },
-    { type: 'resetKey' },
-  ])('rejects malformed %j without writing', async (message) => {
-    const response = (await rawSend(message)) as MessageResponse
-    expect(response.ok).toBe(false)
-    expect(browser.storage.local.data).toEqual({})
-  })
-
-  it('resets a key to zero', async () => {
-    browser.storage.local.seed({ k: 9000 })
-    await expect(sendMessage({ type: 'resetKey', key: 'k' })).resolves.toEqual({ ok: true, total: 0 })
-    expect(browser.storage.local.data.k).toBe(0)
-  })
-
-  it('orders a reset after earlier queued additions', async () => {
-    browser.latency = 2
-    const add = sendMessage({ type: 'addElapsed', key: 'k', delta: 1000 })
-    const reset = sendMessage({ type: 'resetKey', key: 'k' })
-    await Promise.all([add, reset])
-    expect(browser.storage.local.data.k).toBe(0)
-  })
-
-  it('reports a storage failure and keeps serving later writes', async () => {
-    browser.storage.local.error = 'QUOTA_BYTES quota exceeded'
-    const failed = await sendMessage({ type: 'addElapsed', key: 'k', delta: 1000 })
-    expect(failed.ok).toBe(false)
-    browser.storage.local.error = null
-    await expect(sendMessage({ type: 'addElapsed', key: 'k', delta: 1000 })).resolves.toEqual({ ok: true, total: 1000 })
-  })
-
-  it('opens the options page on request', async () => {
-    await expect(sendMessage({ type: 'openOptions' })).resolves.toEqual({ ok: true, total: 0 })
+describe('messages', () => {
+  it('serves the contract to this extension', async () => {
+    browser.sender = { id: browser.runtime.id, url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    await expect(bus.send('hello', {})).resolves.toEqual({ ok: true, value: { site: 'reddit.com' } })
+    await expect(bus.send('openOptions', {})).resolves.toEqual({ ok: true, value: null })
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
   })
 
-  it('does not answer unknown messages', async () => {
-    expect(await rawSend({ type: 'mystery' })).toMatch(/port closed/)
-    expect(await rawSend(null)).toMatch(/port closed/)
+  it('refuses other senders', async () => {
+    browser.sender = { id: 'someone-else', url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    await expect(bus.send('hello', {})).resolves.toEqual({ ok: false, error: 'forbidden' })
   })
 })
 
@@ -105,30 +74,30 @@ describe('content-script registration', () => {
   })
 
   it('registers the content script for granted origins on startup', async () => {
-    browser.granted = new Set(originsForHost('reddit.com'))
+    browser.granted = new Set(originsForSite('reddit.com'))
     browser.runtime.onStartup.dispatch()
     await flush()
     expect(registered()).toMatchObject({
       js: ['content.js'],
-      matches: originsForHost('reddit.com'),
+      matches: originsForSite('reddit.com'),
       persistAcrossSessions: true,
     })
   })
 
   it('tracks grants as they are added and removed', async () => {
-    browser.grant(originsForHost('reddit.com'))
+    browser.grant(originsForSite('reddit.com'))
     await flush()
-    expect(registered()?.matches).toEqual(originsForHost('reddit.com'))
+    expect(registered()?.matches).toEqual(originsForSite('reddit.com'))
 
-    browser.grant(originsForHost('x.com'))
+    browser.grant(originsForSite('x.com'))
     await flush()
-    expect(registered()?.matches).toEqual([...originsForHost('reddit.com'), ...originsForHost('x.com')])
+    expect(registered()?.matches).toEqual([...originsForSite('reddit.com'), ...originsForSite('x.com')])
 
-    await browser.permissions.remove({ origins: originsForHost('reddit.com') })
+    await browser.permissions.remove({ origins: originsForSite('reddit.com') })
     await flush()
-    expect(registered()?.matches).toEqual(originsForHost('x.com'))
+    expect(registered()?.matches).toEqual(originsForSite('x.com'))
 
-    await browser.permissions.remove({ origins: originsForHost('x.com') })
+    await browser.permissions.remove({ origins: originsForSite('x.com') })
     await flush()
     expect(registered()).toBeUndefined()
   })

@@ -166,7 +166,7 @@ export class FakeStorageArea {
   }
 }
 
-export type MessageSender = { id?: string; tab?: { id: number } }
+export type MessageSender = { id?: string; url?: string; tab?: { id: number }; frameId?: number }
 export type SendResponse = (response: unknown) => void
 
 export type FakeTab = { id?: number; url?: string; active?: boolean }
@@ -179,11 +179,18 @@ export class FakeChrome {
     onChanged: new FakeEvent<[StorageChanges, AreaName]>(),
     local: undefined as unknown as FakeStorageArea,
     sync: undefined as unknown as FakeStorageArea,
+    session: undefined as unknown as FakeStorageArea,
   }
+
+  // The sender the service worker sees for runtime.sendMessage. By default
+  // it follows the test page's URL: an http(s) page is a content script in
+  // a tab's top frame, anything else an extension page. Set it to override.
+  sender: MessageSender | null = null
 
   readonly runtime = {
     lastError: undefined as { message: string } | undefined,
     id: 'tabtimer-test',
+    getURL: (path: string) => `chrome-extension://tabtimer-test/${path}`,
     onMessage: new FakeEvent<[unknown, MessageSender, SendResponse], boolean | void>(),
     onInstalled: new FakeEvent<[{ reason: string }]>(),
     onStartup: new FakeEvent<[]>(),
@@ -273,6 +280,17 @@ export class FakeChrome {
   constructor() {
     this.storage.local = new FakeStorageArea(this, 'local')
     this.storage.sync = new FakeStorageArea(this, 'sync')
+    this.storage.session = new FakeStorageArea(this, 'session')
+  }
+
+  currentSender(): MessageSender {
+    if (this.sender) {
+      return this.sender
+    }
+    const url = (globalThis as { location?: { href: string } }).location?.href ?? ''
+    return /^https?:/.test(url)
+      ? { id: this.runtime.id, url, tab: { id: 1 }, frameId: 0 }
+      : { id: this.runtime.id, url: this.runtime.getURL('popup.html') }
   }
 
   grant(origins: string[]): void {
@@ -320,7 +338,7 @@ export class FakeChrome {
         const copy = structuredClone(response)
         this.deliver(null, () => callback?.(copy))
       }
-      const results = this.runtime.onMessage.dispatch(payload, { id: this.runtime.id }, sendResponse)
+      const results = this.runtime.onMessage.dispatch(payload, this.currentSender(), sendResponse)
       if (!responded && !results.includes(true)) {
         this.deliver('The message port closed before a response was received.', () => callback?.(undefined))
       }

@@ -1,4 +1,5 @@
-// Pure (no chrome, no DOM); reading and writing limits lives in src/storage.ts.
+// Pure (no chrome, no DOM). Stored under LIMITS_KEY (core/schema.ts); only
+// the service worker writes it, through applyLimit.
 
 // Daily time limits (all values in milliseconds, matching the stored "today"
 // focus totals). null / absent means no limit.
@@ -9,8 +10,6 @@ export type Limits = {
 
 export const DEFAULT_LIMITS: Limits = { global: null, perSite: {} }
 
-export const LIMITS_KEY = 'tabtimer_limits'
-export const BLOCK_SNOOZE_KEY = 'tabtimer_block_snooze_until'
 export const SNOOZE_MS = 5 * 60 * 1000
 
 export type BlockScope = 'site' | 'global'
@@ -34,12 +33,36 @@ export function evaluateLimits(
   return null
 }
 
+const isLimit = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0
+
 export function normalizeLimits(value: unknown): Limits {
   const l = (value ?? {}) as Partial<Limits>
-  return {
-    global: typeof l.global === 'number' && l.global > 0 ? l.global : null,
-    perSite: l.perSite && typeof l.perSite === 'object' ? (l.perSite as Record<string, number>) : {},
+  const perSite: Record<string, number> = {}
+  if (l.perSite && typeof l.perSite === 'object') {
+    for (const [site, ms] of Object.entries(l.perSite)) {
+      if (isLimit(ms)) {
+        perSite[site] = ms
+      }
+    }
   }
+  return { global: isLimit(l.global) ? l.global : null, perSite }
+}
+
+// One limit edit: the all-sites cap, or one site's limit (null = no limit).
+export type LimitEdit = { scope: 'global'; ms: number | null } | { scope: 'site'; site: string; ms: number | null }
+
+// `limits` with one edit applied; every other limit is kept as is.
+export function applyLimit(limits: Limits, edit: LimitEdit): Limits {
+  if (edit.scope === 'global') {
+    return { ...limits, global: edit.ms }
+  }
+  const perSite = { ...limits.perSite }
+  if (edit.ms === null) {
+    delete perSite[edit.site]
+  } else {
+    perSite[edit.site] = edit.ms
+  }
+  return { ...limits, perSite }
 }
 
 export function minutesToMs(minutes: number): number {

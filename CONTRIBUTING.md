@@ -51,7 +51,11 @@ pre-commit install
   user-visible overlay/block behaviour.
 - Tracked sites are chosen at runtime: each is an optional host permission the
   user grants, and the content script is registered for the granted hosts
-  (see `src/sites.ts` and `src/sw/contentScripts.ts`).
+  (see `src/core/site.ts` and `src/sw/contentScripts.ts`). A site is a
+  registrable domain under the Public Suffix List (`tldts`), resolved in the
+  service worker, popup and options page; `content.js` never bundles it.
+- Only the service worker writes `chrome.storage.local`: pages and the content
+  script send typed requests (`src/core/messages.ts`) and read storage directly.
 
 ## Versioning
 

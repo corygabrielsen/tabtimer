@@ -1,18 +1,21 @@
-import {
-  local,
-  todayKeyForHost,
-  HIDDEN_KEY,
-  ELAPSED_KEY_PREFIX,
-  baseHost,
-  readGlobalElapsedToday,
-  readLimits,
-  readSnoozeUntil,
-  setPerSiteLimit,
-} from './storage'
-import { sendMessage } from './messages'
+import { chromeStore } from './chrome/store'
+import { bus } from './chrome/bus'
 import { formatTime } from './format'
-import { originsForHost } from './sites'
-import { msToMinutes, minutesToMs, evaluateLimits, LIMITS_KEY, BLOCK_SNOOZE_KEY, type Limits } from './core/limits'
+import { dayOf } from './core/day'
+import { originsForSite, siteOf } from './core/site'
+import { msToMinutes, minutesToMs, evaluateLimits, normalizeLimits, type Limits } from './core/limits'
+import {
+  dayKey,
+  dayTotal,
+  normalizeDay,
+  normalizePrefs,
+  normalizeSnooze,
+  siteTotal,
+  DAY_KEY_PREFIX,
+  LIMITS_KEY,
+  PREFS_KEY,
+  SNOOZE_KEY,
+} from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, setDocumentLang } from './ui'
 import { createLimitPicker, SITE_PRESETS, type LimitPicker } from './limitPicker'
@@ -159,8 +162,9 @@ function summaryText(
     : t('popupLeftGlobal', [left, formatDuration(meterLimit)])
 }
 
-function renderTracked(tab: ActiveTab, base: string) {
-  const key = todayKeyForHost(tab.hostname)
+const local = chromeStore('local')
+
+function renderTracked(base: string) {
   const siteEl = byId('site')
   if (siteEl) {
     siteEl.textContent = base
@@ -168,16 +172,13 @@ function renderTracked(tab: ActiveTab, base: string) {
   }
 
   const snapshot = async (): Promise<Snapshot> => {
-    const [siteToday, globalToday, limits, snoozeUntil] = await Promise.all([
-      local
-        .get<number>(key)
-        .then((v) => v ?? 0)
-        .catch(() => 0),
-      readGlobalElapsedToday().catch(() => 0),
-      readLimits(),
-      readSnoozeUntil(),
+    const read = (key: string) => local.get(key).catch(() => undefined)
+    const [day, limits, snoozeUntil] = await Promise.all([
+      read(dayKey(dayOf(Date.now()))).then(normalizeDay),
+      read(LIMITS_KEY).then(normalizeLimits),
+      read(SNOOZE_KEY).then(normalizeSnooze),
     ])
-    return { siteToday, globalToday, limits, snoozeUntil }
+    return { siteToday: siteTotal(day, base), globalToday: dayTotal(day), limits, snoozeUntil }
   }
 
   let last: Snapshot | null = null
@@ -206,7 +207,9 @@ function renderTracked(tab: ActiveTab, base: string) {
         fieldLabel: t('limitCustomSiteAria', base),
         value: siteMinutes(limits),
         saved: byId('site-limit-saved'),
-        commit: (minutes) => setPerSiteLimit(base, minutes === null ? null : minutesToMs(minutes)),
+        commit: async (minutes) => {
+          await bus.send('setLimit', { scope: 'site', site: base, ms: minutes === null ? null : minutesToMs(minutes) })
+        },
       })
       mount.replaceWith(picker.el)
       return
@@ -216,19 +219,16 @@ function renderTracked(tab: ActiveTab, base: string) {
 
   // --- overlay switch ---
   const toggleBtn = byId('toggle-btn')
-  const renderToggle = async () => {
-    const hidden = await local
-      .get<boolean>(HIDDEN_KEY)
-      .then((v) => v ?? false)
+  const readHidden = () =>
+    local
+      .get(PREFS_KEY)
+      .then((v) => normalizePrefs(v).hidden)
       .catch(() => false)
-    toggleBtn?.setAttribute('aria-checked', String(!hidden))
+  const renderToggle = async () => {
+    toggleBtn?.setAttribute('aria-checked', String(!(await readHidden())))
   }
   toggleBtn?.addEventListener('click', async () => {
-    const hidden = await local
-      .get<boolean>(HIDDEN_KEY)
-      .then((v) => v ?? false)
-      .catch(() => false)
-    await local.set({ [HIDDEN_KEY]: !hidden }).catch(() => undefined)
+    await bus.send('setPrefs', { hidden: !(await readHidden()) })
     await renderToggle()
   })
 
@@ -255,7 +255,7 @@ function renderTracked(tab: ActiveTab, base: string) {
     if (last) {
       renderFace(base, { ...last, siteToday: 0 }) // optimistic
     }
-    void sendMessage({ type: 'resetKey', key }).catch(() => undefined)
+    void bus.send('resetToday', { site: base })
   })
   resetBtn?.addEventListener('blur', () => {
     window.clearTimeout(disarm)
@@ -266,11 +266,11 @@ function renderTracked(tab: ActiveTab, base: string) {
     if (area !== 'local') {
       return
     }
-    if (changes[HIDDEN_KEY]) {
+    if (changes[PREFS_KEY]) {
       void renderToggle()
     }
     const relevant = Object.keys(changes).some(
-      (k) => k === LIMITS_KEY || k === BLOCK_SNOOZE_KEY || k.startsWith(`${ELAPSED_KEY_PREFIX}_`)
+      (k) => k === LIMITS_KEY || k === SNOOZE_KEY || k.startsWith(DAY_KEY_PREFIX)
     )
     if (relevant) {
       void refresh()
@@ -287,7 +287,7 @@ function renderTracked(tab: ActiveTab, base: string) {
 }
 
 function renderEnable(tab: ActiveTab, base: string) {
-  const origins = originsForHost(base)
+  const origins = originsForSite(base)
   const siteEl = byId('enable-site')
   if (siteEl) {
     siteEl.textContent = base
@@ -305,7 +305,7 @@ function renderEnable(tab: ActiveTab, base: string) {
       }
       // Inject now so tracking starts immediately, without a reload.
       void chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {})
-      renderTracked(tab, base)
+      renderTracked(base)
     })
   })
 }
@@ -321,11 +321,11 @@ async function init() {
     return
   }
 
-  const base = baseHost(tab.hostname)
-  const granted = await chrome.permissions.contains({ origins: originsForHost(base) }).catch(() => false)
+  const base = siteOf(tab.hostname)
+  const granted = await chrome.permissions.contains({ origins: originsForSite(base) }).catch(() => false)
 
   if (granted) {
-    renderTracked(tab, base)
+    renderTracked(base)
   } else {
     renderEnable(tab, base)
   }

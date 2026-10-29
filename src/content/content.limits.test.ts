@@ -6,11 +6,13 @@
 // writer behind the fake chrome.* — only the clock advances; the tracker's
 // single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { LIMITS_KEY, SNOOZE_MS, type Limits } from '../core/limits'
-import { todayKeyForHost } from '../storage'
+import { SNOOZE_MS, type Limits } from '../core/limits'
+import { LIMITS_KEY } from '../core/schema'
+import { dayOf } from '../core/day'
+import { PRUNED_DAY_KEY } from '../sw/ledger'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
-import { minutes, seconds, startBackground, storedToday, useClock } from '../test/content'
+import { minutes, seconds, seedToday, startBackground, storedToday, useClock } from '../test/content'
 
 let browser: FakeChrome
 let shadowOf: (id: string) => ShadowRoot
@@ -57,7 +59,7 @@ describe('time limits end to end', () => {
 
   it('includes time other tabs already spent on the site today', async () => {
     limits({ perSite: { 'reddit.com': minutes(20) } })
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(19) + seconds(50) })
+    seedToday({ 'reddit.com': minutes(19) + seconds(50) })
     await openTab()
     await run(seconds(9))
     expect(blocked()).toBe(false)
@@ -103,10 +105,7 @@ describe('time limits end to end', () => {
 
   it('enforces the global cap across every tracked site', async () => {
     limits({ global: minutes(31) })
-    browser.storage.local.seed({
-      [todayKeyForHost('x.com')]: minutes(20),
-      [todayKeyForHost('youtube.com')]: minutes(10),
-    })
+    seedToday({ 'x.com': minutes(20), 'youtube.com': minutes(10) })
     await openTab()
     await run(seconds(55))
     expect(blocked()).toBe(false)
@@ -163,6 +162,8 @@ describe('per-tab cost', () => {
 
   it('reads totals from storage once, then follows storage.onChanged', async () => {
     limits({ global: minutes(30), perSite: { 'reddit.com': minutes(30) } })
+    // The service worker already pruned today (its once-a-day get(null)).
+    browser.storage.session.seed({ [PRUNED_DAY_KEY]: dayOf(Date.now()) })
     await openTab()
     const get = vi.spyOn(browser.storage.local, 'get')
     await run(minutes(1))
@@ -173,13 +174,13 @@ describe('per-tab cost', () => {
     // Another tab's writes still count: x.com logs 29 minutes, which with
     // this tab's reported minute crosses the cap (the report sent on this
     // very tick may still be in flight, so it isn't counted on).
-    browser.storage.local.seed({ [todayKeyForHost('x.com')]: minutes(29) + seconds(10) })
+    seedToday({ 'x.com': minutes(29) + seconds(10) })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
     // ...as does another reddit tab's.
     limits({ global: null, perSite: { 'reddit.com': minutes(5) } })
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(5) })
+    seedToday({ 'reddit.com': minutes(5) })
     await run(seconds(1))
     expect(blocked()).toBe(true)
     expect(blockScreen().querySelector('.host')?.textContent).toBe('reddit.com')
@@ -189,11 +190,11 @@ describe('per-tab cost', () => {
 
 describe('tick wiring', () => {
   it('skips per-second rendering while the tab is hidden', async () => {
-    browser.storage.local.seed({ [todayKeyForHost('reddit.com')]: minutes(1) })
+    seedToday({ 'reddit.com': minutes(1) })
     await openTab()
     await run(seconds(1))
     setPageState({ hidden: true }, false)
-    browser.storage.local.seed({ [todayKeyForHost('x.com')]: 1 })
+    seedToday({ 'x.com': 1 })
     const before = pillText()
     await run(seconds(5))
     expect(pillText()).toBe(before)

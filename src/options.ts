@@ -1,15 +1,9 @@
-import { SUGGESTED_SITES, originsForHost, hostFromOrigin, normalizeHost } from './sites'
-import { msToMinutes, minutesToMs, LIMITS_KEY, type Limits } from './core/limits'
-import {
-  local,
-  todayKeyForHost,
-  HIDDEN_KEY,
-  SCALE_KEY,
-  ELAPSED_KEY_PREFIX,
-  readLimits,
-  setGlobalLimit,
-  setPerSiteLimit,
-} from './storage'
+import { SUGGESTED_SITES, originsForSite, siteFromOrigin, normalizeSiteInput } from './core/site'
+import { msToMinutes, minutesToMs, normalizeLimits, DEFAULT_LIMITS, type LimitEdit, type Limits } from './core/limits'
+import { dayOf } from './core/day'
+import { dayKey, normalizeDay, normalizePrefs, siteTotal, DAY_KEY_PREFIX, LIMITS_KEY, PREFS_KEY } from './core/schema'
+import { chromeStore } from './chrome/store'
+import { bus } from './chrome/bus'
 import { localizeDom, t } from './i18n'
 import { h, byId, flashSaved, formatDuration, setDocumentLang } from './ui'
 import { createLimitPicker, formatChipMinutes, SITE_PRESETS, GLOBAL_PRESETS, type LimitPicker } from './limitPicker'
@@ -19,23 +13,40 @@ const SIZES = [0.5, 0.75, 1]
 
 function enable(hosts: string[]): Promise<boolean> {
   // Must run during a user gesture — call request first, no awaits before it.
-  return chrome.permissions.request({ origins: hosts.flatMap(originsForHost) }).catch(() => false)
+  return chrome.permissions.request({ origins: hosts.flatMap(originsForSite) }).catch(() => false)
 }
 
 function disable(host: string): Promise<boolean> {
-  return chrome.permissions.remove({ origins: originsForHost(host) }).catch(() => false)
+  return chrome.permissions.remove({ origins: originsForSite(host) }).catch(() => false)
 }
 
 async function grantedHosts(): Promise<Set<string>> {
   const perms = await chrome.permissions.getAll().catch(() => ({ origins: [] as string[] }))
-  return new Set((perms.origins ?? []).map(hostFromOrigin))
+  return new Set((perms.origins ?? []).map(siteFromOrigin))
 }
 
-function readToday(host: string): Promise<number> {
+const local = chromeStore('local')
+
+function readLimits(): Promise<Limits> {
   return local
-    .get<number>(todayKeyForHost(host))
-    .then((v) => v ?? 0)
-    .catch(() => 0)
+    .get(LIMITS_KEY)
+    .then(normalizeLimits)
+    .catch(() => DEFAULT_LIMITS)
+}
+
+// Each site's time today, from the one stored object for today.
+function readTodays(): Promise<(host: string) => number> {
+  return local
+    .get(dayKey(dayOf(Date.now())))
+    .then(normalizeDay)
+    .catch(() => normalizeDay(undefined))
+    .then((day) => (host: string) => siteTotal(day, host))
+}
+
+// Limits change only through the service worker, which applies each edit to
+// the latest stored limits (so edits from here and the popup both survive).
+async function saveLimit(edit: LimitEdit): Promise<void> {
+  await bus.send('setLimit', edit)
 }
 
 // --- Tracked site rows -------------------------------------------------------
@@ -75,7 +86,7 @@ function limitCell(host: string, currentMs: number | undefined): { toggle: HTMLE
     fieldLabel: t('limitCustomSiteAria', host),
     value: toMinutes(currentMs),
     saved,
-    commit: (minutes) => setPerSiteLimit(host, toMs(minutes)),
+    commit: (minutes) => saveLimit({ scope: 'site', site: host, ms: toMs(minutes) }),
     onChange: label,
     onEscape: () => {
       setOpen(false)
@@ -206,7 +217,7 @@ async function render() {
     ...SUGGESTED_SITES.filter((s) => granted.has(s.host)).map((s) => s.host),
     ...[...granted].filter((host) => !LABELS.has(host)).sort(),
   ]
-  const todays = await Promise.all(tracked.map(readToday))
+  const today = await readTodays()
   if (seq !== renderSeq) {
     return
   }
@@ -214,7 +225,7 @@ async function render() {
     openLimitHost = null
   }
   rowLimits.clear()
-  trackedUl.replaceChildren(...tracked.map((host, i) => siteRow(host, limits.perSite[host], todays[i] ?? 0)))
+  trackedUl.replaceChildren(...tracked.map((host) => siteRow(host, limits.perSite[host], today(host))))
   byId('tracked-empty')?.toggleAttribute('hidden', tracked.length > 0)
   const count = byId('tracked-count')
   if (count) {
@@ -233,13 +244,13 @@ async function render() {
 }
 
 async function refreshTodays() {
-  const limits = await readLimits()
+  const [limits, today] = await Promise.all([readLimits(), readTodays()])
   for (const sync of rowLimits.values()) {
     sync(limits)
   }
   for (const el of document.querySelectorAll<HTMLElement>('[data-today-host]')) {
     const host = el.dataset.todayHost ?? ''
-    const ms = await readToday(host)
+    const ms = today(host)
     el.textContent = todayText(ms, limits.perSite[host])
     el.toggleAttribute('data-over', typeof limits.perSite[host] === 'number' && ms >= (limits.perSite[host] ?? 0))
     el.setAttribute('aria-label', t('optionsTodayAria', [host, formatDuration(ms)]))
@@ -267,7 +278,7 @@ function initAddForm() {
   })
   form.addEventListener('submit', (e) => {
     e.preventDefault()
-    const host = normalizeHost(input.value)
+    const host = normalizeSiteInput(input.value)
     if (!host) {
       showError(input.value.trim() ? t('optionsAddInvalid') : t('optionsAddEmpty'))
       input.focus()
@@ -302,7 +313,7 @@ async function initGlobalLimit() {
     fieldLabel: t('limitCustomGlobalAria'),
     value: toMinutes(limits.global),
     saved: byId('global-limit-saved'),
-    commit: (minutes) => setGlobalLimit(toMs(minutes)),
+    commit: (minutes) => saveLimit({ scope: 'global', ms: toMs(minutes) }),
   })
   mount.replaceWith(picker.el)
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -335,29 +346,23 @@ async function initOverlay() {
     }
   }
 
-  const [hidden, scale] = await Promise.all([
-    local
-      .get<boolean>(HIDDEN_KEY)
-      .then((v) => v ?? false)
-      .catch(() => false),
-    local
-      .get<number>(SCALE_KEY)
-      .then((v) => v ?? 1)
-      .catch(() => 1),
-  ])
+  const { hidden, scale } = await local
+    .get(PREFS_KEY)
+    .then(normalizePrefs)
+    .catch(() => normalizePrefs(undefined))
   renderSwitch(hidden)
   renderSize(scale)
 
   sw?.addEventListener('click', async () => {
     const next = sw.getAttribute('aria-checked') === 'true' // checked -> hide
     renderSwitch(next)
-    await local.set({ [HIDDEN_KEY]: next }).catch(() => undefined)
+    await bus.send('setPrefs', { hidden: next })
     flashSaved(saved)
   })
   for (const r of radios) {
     r.addEventListener('change', async () => {
       if (r.checked) {
-        await local.set({ [SCALE_KEY]: Number(r.value) }).catch(() => undefined)
+        await bus.send('setPrefs', { scale: Number(r.value) })
         flashSaved(saved)
       }
     })
@@ -367,11 +372,10 @@ async function initOverlay() {
     if (area !== 'local') {
       return
     }
-    if (changes[HIDDEN_KEY]) {
-      renderSwitch(Boolean(changes[HIDDEN_KEY].newValue))
-    }
-    if (changes[SCALE_KEY]) {
-      renderSize(changes[SCALE_KEY].newValue)
+    if (changes[PREFS_KEY]) {
+      const prefs = normalizePrefs(changes[PREFS_KEY].newValue)
+      renderSwitch(prefs.hidden)
+      renderSize(prefs.scale)
     }
   })
 }
@@ -390,7 +394,7 @@ chrome.permissions.onRemoved.addListener(() => void render())
 // can also flip a row to over.
 chrome.storage.onChanged.addListener((changes, area) => {
   const keys = Object.keys(changes)
-  if (area === 'local' && keys.some((k) => k === LIMITS_KEY || k.startsWith(`${ELAPSED_KEY_PREFIX}_`))) {
+  if (area === 'local' && keys.some((k) => k === LIMITS_KEY || k.startsWith(DAY_KEY_PREFIX))) {
     void refreshTodays()
   }
 })

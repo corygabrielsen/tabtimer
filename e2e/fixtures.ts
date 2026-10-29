@@ -3,12 +3,13 @@ import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test'
 
-const EXTENSION_PATH = path.resolve(import.meta.dirname, '..', 'dist-e2e')
+export const EXTENSION_PATH = path.resolve(import.meta.dirname, '..', 'dist-e2e')
 
-// Mirrors src/storage.ts / src/limits.ts. Kept literal so a schema change
-// that would strand users' stored data also fails these tests.
-export const LIMITS_KEY = 'tabtimer_limits'
-export const SNOOZE_KEY = 'tabtimer_block_snooze_until'
+// Mirrors src/core/schema.ts (schema 2). Kept literal so a change to the
+// storage layout also fails these tests.
+export const SCHEMA_KEY = 'schema'
+export const LIMITS_KEY = 'limits'
+export const SNOOZE_KEY = 'snoozeUntil'
 export const OVERLAY_ID = 'tabtimer-root'
 export const BLOCK_ID = 'tabtimer-block'
 export const MINUTE = 60_000
@@ -91,6 +92,38 @@ function startServer(): Promise<Server> {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
 
+// Chromium with the e2e build loaded, on the profile in `userDataDir` ('' =
+// a fresh temporary one) and the unpacked extension at `extensionPath`.
+export function launch(userDataDir: string, extensionPath = EXTENSION_PATH): Promise<BrowserContext> {
+  return chromium.launchPersistentContext(userDataDir, {
+    channel: 'chromium',
+    // Playwright turns the back/forward cache off by default; the content
+    // script has to cope with it, so keep Chrome's real behaviour.
+    ignoreDefaultArgs: ['--disable-back-forward-cache'],
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      '--host-resolver-rules=MAP *.test 127.0.0.1',
+      // Let fixture media play() without a user gesture.
+      '--autoplay-policy=no-user-gesture-required',
+    ],
+  })
+}
+
+// The extension's service worker, once it has finished starting up: the
+// content script registration comes last (after storage is checked), so the
+// first navigation is already covered.
+export async function extensionWorker(context: BrowserContext): Promise<Worker> {
+  const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
+  await test
+    .expect(async () => {
+      const n = await sw.evaluate(() => chrome.scripting.getRegisteredContentScripts().then((s) => s.length))
+      test.expect(n).toBe(1)
+    })
+    .toPass()
+  return sw
+}
+
 export const test = base.extend<TestFixtures, WorkerFixtures>({
   port: [
     async ({}, use) => {
@@ -103,34 +136,13 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   context: async ({}, use) => {
     // Fresh profile per test: a clean install, empty storage.
-    const context = await chromium.launchPersistentContext('', {
-      channel: 'chromium',
-      // Playwright turns the back/forward cache off by default; the content
-      // script has to cope with it, so keep Chrome's real behaviour.
-      ignoreDefaultArgs: ['--disable-back-forward-cache'],
-      args: [
-        `--disable-extensions-except=${EXTENSION_PATH}`,
-        `--load-extension=${EXTENSION_PATH}`,
-        '--host-resolver-rules=MAP *.test 127.0.0.1',
-        // Let fixture media play() without a user gesture.
-        '--autoplay-policy=no-user-gesture-required',
-      ],
-    })
+    const context = await launch('')
     await use(context)
     await context.close()
   },
 
   serviceWorker: async ({ context }, use) => {
-    const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'))
-    // onInstalled registers the content script asynchronously; wait for it so
-    // the first navigation is already covered.
-    await test
-      .expect(async () => {
-        const n = await sw.evaluate(() => chrome.scripting.getRegisteredContentScripts().then((s) => s.length))
-        test.expect(n).toBe(1)
-      })
-      .toPass()
-    await use(sw)
+    await use(await extensionWorker(context))
   },
 
   extensionId: async ({ serviceWorker }, use) => {
@@ -152,13 +164,52 @@ export function read(sw: Worker, key: string): Promise<unknown> {
   return sw.evaluate((key) => chrome.storage.local.get(key).then((items) => items[key]), key)
 }
 
-// Today's per-site counter key, dated in the browser's local time zone.
-export function todayKey(sw: Worker, host: string): Promise<string> {
-  return sw.evaluate((host) => {
+// Today's usage key (one object for every site), dated in the browser's
+// local time zone.
+export function todayKey(sw: Worker): Promise<string> {
+  return sw.evaluate(() => {
     const d = new Date()
     const pad = (n: number) => String(n).padStart(2, '0')
-    return `focusTimer_elapsed_today_${host}_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-  }, host)
+    return `day:${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  })
+}
+
+// A storage entry for today's usage: each site's time in the current local
+// hour's bucket (of 24), to spread into a seed().
+export async function today(sw: Worker, sites: Record<string, number>): Promise<Record<string, unknown>> {
+  const hour = await sw.evaluate(() => new Date().getHours())
+  const usage = Object.fromEntries(
+    Object.entries(sites).map(([site, ms]) => [site, Array.from({ length: 24 }, (_, h) => (h === hour ? ms : 0))])
+  )
+  return { [await todayKey(sw)]: usage }
+}
+
+// A site's stored time today: the sum of its hourly buckets.
+export async function readToday(sw: Worker, site: string): Promise<number> {
+  const usage = (await read(sw, await todayKey(sw))) as Record<string, number[]> | undefined
+  return (usage?.[site] ?? []).reduce((total, ms) => total + ms, 0)
+}
+
+// The popup acts on the active tab. Opened as a page it would see itself, so
+// point it at the open tab whose URL starts with `url`.
+export async function openPopup(context: BrowserContext, sw: Worker, extensionId: string, url: string): Promise<Page> {
+  const [tab] = await sw.evaluate((url) => chrome.tabs.query({ url }), `${url}*`)
+  const popup = await context.newPage()
+  await popup.addInitScript(
+    ({ id, url }) => {
+      const query = chrome.tabs.query.bind(chrome.tabs)
+      chrome.tabs.query = ((info: chrome.tabs.QueryInfo, callback?: (tabs: chrome.tabs.Tab[]) => void) => {
+        if (info.active && callback) {
+          callback([{ id, url } as chrome.tabs.Tab])
+          return
+        }
+        return query(info, callback as never)
+      }) as typeof chrome.tabs.query
+    },
+    { id: tab!.id!, url: tab!.url! }
+  )
+  await popup.goto(`chrome-extension://${extensionId}/popup.html`)
+  return popup
 }
 
 // The overlay and block screen render into closed shadow roots, which page

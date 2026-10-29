@@ -12,15 +12,20 @@ enable it.
 
 ## What it stores
 
-- Per-site elapsed time for the current day, kept in `chrome.storage.local` on
-  your own browser profile.
-- A single preference for whether the on-page overlay is shown or hidden.
-- Any daily time limits you set (per-site and across all sites), plus the end
-  time of a "5 more minutes" snooze, also in `chrome.storage.local`.
+Everything is kept in `chrome.storage.local` on your own browser profile:
 
-That's all. Tab Timer only reads the **hostname** of the pages it runs on (to
-pick which counter to update). It does not read page content, your browsing
-history, form data, or anything you type.
+- `day:YYYY-MM-DD`: for each day, the active time per tracked site, split into
+  the 24 hours of the day. The last 30 days are kept; older days are deleted
+  automatically.
+- `limits`: any daily time limits you set (per site and across all sites).
+- `prefs`: whether the on-page overlay is shown, and its size.
+- `snoozeUntil`: the end time of a "5 more minutes" snooze.
+- `schema`: the storage format version. Data stored in an older format is
+  deleted once when the extension is updated.
+
+That's all. Tab Timer only reads the **address** of the pages it runs on (to
+pick which site's counter to update). It does not read page content, your
+browsing history, form data, or anything you type.
 
 ## What it does NOT do
 
@@ -33,7 +38,7 @@ history, form data, or anything you type.
 ## Your control
 
 - Use **Reset today** in the popup to clear the current day's count for a site.
-- Past days' counters are pruned automatically on startup.
+- Days older than 30 days are deleted automatically.
 - Uninstalling the extension removes all of its local storage.
 
 ## Contact

@@ -28,6 +28,12 @@ export default class Timer {
     private maxStep: number
   ) {}
 
+  // The wall-clock time measured up to so far: where the next credit starts.
+  // null unless running.
+  get measuredUpTo(): number | null {
+    return this.lastTick
+  }
+
   // Credit the time since the previous measurement, clamped to [0, maxStep].
   // Returns the amount credited (0 unless running).
   tick(now: number = Date.now()): number {

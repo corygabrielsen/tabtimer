@@ -9,7 +9,7 @@ export const OUT_DIR = E2E ? 'dist-e2e' : 'dist'
 
 // Fixture hosts (resolved to the local test server by Chromium's
 // --host-resolver-rules). Granted with the same pattern shape as a user grant
-// (originsForHost in src/sites.ts). untracked.test is deliberately absent.
+// (originsForSite in src/core/site.ts). untracked.test is deliberately absent.
 export const E2E_TRACKED_HOSTS = ['site-a.test', 'site-b.test']
 
 export const E2E_HOST_PERMISSIONS = E2E_TRACKED_HOSTS.flatMap((host) => [`*://${host}/*`, `*://*.${host}/*`])

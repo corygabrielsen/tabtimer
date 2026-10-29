@@ -38,6 +38,11 @@ const manifest = {
 
 export default defineConfig({
   plugins: [crx({ manifest })],
+  resolve: {
+    // tldts's own minified build of the Public Suffix List (~46 KB gzipped).
+    // Its unminified ES modules bundle to more than twice that.
+    alias: [{ find: /^tldts$/, replacement: 'tldts/dist/index.esm.min.js' }],
+  },
   build: {
     outDir: OUT_DIR,
     // No source maps in the shipped package: they publish readable original
