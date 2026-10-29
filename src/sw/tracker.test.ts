@@ -122,8 +122,11 @@ describe('tabState (an extension page asks)', () => {
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 40 * S
     sent = []
+    const told = await tracker.presence(1, { ...PAGE, ...SHOWN }).then((state) => state.seq)
+    sent = []
     await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({
       site: 'a.com',
+      seq: told + 1,
       asOf: now,
       today: 40 * S,
       running: true,

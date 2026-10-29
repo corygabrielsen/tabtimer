@@ -202,10 +202,10 @@ function renderTracked(tabId: number, base: string) {
   }
   const todayKey = () => dayKey(dayOf(Date.now()))
 
-  // A state computed earlier than the one shown never replaces it.
+  // A state from an earlier worker transaction never replaces the one shown.
   const ask = async () => {
     const res = await bus.send('tabState', { tabId, site: base })
-    if (res.ok && (tab === null || res.value.asOf >= tab.asOf)) {
+    if (res.ok && (tab === null || res.value.seq >= tab.seq)) {
       tab = res.value
     }
   }

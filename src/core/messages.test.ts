@@ -17,6 +17,7 @@ describe('a state read at a later moment', () => {
   const state: TabState = {
     site: 'a.com',
     day: '2026-06-10',
+    seq: 1,
     asOf: NOON,
     today: 50_000,
     globalToday: 80_000,
