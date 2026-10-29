@@ -20,6 +20,8 @@ Everything is kept in `chrome.storage.local` on your own browser profile:
 - `limits`: any daily time limits you set (per site and across all sites),
   and when a "5 more minutes" snooze ends.
 - `prefs`: whether the on-page overlay is shown, and its size.
+- `clock`: the last date old days were deleted for, so a wrong clock can't
+  delete them early.
 - `schema`: the storage format version. Data stored in an older format is
   deleted once when the extension is updated.
 
