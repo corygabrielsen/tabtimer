@@ -8,7 +8,8 @@ version. You can expect an acknowledgement within a few days.
 
 ## Scope
 
-Tab Timer runs only on the social-media domains declared in `manifest.json`,
-stores data locally in `chrome.storage.local`, and makes no network requests.
+Tab Timer runs only on sites the user grants it access to (optional host
+permissions, requested one site at a time), stores data locally in
+`chrome.storage.local`, and makes no network requests.
 Reports about data exfiltration, cross-origin leakage, or content-script
 isolation are especially welcome.
