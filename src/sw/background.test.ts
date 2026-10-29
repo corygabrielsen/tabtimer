@@ -117,6 +117,13 @@ describe('content-script registration', () => {
     })
   })
 
+  it('keeps every grant when grants come in quick succession', async () => {
+    browser.grant(originsForSite('reddit.com'))
+    browser.grant(originsForSite('x.com'))
+    await flush()
+    expect(registered()?.matches).toEqual([...originsForSite('reddit.com'), ...originsForSite('x.com')])
+  })
+
   it('tracks grants as they are added and removed', async () => {
     browser.grant(originsForSite('reddit.com'))
     await flush()

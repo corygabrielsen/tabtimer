@@ -19,14 +19,14 @@ export type TrackerDeps = {
   // Send a page its state; resolves with its reply (undefined if none).
   // `doc` targets that document ('' = the tab's top frame).
   send: (tabId: number, doc: string, push: StatePush) => Promise<unknown>
-  // Keep the checkpoint alarm running (true) or not.
+  // Keep the checkpoint alarm running (true) or not. Called in the queue,
+  // so the alarm follows the state each transaction leaves.
   alarm: (on: boolean) => Promise<void>
 }
 
 export type Tracker = ReturnType<typeof createTracker>
 
-// `toggled`: an interval opened where none was, or the reverse.
-type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[]; toggled: boolean }
+type Outcome = { state: TrackerState; states: Map<number, TabState>; probe: number[] }
 
 export function createTracker(deps: TrackerDeps) {
   const { ledger } = deps
@@ -91,6 +91,11 @@ export function createTracker(deps: TrackerDeps) {
         }
       }
       tx.tracker = state
+      // The alarm only when the interval opened or closed (resume() puts it
+      // right on every worker start).
+      if (wasOpen !== (state.open !== null)) {
+        await deps.alarm(state.open !== null).catch(() => undefined)
+      }
       const states = new Map<number, TabState>()
       for (const id of new Set([...push, ...probe, ...tell(state)])) {
         const attest = state.tabs[String(id)]
@@ -98,18 +103,14 @@ export function createTracker(deps: TrackerDeps) {
           states.set(id, await stateOf(id, attest, state))
         }
       }
-      return { state, states, probe, toggled: wasOpen !== (state.open !== null) }
+      return { state, states, probe }
     })
   }
 
-  // Apply an outcome outside the queue: the alarm (only when the interval
-  // opened or closed; resume() puts it right on every worker start), then
-  // the messages. Probed pages that reply report their presence, which runs
-  // as an event of its own (and is then told its state).
+  // Send an outcome's messages, outside the queue. Probed pages that reply
+  // report their presence, which runs as an event of its own (and is then
+  // told its state).
   async function settle(outcome: Outcome, skip: number | null = null): Promise<void> {
-    if (outcome.toggled) {
-      await deps.alarm(outcome.state.open !== null).catch(() => undefined)
-    }
     const probes = new Set(outcome.probe)
     await Promise.all(
       [...outcome.states].map(async ([tabId, state]) => {
@@ -153,9 +154,7 @@ export function createTracker(deps: TrackerDeps) {
     resetToday: async (site: Site): Promise<void> => settle(await run({ kind: 'reset', site }, allTabs)),
 
     // The worker started: put the checkpoint alarm in line with the state.
-    resume: async (): Promise<void> => {
-      const { open } = await ledger.transaction(async (tx) => tx.tracker)
-      await deps.alarm(open !== null).catch(() => undefined)
-    },
+    resume: (): Promise<void> =>
+      ledger.transaction((tx) => deps.alarm(tx.tracker.open !== null).catch(() => undefined)),
   }
 }

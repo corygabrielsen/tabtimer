@@ -1,10 +1,9 @@
 import { chromeStore } from '../chrome/store'
 import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
-import { CHECKPOINT_MS } from '../core/tracker'
-import { msToMinutes } from '../core/limits'
 import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { siteOfUrl } from '../core/site'
+import { checkpointAlarm, CHECKPOINT_ALARM } from './checkpoint'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
@@ -12,7 +11,6 @@ import { createRouter } from './router'
 import { installTestHook, offsetClock } from './testHook'
 import { createTracker } from './tracker'
 
-const CHECKPOINT_ALARM = 'checkpoint'
 const ACTIVITY_PAGE = 'usage.html'
 
 const local = chromeStore('local')
@@ -20,19 +18,7 @@ const local = chromeStore('local')
 const testClock = __TABTIMER_E2E__ ? offsetClock(systemClock) : null
 const ledger = createLedger(local, chromeStore('session'), testClock ?? systemClock)
 
-// The checkpoint alarm runs only while an interval is open, so the worker
-// sleeps while nothing is being counted. Created only if missing: creating
-// it again would push its next run back.
-async function alarm(on: boolean): Promise<void> {
-  const existing = await chrome.alarms.get(CHECKPOINT_ALARM)
-  if (on && !existing) {
-    await chrome.alarms.create(CHECKPOINT_ALARM, { periodInMinutes: msToMinutes(CHECKPOINT_MS) })
-  } else if (!on && existing) {
-    await chrome.alarms.clear(CHECKPOINT_ALARM)
-  }
-}
-
-const tracker = createTracker({ ledger, send: sendState, alarm })
+const tracker = createTracker({ ledger, send: sendState, alarm: checkpointAlarm() })
 
 // Every listener is registered synchronously at the top level, as MV3
 // requires: any of these events can be what starts the worker.
