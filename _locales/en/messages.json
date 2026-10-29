@@ -101,7 +101,6 @@
     "placeholders": { "host": { "content": "$1" } }
   },
   "popupNotTrackedTitle": { "message": "Not tracked" },
-  "popupNotTracking": { "message": "Not tracked" },
   "popupEnableSite": { "message": "Track this site" },
   "popupEnableSiteAria": { "message": "Track time on $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupCantTrack": { "message": "This page can't be tracked" },
@@ -215,7 +214,6 @@
   "usageShowing": { "message": "Showing $site$", "placeholders": { "site": { "content": "$1" } } },
   "usageShowAll": { "message": "Show all sites" },
   "usageEmptyTitle": { "message": "No activity yet" },
-  "usageEmptyBody": { "message": "No activity yet." },
   "usageEmptyLink": { "message": "Choose sites to track" },
   "usageNoneDay": { "message": "No activity." },
   "usageNoneWeek": { "message": "No activity." },
