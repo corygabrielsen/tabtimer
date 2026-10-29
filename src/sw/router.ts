@@ -2,12 +2,10 @@
 //   1. the sender is this extension (sender.id), else 'forbidden';
 //   2. the payload parses (core/requests.ts parseRequest), else 'bad_request';
 //   3. the sender may send this type (SENDERS): an extension page is
-//      recognized by its URL; a content script by a tab, the top frame and
-//      an http(s) URL, and its site is taken from that URL, never from the
-//      payload; else 'forbidden';
+//      recognized by its URL; a content script by a tab, its document's
+//      lifecycle and an http(s) URL, and its site is taken from that URL,
+//      never from the payload; else 'forbidden';
 //   4. the handler runs; a throw is 'internal'.
-// A page being navigated away from may still report (its last report is
-// sent as it is hidden): it is heard as hidden, whatever it says.
 import { SENDERS, type Contract, type MessageType, type Origin, type Page, type RequestOf } from '../core/messages'
 import { parseRequest } from '../core/requests'
 import { siteOfUrl, type Site } from '../core/site'
@@ -31,17 +29,23 @@ type Context = { origin: Origin; site: Site | null; tab: Tab | null }
 
 type Handlers = { [K in MessageType]: (req: RequestOf<K>, ctx: Context) => Promise<Contract[K]['res']> }
 
-// The tab's top frame is frame 0 while its page is the one shown. A page
-// being navigated away from (its last report is sent on pagehide) is no
-// longer frame 0 by the time the message arrives: it is in the back/forward
-// cache or unloading. The content script is registered for top frames only,
-// so a departing document can't be a subframe running it.
-const DEPARTING = new Set(['cached', 'pending_deletion'])
-
-const isDeparting = (sender: Sender) => DEPARTING.has(sender.documentLifecycle ?? '')
-
-function isTopFrame(sender: Sender): boolean {
-  return sender.frameId === 0 || (sender.frameId !== undefined && isDeparting(sender))
+// Where the sending document is in its life. The tab's shown page is
+// 'active' in frame 0. A page being navigated away from sends its last
+// report on pagehide, which arrives once it is in the back/forward cache
+// ('cached') or unloading ('pending_deletion'), no longer frame 0: it is
+// departing (core/tracker.ts). Anything else (a subframe, a prerender) is
+// refused. The content script is registered for top frames only, so a
+// departing document can't be a subframe running it.
+function departing(sender: Sender): boolean | null {
+  switch (sender.documentLifecycle) {
+    case 'active':
+      return sender.frameId === 0 ? false : null
+    case 'cached':
+    case 'pending_deletion':
+      return true
+    default:
+      return null
+  }
 }
 
 function classify(sender: Sender, extensionUrl: string): Context | null {
@@ -51,11 +55,12 @@ function classify(sender: Sender, extensionUrl: string): Context | null {
   }
   const site = siteOfUrl(url)
   const tab = sender.tab
-  if (typeof tab?.id === 'number' && isTopFrame(sender) && site !== null) {
+  const leaving = departing(sender)
+  if (typeof tab?.id === 'number' && leaving !== null && site !== null) {
     return {
       origin: 'content',
       site,
-      tab: { id: tab.id, windowId: tab.windowId ?? -1, doc: sender.documentId ?? '', departing: isDeparting(sender) },
+      tab: { id: tab.id, windowId: tab.windowId ?? -1, doc: sender.documentId ?? '', departing: leaving },
     }
   }
   return null
@@ -66,12 +71,8 @@ export function createRouter(deps: RouterDeps): Handler {
   // Content-only handlers can rely on ctx.site and ctx.tab: classify set them.
   const handlers: Handlers = {
     presence: ({ visible, focused, media, blocked }, ctx) => {
-      const tab = ctx.tab!
-      return tracker.presence(
-        tab.id,
-        { site: ctx.site!, windowId: tab.windowId, doc: tab.doc },
-        { visible: visible && !tab.departing, focused, media, blocked }
-      )
+      const { id, ...tab } = ctx.tab!
+      return tracker.presence(id, { site: ctx.site!, ...tab, visible, focused, media, blocked })
     },
     resetToday: async ({ site }) => {
       await tracker.resetToday(site)

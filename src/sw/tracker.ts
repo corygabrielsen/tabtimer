@@ -10,13 +10,13 @@ import { dayOf, startOfDay } from '../core/day'
 import { blockAt } from '../core/limits'
 import { parsePresence, type StatePush, type TabState } from '../core/messages'
 import { dayTotal, siteTotal, type DayUsage } from '../core/schema'
+import type { Site } from '../core/site'
 import {
   normalizeTracker,
   creditEnd,
   step,
   TRACKER_KEY,
   type Attest,
-  type Presence,
   type TrackerEvent,
   type TrackerState,
 } from '../core/tracker'
@@ -77,17 +77,19 @@ export function createTracker(deps: TrackerDeps) {
       let state = await load()
       if (event?.kind === 'idle') {
         await tx.observeIdle(event.state)
+      } else if (event?.kind === 'reset') {
+        await tx.resetToday(event.site)
       }
       const idle = await tx.idleState()
       const push = new Set<number>()
-      let probe: number[] = []
-      if (event) {
-        const result = step(state, event, tx.now, idle)
+      const apply = async (e: TrackerEvent) => {
+        const result = step(state, e, tx.now, idle)
         await tx.credit(result.credits)
         state = result.state
         result.push.forEach((id) => push.add(id))
-        probe = result.probe
+        return result.probe
       }
+      const probe = event ? await apply(event) : []
       const stateOf = stater(tx)
       // The backstop: an open interval on a site already over its limit
       // closes, whatever the page says.
@@ -96,10 +98,7 @@ export function createTracker(deps: TrackerDeps) {
       if (open && openAttest) {
         const s = await stateOf(open.tabId, openAttest, state)
         if (s.blockAt !== null && s.blockAt <= tx.now) {
-          const result = step(state, { kind: 'overLimit', tabId: open.tabId }, tx.now, idle)
-          await tx.credit(result.credits)
-          state = result.state
-          result.push.forEach((id) => push.add(id))
+          await apply({ kind: 'overLimit', tabId: open.tabId })
         }
       }
       await session.set({ [TRACKER_KEY]: state })
@@ -143,30 +142,23 @@ export function createTracker(deps: TrackerDeps) {
     return outcome.states.get(tabId)!
   }
 
+  // Every page that reported.
+  const allTabs = (s: TrackerState) => Object.keys(s.tabs).map(Number)
+
   return {
     // A content script's presence message; replies with the tab's state.
-    presence: (tabId: number, page: Omit<Attest, 'at' | keyof Presence>, presence: Presence): Promise<TabState> =>
-      report(tabId, { ...page, ...presence }, false),
+    presence: (tabId: number, attest: Omit<Attest, 'at'>): Promise<TabState> => report(tabId, attest, false),
 
     // A browser event (tab, window, idle, alarm).
     dispatch: async (event: TrackerEvent): Promise<void> => settle(await run(event)),
 
     // Limits or the snooze changed: every page that reported learns its new
     // state (and an open interval now over its limit closes).
-    refresh: async (): Promise<void> => settle(await run(null, (s) => Object.keys(s.tabs).map(Number))),
+    refresh: async (): Promise<void> => settle(await run(null, allTabs)),
 
     // Zero one site's time today, including the open interval's uncredited
-    // part, and tell its pages.
-    resetToday: async (site: string): Promise<void> => {
-      await ledger.transaction(async (tx) => {
-        await tx.resetToday(site)
-        const state = await load()
-        if (state.open?.site === site) {
-          await session.set({ [TRACKER_KEY]: { ...state, open: { ...state.open, since: tx.now } } })
-        }
-      })
-      await settle(await run(null, (s) => Object.keys(s.tabs).map(Number)))
-    },
+    // part, and tell every page (the total across sites changed too).
+    resetToday: async (site: Site): Promise<void> => settle(await run({ kind: 'reset', site }, allTabs)),
 
     // The worker started: put the checkpoint alarm in line with the state.
     resume: async (): Promise<void> => {

@@ -387,7 +387,7 @@ export class FakeChrome {
     }
     const url = (globalThis as { location?: { href: string } }).location?.href ?? ''
     return /^https?:/.test(url)
-      ? { id: this.runtime.id, url, tab: { id: 1, windowId: 1 }, frameId: 0 }
+      ? { id: this.runtime.id, url, tab: { id: 1, windowId: 1 }, frameId: 0, documentLifecycle: 'active' }
       : { id: this.runtime.id, url: this.runtime.getURL('popup.html') }
   }
 

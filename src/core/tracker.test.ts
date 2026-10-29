@@ -26,11 +26,11 @@ const PAGES: Record<number, { site: string; windowId: number }> = {
   3: { site: 'c.com', windowId: 20 },
 }
 
-function attest(tabId: number, presence: Partial<Presence> = {}, doc = `doc-${tabId}`): Attest {
-  return { ...PAGES[tabId]!, doc, at: 0, ...SHOWN, ...presence }
+function attest(tabId: number, report: Partial<Attest> = {}, doc = `doc-${tabId}`): Attest {
+  return { ...PAGES[tabId]!, doc, departing: false, at: 0, ...SHOWN, ...report }
 }
 
-const presence = (tabId: number, p: Partial<Presence> = {}, doc?: string): TrackerEvent => ({
+const presence = (tabId: number, p: Partial<Attest> = {}, doc?: string): TrackerEvent => ({
   kind: 'presence',
   tabId,
   attest: attest(tabId, p, doc),
@@ -352,13 +352,34 @@ describe('event ordering', () => {
       [
         [0, presence(1, {}, 'old')],
         [2 * S, presence(1, {}, 'new')],
-        [2 * S, presence(1, { visible: false }, 'old')],
+        [2 * S, presence(1, { visible: false, departing: true }, 'old')],
         [5 * S, presence(1, { visible: false }, 'new')],
       ],
       { 'a.com': 5 * S },
     ],
+    [
+      'a departing report never accrues, whatever it says',
+      [
+        [0, presence(1)],
+        [3 * S, presence(1, { departing: true })],
+        [5 * S, presence(1, { departing: true })],
+      ],
+      { 'a.com': 3 * S },
+    ],
   ])('%s', (_name, events, expected) => {
     expect(credited(run(events).credits)).toEqual(expected)
+  })
+
+  it('a reset moves the open interval on that site up to now, crediting nothing, and tells its tabs', () => {
+    const { state, credits, pushes } = run([
+      [0, presence(1)],
+      [0, presence(2, { focused: false })],
+      [3 * S, { kind: 'reset', site: 'a.com' }],
+      [4 * S, { kind: 'reset', site: 'c.com' }],
+    ])
+    expect(credits).toEqual([])
+    expect(state.open).toMatchObject({ tabId: 1, since: T + 3 * S, checkpoint: T })
+    expect(pushes.slice(2)).toEqual([[1], []])
   })
 
   it('never has two intervals open: two windows reporting at once alternate, never overlap', () => {

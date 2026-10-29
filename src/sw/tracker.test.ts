@@ -15,7 +15,7 @@ const MIN = 60_000
 
 const SHOWN: Presence = { visible: true, focused: true, media: false, blocked: false }
 const HIDDEN: Presence = { ...SHOWN, visible: false }
-const PAGE = { site: 'a.com', windowId: 1, doc: 'doc-a' }
+const PAGE = { site: 'a.com', windowId: 1, doc: 'doc-a', departing: false }
 
 let browser: FakeChrome
 let now: number
@@ -52,7 +52,7 @@ beforeEach(() => {
 describe('presence', () => {
   it('opens on a page in use, replies with its running state, and credits on close', async () => {
     const tracker = worker()
-    await expect(tracker.presence(1, PAGE, SHOWN)).resolves.toEqual({
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toEqual({
       site: 'a.com',
       day: '2026-06-10',
       asOf: NOON,
@@ -64,7 +64,7 @@ describe('presence', () => {
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
     now += 30 * S
-    await expect(tracker.presence(1, PAGE, HIDDEN)).resolves.toMatchObject({ today: 30 * S, running: false })
+    await expect(tracker.presence(1, { ...PAGE, ...HIDDEN })).resolves.toMatchObject({ today: 30 * S, running: false })
     expect(alarm).toHaveBeenLastCalledWith(false)
     expect(stored()).toBe(30 * S)
   })
@@ -72,9 +72,9 @@ describe('presence', () => {
   it('counts the open interval’s uncredited time in the state it gives', async () => {
     browser.storage.local.seed({ 'day:2026-06-10': { 'b.com': emptyBuckets().fill(1000) } })
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 20 * S
-    await expect(tracker.presence(1, PAGE, SHOWN)).resolves.toMatchObject({
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
       today: 20 * S,
       globalToday: 24 * S + 20 * S,
       running: true,
@@ -83,9 +83,9 @@ describe('presence', () => {
 
   it('tells the page that lost the interval, and not the one that took it', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 5 * S
-    await tracker.presence(2, { site: 'b.com', windowId: 2, doc: 'doc-b' }, SHOWN)
+    await tracker.presence(2, { site: 'b.com', windowId: 2, doc: 'doc-b', departing: false, ...SHOWN })
     expect(sent.map(([tabId, doc, push]) => [tabId, doc, push.state.running])).toEqual([[1, 'doc-a', false]])
   })
 })
@@ -93,14 +93,14 @@ describe('presence', () => {
 describe('failures', () => {
   it('a failing alarm doesn’t fail the report', async () => {
     alarm.mockRejectedValue(new Error('alarms'))
-    await expect(worker().presence(1, PAGE, SHOWN)).resolves.toMatchObject({ running: true })
+    await expect(worker().presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({ running: true })
     await expect(worker().resume()).resolves.toBeUndefined()
   })
 })
 
 describe('restart', () => {
   it('a worker stopped mid-interval resumes from storage.session, losing nothing', async () => {
-    await worker().presence(1, PAGE, SHOWN)
+    await worker().presence(1, { ...PAGE, ...SHOWN })
     // Stopped. The next event (here, the checkpoint alarm) starts a new one.
     now += 50 * S
     const second = worker()
@@ -108,14 +108,14 @@ describe('restart', () => {
     expect(stored()).toBe(50 * S)
     expect(open()).toMatchObject({ tabId: 1, since: now })
     now += 10 * S
-    await worker().presence(1, PAGE, HIDDEN)
+    await worker().presence(1, { ...PAGE, ...HIDDEN })
     expect(stored()).toBe(MIN)
   })
 
   it('puts the checkpoint alarm in line with the stored state on start', async () => {
     await worker().resume()
     expect(alarm).toHaveBeenLastCalledWith(false)
-    await worker().presence(1, PAGE, SHOWN)
+    await worker().presence(1, { ...PAGE, ...SHOWN })
     alarm.mockClear()
     await worker().resume()
     expect(alarm).toHaveBeenCalledWith(true)
@@ -125,7 +125,7 @@ describe('restart', () => {
 describe('the bound on time lost to a crash', () => {
   it('is under one checkpoint: storage.session goes, storage.local keeps the rest', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     for (let m = 1; m <= 10; m++) {
       now = NOON + m * CHECKPOINT_MS
       await tracker.dispatch({ kind: 'checkpoint' })
@@ -143,7 +143,7 @@ describe('the bound on time lost to a crash', () => {
 
   it('counts none of a sleep without a lock, and resumes on the page’s answer', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 3 * 3600 * S
     await tracker.dispatch({ kind: 'checkpoint' })
     expect(stored()).toBe(0)
@@ -154,7 +154,7 @@ describe('the bound on time lost to a crash', () => {
     await tracker.dispatch({ kind: 'activated', tabId: 1, windowId: 1 })
     expect(open()).toMatchObject({ tabId: 1, since: now })
     now += 10 * S
-    await tracker.presence(1, PAGE, HIDDEN)
+    await tracker.presence(1, { ...PAGE, ...HIDDEN })
     expect(stored()).toBe(10 * S)
   })
 })
@@ -162,8 +162,8 @@ describe('the bound on time lost to a crash', () => {
 describe('probes', () => {
   it('asks the pages of a newly focused window, and opens for the one in use', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
-    await tracker.presence(3, { site: 'c.com', windowId: 2, doc: 'doc-c' }, { ...SHOWN, focused: false })
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    await tracker.presence(3, { site: 'c.com', windowId: 2, doc: 'doc-c', departing: false, ...SHOWN, focused: false })
     replies.set(3, SHOWN)
     sent = []
     now += 5 * S
@@ -180,7 +180,7 @@ describe('probes', () => {
 
   it('ignores an answer that is not a presence, and a page that is gone', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, { ...SHOWN, focused: false })
+    await tracker.presence(1, { ...PAGE, ...SHOWN, focused: false })
     replies.set(1, { visible: 'yes' })
     await tracker.dispatch({ kind: 'activated', tabId: 1, windowId: 1 })
     expect(open()).toBeNull()
@@ -191,7 +191,7 @@ describe('probes', () => {
 
   it('back from a lock, reopens the page last in use if it says it still is', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 4 * S
     await tracker.dispatch({ kind: 'idle', state: 'locked' })
     expect(open()).toBeNull()
@@ -207,7 +207,7 @@ describe('limits', () => {
   it('gives the moment to block, and closes an interval already over (the backstop)', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 } } })
     const tracker = worker()
-    await expect(tracker.presence(1, PAGE, SHOWN)).resolves.toMatchObject({
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
       running: true,
       blockAt: NOON + MIN,
       limit: { scope: 'site', ms: MIN },
@@ -222,8 +222,8 @@ describe('limits', () => {
 
   it('refresh tells every page that reported its new state', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
-    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b' }, HIDDEN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, ...HIDDEN })
     sent = []
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: NOON + 5 * MIN } })
     await tracker.refresh()
@@ -235,17 +235,17 @@ describe('limits', () => {
 
   it('resetToday drops the open interval’s time so far too', async () => {
     const tracker = worker()
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 30 * S
     await tracker.resetToday('a.com')
     now += 5 * S
-    await tracker.presence(1, PAGE, HIDDEN)
+    await tracker.presence(1, { ...PAGE, ...HIDDEN })
     expect(stored()).toBe(5 * S)
     // A reset of another site leaves this one alone.
-    await tracker.presence(1, PAGE, SHOWN)
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 5 * S
     await tracker.resetToday('b.com')
-    await tracker.presence(1, PAGE, HIDDEN)
+    await tracker.presence(1, { ...PAGE, ...HIDDEN })
     expect(stored()).toBe(10 * S)
   })
 })
@@ -258,7 +258,7 @@ describe('background wiring', () => {
   }
 
   async function report(presence: Presence, tab = { id: 1, windowId: 1 }, url = 'https://www.reddit.com/') {
-    browser.sender = { id: browser.runtime.id, url, tab, frameId: 0 }
+    browser.sender = { id: browser.runtime.id, url, tab, frameId: 0, documentLifecycle: 'active' }
     const response = await bus.send('presence', presence)
     await flush()
     return response

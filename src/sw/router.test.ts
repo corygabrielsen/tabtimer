@@ -24,6 +24,7 @@ const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = 
   url,
   tab: { id: 7, windowId: 1 },
   frameId: 0,
+  documentLifecycle: 'active',
   ...extra,
 })
 const page = (path = 'popup.html'): Sender => ({ id: ID, url: `${EXT}${path}` })
@@ -93,13 +94,14 @@ describe('sender policy', () => {
   it('accepts content requests only from a tab’s top frame on an http(s) page', async () => {
     const refused = [
       content(undefined, { frameId: 3 }),
-      content(undefined, { frameId: 3, documentLifecycle: 'active' }),
       content(undefined, { frameId: 3, documentLifecycle: 'prerender' }),
+      content(undefined, { documentLifecycle: 'prerender' }),
+      content(undefined, { documentLifecycle: undefined }),
       content(undefined, { frameId: undefined }),
       content(undefined, { tab: undefined }),
       content('about:blank'),
       content('file:///etc/passwd'),
-      { id: ID, tab: { id: 7 }, frameId: 0 },
+      { id: ID, tab: { id: 7 }, frameId: 0, documentLifecycle: 'active' },
     ]
     for (const sender of refused) {
       await expect(handle(presence, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
@@ -120,6 +122,13 @@ describe('sender policy', () => {
       })
     }
     expect(today()?.['reddit.com']?.[12]).toBe(6000)
+  })
+
+  it('lets a departing page’s last report close nothing of the page that replaced it', async () => {
+    await handle(presence, content(undefined, { documentId: 'new' }))
+    const late = content(undefined, { frameId: 4, documentId: 'old', documentLifecycle: 'pending_deletion' })
+    await expect(handle(hidden, late)).resolves.toMatchObject({ ok: true, value: { running: true } })
+    expect(browser.storage.session.data.tracker).toMatchObject({ open: { doc: 'new' } })
   })
 
   it('identifies the tab, its window and its document', async () => {

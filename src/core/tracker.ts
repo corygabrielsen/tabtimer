@@ -12,7 +12,8 @@
 //     is playing media);
 //   - browser events (tab switch, window focus, removal, navigation, idle,
 //     lock, blocking) only close the interval, or ask a page to report
-//     again (`probe`);
+//     again (`probe`); a reset of the open site's time only moves the
+//     interval's start up to `now`, crediting nothing;
 //   - an interval is credited up to `now` while its checkpoints keep
 //     coming; after a silence longer than SUSPEND_GAP_MS (the device slept
 //     without locking, so no alarm fired) it is credited only up to its
@@ -44,10 +45,11 @@ export const SUSPEND_GAP_MS = 90_000
 export type Presence = { visible: boolean; focused: boolean; media: boolean; blocked: boolean }
 
 // The latest report from one tab. `doc` identifies the document that sent
-// it ('' if unknown), so a page being navigated away from can't close the
-// interval of the page that replaced it. `at`: when the worker heard it
-// (step() sets it).
-export type Attest = Presence & { site: Site; windowId: number; doc: string; at: number }
+// it ('' if unknown). `departing`: that document is no longer the tab's
+// shown page (it is in the back/forward cache, or unloading), so its report
+// never accrues and never replaces another document's. `at`: when the
+// worker heard it (step() sets it).
+export type Attest = Presence & { site: Site; windowId: number; doc: string; departing: boolean; at: number }
 
 // The interval accruing time: [since, now) is not yet credited, and
 // `checkpoint` is the last time the worker saw it alive.
@@ -79,6 +81,8 @@ export type TrackerEvent =
   | { kind: 'checkpoint' }
   // The open tab's site is over its limit (the worker's backstop).
   | { kind: 'overLimit'; tabId: number }
+  // The site's time today was zeroed.
+  | { kind: 'reset'; site: Site }
 
 // Time to credit to a site: [start, end), with media playing or not.
 export type Accrual = { site: Site; start: number; end: number; media: boolean }
@@ -102,11 +106,11 @@ function normalizeAttest(v: unknown): Attest | null {
     return null
   }
   const presence = parsePresence(a)
-  if (!isFiniteNumber(a.windowId) || !isFiniteNumber(a.at) || !presence) {
+  if (!isFiniteNumber(a.windowId) || !isFiniteNumber(a.at) || !isBool(a.departing) || !presence) {
     return null
   }
-  const { site, windowId, doc, at } = a
-  return { site, windowId, doc, at, ...presence }
+  const { site, windowId, doc, departing, at } = a
+  return { site, windowId, doc, departing, at, ...presence }
 }
 
 function normalizeOpen(v: unknown): Open | null {
@@ -164,6 +168,11 @@ export function creditEnd(open: Open, now: number): number {
   return Math.max(open.since, suspended(open, now) ? open.checkpoint : now)
 }
 
+// Whether a tab's report lets it accrue time.
+function live(a: Attest, idle: IdleState): boolean {
+  return !a.departing && canAccrue(a, idle)
+}
+
 function accrual(open: Open, end: number): Accrual[] {
   return end > open.since ? [{ site: open.site, start: open.since, end, media: open.media }] : []
 }
@@ -172,7 +181,7 @@ function accrual(open: Open, end: number): Accrual[] {
 function freshest(tabs: Record<string, Attest>, idle: IdleState): number | null {
   let best: [number, Attest] | null = null
   for (const [id, attest] of Object.entries(tabs)) {
-    if (canAccrue(attest, idle) && (!best || attest.at > best[1].at)) {
+    if (live(attest, idle) && (!best || attest.at > best[1].at)) {
       best = [Number(id), attest]
     }
   }
@@ -236,13 +245,13 @@ class Builder {
 function presence(b: Builder, tabId: number, a: Attest, idle: IdleState): void {
   const key = String(tabId)
   const previous = b.tabs[key]
-  const accrues = canAccrue(a, idle)
   // A late report from a document this tab has already replaced (the page
   // navigated away, and its hiding arrived after the new page's report)
   // changes nothing.
-  if (!accrues && previous && previous.doc !== a.doc && canAccrue(previous, idle)) {
+  if (a.departing && previous && previous.doc !== a.doc) {
     return
   }
+  const accrues = live(a, idle)
   b.tabs[key] = { ...a, at: b.now }
   const open = b.open
   const same = open !== null && open.tabId === tabId && open.doc === a.doc && open.site === a.site
@@ -341,6 +350,17 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
     case 'overLimit':
       if (open?.tabId === e.tabId) {
         b.close()
+      }
+      break
+    case 'reset':
+      // The open interval's time so far goes too: it starts again from now.
+      if (open?.site === e.site) {
+        b.open = { ...open, since: now }
+      }
+      for (const [id, attest] of Object.entries(b.tabs)) {
+        if (attest.site === e.site) {
+          b.push.add(Number(id))
+        }
       }
       break
   }

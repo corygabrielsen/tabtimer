@@ -59,7 +59,13 @@ describe('idle', () => {
 
 describe('messages', () => {
   it('serves the contract to this extension', async () => {
-    browser.sender = { id: browser.runtime.id, url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    browser.sender = {
+      id: browser.runtime.id,
+      url: 'https://www.reddit.com/',
+      tab: { id: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
     await expect(bus.send('presence', PRESENT)).resolves.toMatchObject({
       ok: true,
       value: { site: 'reddit.com', running: true },
@@ -71,7 +77,13 @@ describe('messages', () => {
   })
 
   it('refuses other senders', async () => {
-    browser.sender = { id: 'someone-else', url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    browser.sender = {
+      id: 'someone-else',
+      url: 'https://www.reddit.com/',
+      tab: { id: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
     await expect(bus.send('presence', PRESENT)).resolves.toEqual({ ok: false, error: 'forbidden' })
   })
 })
