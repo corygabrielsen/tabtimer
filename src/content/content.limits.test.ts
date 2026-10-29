@@ -7,8 +7,6 @@
 // single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SNOOZE_MS } from '../core/limits'
-import { dayOf } from '../core/day'
-import { PRUNED_DAY_KEY } from '../sw/ledger'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
 import {
@@ -166,8 +164,6 @@ describe('per-tab cost', () => {
 
   it('reads no storage per second: the worker pushes what changes', async () => {
     seedLimits({ global: 30, perSite: { 'reddit.com': 30 } })
-    // The service worker already pruned today (its once-a-day get(null)).
-    browser.storage.session.seed({ [PRUNED_DAY_KEY]: dayOf(Date.now()) })
     await openTab()
     const get = vi.spyOn(browser.storage.local, 'get')
     await run(minutes(1))

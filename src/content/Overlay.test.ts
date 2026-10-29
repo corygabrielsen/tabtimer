@@ -210,14 +210,37 @@ describe('hiding', () => {
     expect(pill()).not.toBeNull()
   })
 
-  it('recovers once storage is readable again', async () => {
-    browser.storage.local.error = 'storage unavailable'
-    await mount()
-    // readElapsed fails too, so nothing renders, but nothing throws.
-    browser.storage.local.error = null
-    setPageState({ focused: false })
-    setPageState({ focused: true })
+  it('keeps its own change when a state from before it arrives', async () => {
+    let prefs = { hidden: false, scale: 1 }
+    let notify = () => {}
+    const view = new Overlay({
+      readElapsed: () => ({ today: 0, focus: 0, session: 0 }),
+      onState: (fn) => ((notify = fn), () => {}),
+      get prefs() {
+        return prefs
+      },
+    })
+    views.push(view)
+    click(pill())
     await flush()
+    click(button('.close', 'Hide Tab Timer on this page'))
+    notify()
+    expect(pill()).toBeNull()
+    // Then hidden is saved, and shown again from the popup.
+    prefs = { hidden: true, scale: 1 }
+    notify()
+    prefs = { hidden: false, scale: 1 }
+    notify()
+    expect(pill()).not.toBeNull()
+  })
+
+  it('shows once the worker can answer again', async () => {
+    browser.storage.local.error = 'storage unavailable'
+    const view = await mount()
+    // No state from the worker: nothing renders, but nothing throws.
+    expect(pill()).toBeNull()
+    browser.storage.local.error = null
+    await tickView(view, seconds(10))
     expect(pill()?.textContent).toBe('00:00:00')
   })
 })

@@ -1,10 +1,9 @@
 import type FocusTracker from './FocusTracker'
 import type { ElapsedState } from './FocusTracker'
 import { formatTime } from '../format'
-import { chromeStore } from '../chrome/store'
 import { bus as chromeBus } from '../chrome/bus'
-import { MAX_SCALE, MIN_SCALE, PREFS_KEY, SCALE_STEP, normalizePrefs, snapScale } from '../core/schema'
-import type { Bus, Store, StoreChanges } from '../ports'
+import { MAX_SCALE, MIN_SCALE, SCALE_STEP, snapScale } from '../core/schema'
+import type { Bus } from '../ports'
 import { t } from '../i18n'
 
 // Top of the stacking context so the widget stays visible above page chrome.
@@ -137,20 +136,21 @@ export default class Overlay {
   private shadow: ShadowRoot
   private mount: HTMLDivElement
   private expanded = false
-  private hidden = false
+  // Hidden until the service worker sends the preferences.
+  private hidden = true
   private scale = 1
+  // The preferences the worker last sent (JSON).
+  private prefs: string | null = null
   private selectedTimer: TimerKey = 'today'
   private timeElements: Map<TimerKey | 'collapsed', HTMLElement> = new Map()
   private needsRebuild = true
   private outsideClickAttached = false
 
-  private unsubscribeStore: () => void
   private unsubscribeState: () => void
 
   constructor(
-    private tracker: Pick<FocusTracker, 'readElapsed' | 'onState'>,
-    private bus: Bus = chromeBus,
-    private store: Store = chromeStore('local')
+    private tracker: Pick<FocusTracker, 'readElapsed' | 'onState' | 'prefs'>,
+    private bus: Bus = chromeBus
   ) {
     // Drop a stale widget left by a previous instance (re-injection / SPA
     // remount) so we never stack duplicate hosts.
@@ -170,23 +170,13 @@ export default class Overlay {
 
     document.body.appendChild(this.host)
 
-    // Respect the saved hide/size preferences before the first paint.
-    this.store
-      .get(PREFS_KEY)
-      .then((value) => {
-        const { hidden, scale } = normalizePrefs(value)
-        this.hidden = hidden
-        this.scale = snapScale(scale)
-        this.applyScale()
-        this.render()
-      })
-      .catch(() => this.render())
-
     document.addEventListener('visibilitychange', this.handleVisibilityChange)
     window.addEventListener('focus', this.handleFocus)
-    this.unsubscribeStore = this.store.onChanged(this.handlePrefsChange)
-    // Fresh totals from the service worker (a hidden tab redraws when shown).
+    // Fresh totals and preferences from the service worker (a hidden tab
+    // redraws when shown).
+    this.applyPrefs()
     this.unsubscribeState = tracker.onState(() => {
+      this.applyPrefs()
       if (!document.hidden) {
         this.render()
       }
@@ -422,7 +412,6 @@ export default class Overlay {
   destroy() {
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('focus', this.handleFocus)
-    this.unsubscribeStore()
     this.unsubscribeState()
     this.detachOutsideClick()
     this.host.remove()
@@ -441,14 +430,17 @@ export default class Overlay {
     }
   }
 
-  // React when the hide/size preferences are changed elsewhere (popup, options,
-  // or another tab's overlay).
-  private handlePrefsChange = (changes: StoreChanges) => {
-    const change = changes[PREFS_KEY]
-    if (!change) {
+  // Take the hide/size preferences when the worker's differ from the last
+  // it sent: changed elsewhere (popup, options, or another tab's overlay).
+  // This overlay's own changes are already applied.
+  private applyPrefs() {
+    const prefs = this.tracker.prefs
+    const key = JSON.stringify(prefs)
+    if (!prefs || key === this.prefs) {
       return
     }
-    const { hidden, scale } = normalizePrefs(change.newValue)
+    this.prefs = key
+    const { hidden, scale } = prefs
     if (hidden !== this.hidden) {
       this.hidden = hidden
       this.expanded = false

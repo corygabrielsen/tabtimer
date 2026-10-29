@@ -232,6 +232,7 @@ describe('reporting to the service worker', () => {
       running: false,
       blockAt: null,
       limit: null,
+      prefs: { hidden: false, scale: 1 },
     }
     expect(handler!(base)).toEqual({ visible: true, focused: true, media: false, blocked: false })
     expect(today(model)).toBe(minutes(9))

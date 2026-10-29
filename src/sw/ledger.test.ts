@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { createLedger, PRUNED_DAY_KEY, type Ledger } from './ledger'
+import { createLedger, WORKER_KEY, type Ledger } from './ledger'
 import { chromeStore } from '../chrome/store'
 import { normalizeDay, siteTotal, LIMITS_KEY, PREFS_KEY, SCHEMA } from '../core/schema'
-import { normalizeAway, AWAY_KEY, type IdleState, type Span } from '../core/away'
+import { normalizeAway, type IdleState, type Span } from '../core/away'
 import { SNOOZE_MS } from '../core/limits'
 import { at, bucketsOf } from '../test/data'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
@@ -69,6 +69,21 @@ describe('credit', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
+  it('reads the session state once and each day once, and writes each area once, per transaction', async () => {
+    browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': bucketsOf({ 11: 1000 }) } })
+    const spies = (['local', 'session'] as const).flatMap((area) =>
+      (['get', 'set'] as const).map((op) => vi.spyOn(browser.storage[area], op))
+    )
+    const total = await ledger.transaction(async (tx) => {
+      await tx.observeIdle('active')
+      await tx.credit([{ site: 'a.com', start: NOON - 2000, end: NOON - 1000, media: false }])
+      await tx.credit([{ site: 'a.com', start: NOON - 1000, end: NOON, media: false }])
+      return siteTotal(await tx.today(), 'a.com')
+    })
+    expect(total).toBe(3000)
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 1])
+  })
+
   it('reads limits and the snooze for the tracker, tolerating garbage', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: 'soon' } })
     await expect(ledger.transaction((tx) => tx.limits())).resolves.toEqual({ global: 1, perSite: {}, snoozeUntil: 0 })
@@ -91,12 +106,11 @@ describe('retention', () => {
     await addElapsed('a.com', [[NOON - 1000, NOON]])
     // 11 May is 30 days before 10 June: gone; 12 May is the oldest day kept.
     expect(Object.keys(data()).sort()).toEqual(['day:2026-05-12', 'day:2026-06-09', 'day:2026-06-10'])
-    expect(browser.storage.session.data[PRUNED_DAY_KEY]).toBe('2026-06-10')
 
-    const getAll = vi.spyOn(browser.storage.local, 'get')
+    const getKeys = vi.spyOn(browser.storage.local, 'getKeys')
     seedDays('2026-01-01')
     await addElapsed('a.com', [[NOON, NOON + 1000]])
-    expect(getAll.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
+    expect(getKeys).not.toHaveBeenCalled()
     expect(data()['day:2026-01-01']).toBeDefined()
 
     now = at(2026, 5, 11, 9)
@@ -167,14 +181,11 @@ describe('setLimit', () => {
     browser.latency = 3
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'x.com': 5 }, snoozeUntil: 0 } })
     // The popup sets this site's limit while the options page sets the cap.
-    const [fromPopup, fromOptions] = await Promise.all([
+    await Promise.all([
       ledger.setLimit({ scope: 'site', site: 'reddit.com', minutes: 30 }),
       ledger.setLimit({ scope: 'global', minutes: 120 }),
     ])
-    const both = { global: 120, perSite: { 'x.com': 5, 'reddit.com': 30 }, snoozeUntil: 0 }
-    expect(data()[LIMITS_KEY]).toEqual(both)
-    expect(fromPopup).toEqual({ ...both, global: null })
-    expect(fromOptions).toEqual(both)
+    expect(data()[LIMITS_KEY]).toEqual({ global: 120, perSite: { 'x.com': 5, 'reddit.com': 30 }, snoozeUntil: 0 })
   })
 
   it('clears a limit, and tolerates garbage in storage', async () => {
@@ -188,27 +199,28 @@ describe('setLimit', () => {
 describe('snooze and prefs', () => {
   it('snoozes for SNOOZE_MS from now, keeping the limits; a limit edit keeps the snooze', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
-    await expect(ledger.snooze()).resolves.toBe(NOON + SNOOZE_MS)
+    await ledger.snooze()
     expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
     await ledger.setLimit({ scope: 'global', minutes: 90 })
     expect(data()[LIMITS_KEY]).toEqual({ global: 90, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
   })
 
   it('merges a prefs change into the stored prefs', async () => {
-    await expect(ledger.setPrefs({ scale: 0.75 })).resolves.toEqual({ hidden: false, scale: 0.75 })
-    await expect(ledger.setPrefs({ hidden: true })).resolves.toEqual({ hidden: true, scale: 0.75 })
+    await ledger.setPrefs({ scale: 0.75 })
+    expect(data()[PREFS_KEY]).toEqual({ hidden: false, scale: 0.75 })
+    await ledger.setPrefs({ hidden: true })
     expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75 })
   })
 })
 
 describe('time away from the computer', () => {
-  const away = () => normalizeAway(browser.storage.session.data[AWAY_KEY])
+  const away = () => normalizeAway((browser.storage.session.data[WORKER_KEY] as { away?: unknown } | undefined)?.away)
   const day = (stamp = '2026-06-10') => data()[`day:${stamp}`]
 
   it('records the idle state for the worker, in session storage only', async () => {
     await setIdleState('locked')
     expect(data()).toEqual({})
-    await expect(ledger.transaction((tx) => tx.idleState())).resolves.toBe('locked')
+    await expect(ledger.transaction(async (tx) => tx.idleState())).resolves.toBe('locked')
     expect(away()).toMatchObject({ state: 'locked', periods: [{ kind: 'locked', start: NOON, end: null }] })
   })
 

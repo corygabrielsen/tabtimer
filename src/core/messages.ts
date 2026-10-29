@@ -3,16 +3,19 @@
 // no DOM.
 //
 // Requests are untrusted input: the service worker accepts only what
-// parseRequest returns. A content script never names the site it reports
-// for; the service worker derives it from the sender's URL.
+// parseRequest (core/requests.ts) returns. A content script never names the
+// site it reports for; the service worker derives it from the sender's URL.
 import { isDayStamp, type DayStamp } from './day'
-import { isBool, isFiniteNumber, isObject, type Raw } from './guards'
-import { MAX_LIMIT_MINUTES, MIN_LIMIT_MINUTES, type BlockScope, type LimitEdit, type Limits } from './limits'
-import { MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
+import { isBool, isFiniteNumber, isObject } from './guards'
+import type { BlockScope, LimitEdit } from './limits'
+import type { Prefs } from './schema'
 import type { Site } from './site'
 import type { Presence } from './tracker'
 
 type Empty = Record<never, never>
+
+// The extension pages a content script may open.
+export type Page = 'options' | 'activity'
 
 // What a tracked page shows and enforces, as the service worker sees it at
 // `asOf`. The page keeps the display ticking from there: while `running`
@@ -30,6 +33,8 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
+  // The overlay preferences (the worker is their only writer).
+  prefs: Prefs
 }
 
 export type Contract = {
@@ -40,15 +45,14 @@ export type Contract = {
   // extension pages: zero one site's time today.
   resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
-  setLimit: { req: LimitEdit; res: Limits }
-  // content, extension pages: suppress blocking for SNOOZE_MS.
-  snooze: { req: Empty; res: { snoozeUntil: number } }
+  setLimit: { req: LimitEdit; res: null }
+  // content: suppress blocking for SNOOZE_MS.
+  snooze: { req: Empty; res: null }
   // content, extension pages: change overlay preferences.
-  setPrefs: { req: Partial<Prefs>; res: Prefs }
-  // content: open the options page.
-  openOptions: { req: Empty; res: null }
-  // content: open the activity page in a new tab (the block stays up).
-  openActivity: { req: Empty; res: null }
+  setPrefs: { req: Partial<Prefs>; res: null }
+  // content: open the options page, or the activity page in a new tab (the
+  // block stays up).
+  open: { req: { page: Page }; res: null }
 }
 
 // The service worker's message to a tracked page (chrome.tabs.sendMessage):
@@ -74,16 +78,9 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   presence: ['content'],
   resetToday: ['extension'],
   setLimit: ['extension'],
-  snooze: ['content', 'extension'],
+  snooze: ['content'],
   setPrefs: ['content', 'extension'],
-  openOptions: ['content', 'extension'],
-  openActivity: ['content', 'extension'],
-}
-
-// A plausible lowercase hostname. The service worker additionally checks it
-// is a site in canonical form (that needs the public suffix list).
-function isSiteString(v: unknown): v is Site {
-  return typeof v === 'string' && v.length > 0 && v.length <= 253 && /^[a-z0-9.\-[\]:]+$/.test(v)
+  open: ['content'],
 }
 
 // A Presence: four booleans, nothing else kept. null = reject.
@@ -122,6 +119,10 @@ export function parseStatePush(raw: unknown): TabState | null {
     }
     limit = { scope: l.scope, ms: l.ms }
   }
+  const p = s.prefs
+  if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
+    return null
+  }
   return {
     site: s.site,
     day: s.day,
@@ -131,73 +132,6 @@ export function parseStatePush(raw: unknown): TabState | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
-  }
-}
-
-// A limit: whole minutes in the settable range, or null (no limit).
-// undefined = reject.
-function parseLimitMinutes(v: unknown): number | null | undefined {
-  if (v === null) {
-    return null
-  }
-  return isFiniteNumber(v) && Number.isInteger(v) && v >= MIN_LIMIT_MINUTES && v <= MAX_LIMIT_MINUTES ? v : undefined
-}
-
-function parsePrefs(raw: Raw): Partial<Prefs> | null {
-  const prefs: Partial<Prefs> = {}
-  if ('hidden' in raw) {
-    if (!isBool(raw.hidden)) {
-      return null
-    }
-    prefs.hidden = raw.hidden
-  }
-  if ('scale' in raw) {
-    if (!isFiniteNumber(raw.scale) || raw.scale < MIN_SCALE || raw.scale > MAX_SCALE) {
-      return null
-    }
-    prefs.scale = raw.scale
-  }
-  return Object.keys(prefs).length > 0 ? prefs : null
-}
-
-// Validate an incoming message against the contract. The result is rebuilt
-// from the checked fields only, so anything else in the payload (a `site` on
-// a content request, say) is dropped. null = reject.
-export function parseRequest(raw: unknown): Request | null {
-  if (!isObject(raw)) {
-    return null
-  }
-  switch (raw.type) {
-    case 'snooze':
-      return { type: 'snooze' }
-    case 'openOptions':
-      return { type: 'openOptions' }
-    case 'openActivity':
-      return { type: 'openActivity' }
-    case 'presence': {
-      const presence = parsePresence(raw)
-      return presence ? { type: 'presence', ...presence } : null
-    }
-    case 'resetToday':
-      return isSiteString(raw.site) ? { type: 'resetToday', site: raw.site } : null
-    case 'setLimit': {
-      const minutes = parseLimitMinutes(raw.minutes)
-      if (minutes === undefined) {
-        return null
-      }
-      if (raw.scope === 'global') {
-        return { type: 'setLimit', scope: 'global', minutes }
-      }
-      if (raw.scope === 'site' && isSiteString(raw.site)) {
-        return { type: 'setLimit', scope: 'site', site: raw.site, minutes }
-      }
-      return null
-    }
-    case 'setPrefs': {
-      const prefs = parsePrefs(raw)
-      return prefs ? { type: 'setPrefs', ...prefs } : null
-    }
-    default:
-      return null
+    prefs: { hidden: p.hidden, scale: p.scale },
   }
 }

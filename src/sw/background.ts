@@ -3,7 +3,7 @@ import { sendState, serveRouter } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { CHECKPOINT_MS } from '../core/tracker'
 import { msToMinutes } from '../core/limits'
-import { LIMITS_KEY } from '../core/schema'
+import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { siteOfUrl } from '../core/site'
 import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
@@ -15,8 +15,7 @@ import { createTracker } from './tracker'
 const CHECKPOINT_ALARM = 'checkpoint'
 const ACTIVITY_PAGE = 'usage.html'
 
-const session = chromeStore('session')
-const ledger = createLedger(chromeStore('local'), session, systemClock)
+const ledger = createLedger(chromeStore('local'), chromeStore('session'), systemClock)
 
 // The checkpoint alarm runs only while an interval is open, so the worker
 // sleeps while nothing is being counted. Created only if missing: creating
@@ -30,7 +29,7 @@ async function alarm(on: boolean): Promise<void> {
   }
 }
 
-const tracker = createTracker({ ledger, session, send: sendState, alarm })
+const tracker = createTracker({ ledger, send: sendState, alarm })
 
 // Every listener is registered synchronously at the top level, as MV3
 // requires: any of these events can be what starts the worker.
@@ -54,10 +53,10 @@ chrome.alarms.onAlarm.addListener(({ name }) => {
     dispatch({ kind: 'checkpoint' })
   }
 })
-// The limits (the snooze included) decide when pages block: tell them of a
-// change, whoever made it.
+// The limits (the snooze included) decide when pages block, and the prefs
+// how their overlay looks: tell them of a change, whoever made it.
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && LIMITS_KEY in changes) {
+  if (area === 'local' && (LIMITS_KEY in changes || PREFS_KEY in changes)) {
     void tracker.refresh().catch(() => undefined)
   }
 })
@@ -98,9 +97,12 @@ serveRouter(
     tracker,
     extensionId: chrome.runtime.id,
     extensionUrl: chrome.runtime.getURL(''),
-    openOptions: () => chrome.runtime.openOptionsPage(),
-    openActivity: async () => {
-      await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+    open: async (page) => {
+      if (page === 'options') {
+        await chrome.runtime.openOptionsPage()
+      } else {
+        await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
+      }
     },
   })
 )

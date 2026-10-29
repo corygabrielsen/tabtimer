@@ -41,7 +41,7 @@ export type AwayPeriod = { kind: AwayKind; start: number; end: number | null }
 // still take it back. `media`: the page reported media playing.
 export type Credit = { site: string; start: number; end: number; media: boolean }
 
-// What the service worker keeps in storage.session (key AWAY_KEY).
+// What the service worker keeps in storage.session.
 export type AwayState = {
   state: IdleState
   // When `state` began (0 = unknown, e.g. the first observation).
@@ -49,8 +49,6 @@ export type AwayState = {
   periods: AwayPeriod[]
   recent: Credit[]
 }
-
-export const AWAY_KEY = 'away'
 
 // Bounds on what storage.session holds. Periods ended more than
 // MAX_SPAN_AGE_MS ago can't matter; credits older than one detection

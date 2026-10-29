@@ -6,6 +6,7 @@ import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
 import { LIMITS_KEY, PREFS_KEY, emptyBuckets } from '../core/schema'
 import { SNOOZE_MS } from '../core/limits'
+import type { Page } from '../core/messages'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 
 const ID = 'tabtimer-test'
@@ -16,14 +17,14 @@ const MIN = 60_000
 let browser: FakeChrome
 let NOW = NOON
 let handle: Handler
-let openOptions: ReturnType<typeof vi.fn<() => Promise<void>>>
-let openActivity: ReturnType<typeof vi.fn<() => Promise<void>>>
+let open: ReturnType<typeof vi.fn<(page: Page) => Promise<void>>>
 
 const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = {}): Sender => ({
   id: ID,
   url,
   tab: { id: 7, windowId: 1 },
   frameId: 0,
+  documentLifecycle: 'active',
   ...extra,
 })
 const page = (path = 'popup.html'): Sender => ({ id: ID, url: `${EXT}${path}` })
@@ -43,18 +44,16 @@ async function visit(sender = content(), extra: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   browser = fakeChrome()
-  openOptions = vi.fn(() => Promise.resolve())
-  openActivity = vi.fn(() => Promise.resolve())
+  open = vi.fn(() => Promise.resolve())
   NOW = NOON
   const clock = { now: () => NOW }
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
   const tracker = createTracker({
     ledger,
-    session: chromeStore('session'),
     send: () => Promise.resolve(undefined),
     alarm: () => Promise.resolve(),
   })
-  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, openOptions, openActivity })
+  handle = createRouter({ ledger, tracker, extensionId: ID, extensionUrl: EXT, open })
 })
 
 describe('sender policy', () => {
@@ -94,13 +93,14 @@ describe('sender policy', () => {
   it('accepts content requests only from a tab’s top frame on an http(s) page', async () => {
     const refused = [
       content(undefined, { frameId: 3 }),
-      content(undefined, { frameId: 3, documentLifecycle: 'active' }),
       content(undefined, { frameId: 3, documentLifecycle: 'prerender' }),
+      content(undefined, { documentLifecycle: 'prerender' }),
+      content(undefined, { documentLifecycle: undefined }),
       content(undefined, { frameId: undefined }),
       content(undefined, { tab: undefined }),
       content('about:blank'),
       content('file:///etc/passwd'),
-      { id: ID, tab: { id: 7 }, frameId: 0 },
+      { id: ID, tab: { id: 7 }, frameId: 0, documentLifecycle: 'active' },
     ]
     for (const sender of refused) {
       await expect(handle(presence, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
@@ -123,14 +123,23 @@ describe('sender policy', () => {
     expect(today()?.['reddit.com']?.[12]).toBe(6000)
   })
 
+  it('lets a departing page’s last report close nothing of the page that replaced it', async () => {
+    await handle(presence, content(undefined, { documentId: 'new' }))
+    const late = content(undefined, { frameId: 4, documentId: 'old', documentLifecycle: 'pending_deletion' })
+    await expect(handle(hidden, late)).resolves.toMatchObject({ ok: true, value: { running: true } })
+    expect(browser.storage.session.data.worker).toMatchObject({ tracker: { open: { doc: 'new' } } })
+  })
+
   it('identifies the tab, its window and its document', async () => {
     await handle(presence, content(undefined, { tab: { id: 3, windowId: 9 }, documentId: 'doc-a' }))
-    expect(browser.storage.session.data.tracker).toMatchObject({
-      open: { tabId: 3, windowId: 9, doc: 'doc-a', site: 'reddit.com' },
+    expect(browser.storage.session.data.worker).toMatchObject({
+      tracker: { open: { tabId: 3, windowId: 9, doc: 'doc-a', site: 'reddit.com' } },
     })
     // A tab without a window id still reports (as window -1).
     await handle(presence, content(undefined, { tab: { id: 4 } }))
-    expect(browser.storage.session.data.tracker).toMatchObject({ open: { tabId: 4, windowId: -1, doc: '' } })
+    expect(browser.storage.session.data.worker).toMatchObject({
+      tracker: { open: { tabId: 4, windowId: -1, doc: '' } },
+    })
   })
 
   it('reserves resets and limits for extension pages (closes key injection)', async () => {
@@ -177,37 +186,32 @@ describe('handlers', () => {
     expect(today()?.['reddit.com']?.[12]).toBe(2000)
   })
 
-  it('set a limit and answer with all limits', async () => {
+  it('set a limit', async () => {
     await expect(handle({ type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 }, page())).resolves.toEqual({
       ok: true,
-      value: { global: null, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
+      value: null,
     })
-    await expect(handle({ type: 'setLimit', scope: 'global', minutes: 2 }, page('options.html'))).resolves.toEqual({
-      ok: true,
-      value: { global: 2, perSite: { 'x.com': 1 }, snoozeUntil: 0 },
-    })
+    await handle({ type: 'setLimit', scope: 'global', minutes: 2 }, page('options.html'))
+    expect(browser.storage.local.data[LIMITS_KEY]).toEqual({ global: 2, perSite: { 'x.com': 1 }, snoozeUntil: 0 })
   })
 
-  it('snooze, from a tab or a page', async () => {
-    await expect(handle({ type: 'snooze' }, content())).resolves.toEqual({
-      ok: true,
-      value: { snoozeUntil: NOW + SNOOZE_MS },
-    })
+  it('snooze, from a tab only', async () => {
+    await expect(handle({ type: 'snooze' }, page())).resolves.toEqual({ ok: false, error: 'forbidden' })
+    await expect(handle({ type: 'snooze' }, content())).resolves.toEqual({ ok: true, value: null })
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: NOW + SNOOZE_MS })
   })
 
   it('set prefs, changing only the fields given', async () => {
     await handle({ type: 'setPrefs', scale: 0.5 }, content())
-    await expect(handle({ type: 'setPrefs', hidden: true }, page())).resolves.toEqual({
-      ok: true,
-      value: { hidden: true, scale: 0.5 },
-    })
+    await expect(handle({ type: 'setPrefs', hidden: true }, page())).resolves.toEqual({ ok: true, value: null })
     expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5 })
   })
 
   it('take the page’s media flag: while idle, only a page playing media accrues', async () => {
     browser.storage.session.seed({
-      away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
+      worker: {
+        away: { state: 'idle', since: NOW - MIN, periods: [{ kind: 'idle', start: NOW - MIN, end: null }], recent: [] },
+      },
     })
     await expect(handle(presence, content())).resolves.toMatchObject({ ok: true, value: { running: false } })
     await expect(handle({ ...presence, media: true }, content())).resolves.toMatchObject({
@@ -220,15 +224,14 @@ describe('handlers', () => {
     await expect(handle({ ...presence, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
   })
 
-  it('open the options page', async () => {
-    await expect(handle({ type: 'openOptions' }, content())).resolves.toEqual({ ok: true, value: null })
-    expect(openOptions).toHaveBeenCalledOnce()
-  })
-
-  it('open the activity page', async () => {
-    await expect(handle({ type: 'openActivity' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'openActivity' }, page('usage.html'))).resolves.toEqual({ ok: true, value: null })
-    expect(openActivity).toHaveBeenCalledTimes(2)
+  it('open the options or the activity page, from a tab only', async () => {
+    await expect(handle({ type: 'open', page: 'options' }, content())).resolves.toEqual({ ok: true, value: null })
+    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({ ok: true, value: null })
+    await expect(handle({ type: 'open', page: 'activity' }, page('usage.html'))).resolves.toEqual({
+      ok: false,
+      error: 'forbidden',
+    })
+    expect(open.mock.calls).toEqual([['options'], ['activity']])
   })
 
   it('answer internal when a handler fails', async () => {

@@ -219,7 +219,7 @@ export default class BlockScreen {
     this.activityButton.className = 'activity'
     this.activityButton.textContent = t('blockSeeActivity')
     this.activityButton.addEventListener('click', () => {
-      void this.bus.send('openActivity', {})
+      void this.bus.send('open', { page: 'activity' })
     })
 
     const row = document.createElement('div')
@@ -231,7 +231,7 @@ export default class BlockScreen {
     this.manageButton.className = 'manage'
     this.manageButton.textContent = t('blockManage')
     this.manageButton.addEventListener('click', () => {
-      void this.bus.send('openOptions', {})
+      void this.bus.send('open', { page: 'options' })
     })
 
     box.append(title, this.hostLine, this.detailLine, row, this.manageButton)

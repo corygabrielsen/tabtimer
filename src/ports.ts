@@ -11,6 +11,7 @@ export interface Store {
   // The stored value, or undefined when the key is absent.
   get<T>(key: string): Promise<T | undefined>
   getAll(): Promise<Record<string, unknown>>
+  keys(): Promise<string[]>
   set(items: Record<string, unknown>): Promise<void>
   remove(keys: string[]): Promise<void>
   clear(): Promise<void>

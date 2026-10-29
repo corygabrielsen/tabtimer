@@ -53,6 +53,8 @@ export class FakeStorageArea {
     return this.complete(this.error, () => snapshot, callback)
   }
 
+  getKeys = (): Promise<string[]> => this.complete(this.error, () => Object.keys(this.data))
+
   set = (items: Record<string, unknown>, callback?: () => void): Promise<void> => {
     const error = this.error
     return this.complete(
@@ -387,7 +389,7 @@ export class FakeChrome {
     }
     const url = (globalThis as { location?: { href: string } }).location?.href ?? ''
     return /^https?:/.test(url)
-      ? { id: this.runtime.id, url, tab: { id: 1, windowId: 1 }, frameId: 0 }
+      ? { id: this.runtime.id, url, tab: { id: 1, windowId: 1 }, frameId: 0, documentLifecycle: 'active' }
       : { id: this.runtime.id, url: this.runtime.getURL('popup.html') }
   }
 

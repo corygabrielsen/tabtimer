@@ -49,7 +49,7 @@ describe('idle', () => {
     await import('./background')
     await flush()
     expect(browser.idle.setDetectionInterval).toHaveBeenCalledWith(300)
-    const away = () => (browser.storage.session.data.away as { state: string }).state
+    const away = () => (browser.storage.session.data.worker as { away: { state: string } }).away.state
     expect(away()).toBe('locked')
     browser.setIdleState('active')
     await flush()
@@ -59,19 +59,31 @@ describe('idle', () => {
 
 describe('messages', () => {
   it('serves the contract to this extension', async () => {
-    browser.sender = { id: browser.runtime.id, url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    browser.sender = {
+      id: browser.runtime.id,
+      url: 'https://www.reddit.com/',
+      tab: { id: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
     await expect(bus.send('presence', PRESENT)).resolves.toMatchObject({
       ok: true,
       value: { site: 'reddit.com', running: true },
     })
-    await expect(bus.send('openOptions', {})).resolves.toEqual({ ok: true, value: null })
+    await expect(bus.send('open', { page: 'options' })).resolves.toEqual({ ok: true, value: null })
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
-    await expect(bus.send('openActivity', {})).resolves.toEqual({ ok: true, value: null })
+    await expect(bus.send('open', { page: 'activity' })).resolves.toEqual({ ok: true, value: null })
     expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
   })
 
   it('refuses other senders', async () => {
-    browser.sender = { id: 'someone-else', url: 'https://www.reddit.com/', tab: { id: 1 }, frameId: 0 }
+    browser.sender = {
+      id: 'someone-else',
+      url: 'https://www.reddit.com/',
+      tab: { id: 1 },
+      frameId: 0,
+      documentLifecycle: 'active',
+    }
     await expect(bus.send('presence', PRESENT)).resolves.toEqual({ ok: false, error: 'forbidden' })
   })
 })
