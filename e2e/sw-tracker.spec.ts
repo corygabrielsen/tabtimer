@@ -1,5 +1,15 @@
-import type { BrowserContext, Page, Worker } from '@playwright/test'
-import { test, expect, readToday, shadowText, OVERLAY_ID } from './fixtures'
+import type { BrowserContext, Page } from '@playwright/test'
+import {
+  test,
+  expect,
+  advance,
+  checkpoint,
+  focusWindow,
+  openInterval,
+  readToday,
+  shadowText,
+  OVERLAY_ID,
+} from './fixtures'
 
 // The service worker owns active time: one open interval, kept in
 // storage.session, so it survives the worker being stopped and can never
@@ -7,14 +17,6 @@ import { test, expect, readToday, shadowText, OVERLAY_ID } from './fixtures'
 
 const SITE_A = 'site-a.test'
 const SITE_B = 'site-b.test'
-
-type Hook = { checkpoint: () => Promise<void>; focusWindow: (id: number) => Promise<void> }
-
-// Credit the open interval now (the minute's checkpoint, through the e2e
-// build's hook) so stored totals are current.
-function checkpoint(sw: Worker): Promise<void> {
-  return sw.evaluate(() => (globalThis as unknown as { __tabtimerTest: Hook }).__tabtimerTest.checkpoint())
-}
 
 // The overlay pill's time today, in seconds.
 async function overlaySeconds(page: Page): Promise<number> {
@@ -81,11 +83,15 @@ test('time continues correctly after the service worker is stopped mid-session',
   expect(credited).toBeGreaterThanOrEqual(last * 1000 - 2_000)
   expect(await overlaySeconds(page)).toBeGreaterThanOrEqual(last)
 
-  // And it keeps counting from there.
+  // And it keeps counting from there (on the new worker's clock, moved
+  // forward through the e2e build's hook).
+  const resumed = Date.now()
   await page.evaluate(() => window.dispatchEvent(new Event('focus')))
-  await page.waitForTimeout(2_000)
+  await expect.poll(() => openInterval(sw)).not.toBeNull()
+  await advance(sw, 30_000)
   await page.evaluate(() => window.dispatchEvent(new Event('blur')))
-  await expect.poll(() => readToday(sw, SITE_A)).toBeGreaterThanOrEqual(credited + 1_500)
+  await expect.poll(() => readToday(sw, SITE_A)).toBeGreaterThanOrEqual(credited + 30_000)
+  expect(await readToday(sw, SITE_A)).toBeLessThanOrEqual(credited + 30_000 + Date.now() - resumed)
 })
 
 test('two visible windows never count at once: only the focused one does', async ({ context, serviceWorker, site }) => {
@@ -110,26 +116,10 @@ test('two visible windows never count at once: only the focused one does', async
     await checkpoint(serviceWorker)
     return { a: await readToday(serviceWorker, SITE_A), b: await readToday(serviceWorker, SITE_B) }
   }
-  // Headless Chromium focuses the window but sends no focus event; the hook
-  // delivers the one Chrome would. The window's page is then asked, and
-  // reports itself in use.
+  // The focused window's page is asked, and reports itself in use.
   const focus = async (windowId: number) => {
-    await serviceWorker.evaluate(
-      (id) => (globalThis as unknown as { __tabtimerTest: Hook }).__tabtimerTest.focusWindow(id),
-      windowId
-    )
-    await expect
-      .poll(() =>
-        serviceWorker.evaluate(() =>
-          chrome.storage.session
-            .get('worker')
-            .then(
-              ({ worker }) =>
-                (worker as { tracker?: { open?: { windowId: number } } } | undefined)?.tracker?.open?.windowId ?? null
-            )
-        )
-      )
-      .toBe(windowId)
+    await focusWindow(serviceWorker, windowId)
+    await expect.poll(() => openInterval(serviceWorker).then((open) => open?.windowId ?? null)).toBe(windowId)
   }
 
   for (const [focused, other] of [
@@ -139,13 +129,13 @@ test('two visible windows never count at once: only the focused one does', async
     await focus(focused === 'a' ? windowA : windowB)
     const t0 = Date.now()
     const before = await totals()
-    await pageA.waitForTimeout(3_000)
+    await advance(serviceWorker, 30_000)
     const after = await totals()
-    const wall = Date.now() - t0
+    const elapsed = 30_000 + Date.now() - t0
     // The focused window's site gained the time; the other, visible all
-    // along, gained nothing; together, no more than the wall clock.
-    expect(after[focused] - before[focused]).toBeGreaterThanOrEqual(2_500)
+    // along, gained nothing; together, no more than the time that passed.
+    expect(after[focused] - before[focused]).toBeGreaterThanOrEqual(30_000)
     expect(after[other] - before[other]).toBe(0)
-    expect(after.a - before.a + (after.b - before.b)).toBeLessThanOrEqual(wall)
+    expect(after.a - before.a + (after.b - before.b)).toBeLessThanOrEqual(elapsed)
   }
 })

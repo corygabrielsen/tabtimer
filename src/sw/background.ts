@@ -9,14 +9,16 @@ import { syncContentScripts } from './contentScripts'
 import { syncIdle, watchIdle } from './idle'
 import { createLedger } from './ledger'
 import { createRouter } from './router'
-import { installTestHook } from './testHook'
+import { installTestHook, offsetClock } from './testHook'
 import { createTracker } from './tracker'
 
 const CHECKPOINT_ALARM = 'checkpoint'
 const ACTIVITY_PAGE = 'usage.html'
 
 const local = chromeStore('local')
-const ledger = createLedger(local, chromeStore('session'), systemClock)
+// The e2e build's clock can be moved forward (testHook.ts).
+const testClock = __TABTIMER_E2E__ ? offsetClock(systemClock) : null
+const ledger = createLedger(local, chromeStore('session'), testClock ?? systemClock)
 
 // The checkpoint alarm runs only while an interval is open, so the worker
 // sleeps while nothing is being counted. Created only if missing: creating
@@ -67,8 +69,8 @@ local.onChanged((changes) => {
 watchIdle(tracker)
 void syncIdle(tracker).catch(() => undefined)
 void tracker.resume().catch(() => undefined)
-if (__TABTIMER_E2E__) {
-  installTestHook(tracker)
+if (__TABTIMER_E2E__ && testClock) {
+  installTestHook(tracker, testClock)
 }
 
 // Storage first (a different schema is cleared, expired days pruned), then

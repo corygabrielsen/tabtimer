@@ -195,6 +195,37 @@ export async function readToday(sw: Worker, site: string): Promise<number> {
   return (usage?.[site] ?? []).reduce((total, ms) => total + ms, 0)
 }
 
+// Call the e2e build's test hook (src/sw/testHook.ts) in the worker.
+async function callHook(sw: Worker, name: string, arg?: unknown): Promise<void> {
+  type Hook = Record<string, (arg: unknown) => unknown>
+  await sw.evaluate(([name, arg]) => (globalThis as unknown as { __tabtimerTest: Hook }).__tabtimerTest[name]!(arg), [
+    name,
+    arg,
+  ] as const)
+}
+
+export const setIdle = (sw: Worker, state: 'active' | 'idle' | 'locked') => callHook(sw, 'idle', state)
+// Credit the open interval now (the minute's checkpoint alarm).
+export const checkpoint = (sw: Worker) => callHook(sw, 'checkpoint')
+// Move the worker's clock forward: time accrues without waiting it out.
+export const advance = (sw: Worker, ms: number) => callHook(sw, 'advance', ms)
+// Headless Chromium focuses a window but sends no focus event; the hook
+// delivers the one Chrome would.
+export const focusWindow = (sw: Worker, windowId: number) => callHook(sw, 'focusWindow', windowId)
+
+// The worker's open interval (in storage.session), or null.
+export function openInterval(sw: Worker): Promise<{ windowId: number; media: boolean } | null> {
+  return sw.evaluate(() =>
+    chrome.storage.session
+      .get('worker')
+      .then(
+        ({ worker }) =>
+          (worker as { tracker?: { open?: { windowId: number; media: boolean } | null } } | undefined)?.tracker?.open ??
+          null
+      )
+  )
+}
+
 // The popup acts on the active tab. Opened as a page it would see itself, so
 // point it at the open tab whose URL starts with `url`.
 export async function openPopup(context: BrowserContext, sw: Worker, extensionId: string, url: string): Promise<Page> {
