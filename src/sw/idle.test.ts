@@ -42,6 +42,16 @@ describe('syncIdle', () => {
     expect(tracker.dispatch).toHaveBeenCalledWith({ kind: 'idle', state: 'locked' })
   })
 
+  it('defers to a change that arrives while it reads', async () => {
+    const browser = fakeChrome()
+    const tracker = fakeTracker()
+    watchIdle(tracker)
+    const sync = syncIdle(tracker)
+    browser.setIdleState('locked')
+    await sync
+    expect(tracker.dispatch.mock.calls).toEqual([[{ kind: 'idle', state: 'locked' }]])
+  })
+
   it('ignores a state it does not know', async () => {
     const browser = fakeChrome()
     browser.idle.queryState.mockResolvedValueOnce('asleep' as never)
