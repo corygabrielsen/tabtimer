@@ -8,7 +8,7 @@ Tab Timer is built to keep your data on your own device.
 
 Tab Timer measures how long you actively spend on the sites you choose to enable
 and shows a running total for the current day. No site is tracked until you
-enable it.
+enable it. It never runs in Incognito windows.
 
 ## What it stores
 
