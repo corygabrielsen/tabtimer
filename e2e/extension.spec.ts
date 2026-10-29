@@ -7,6 +7,8 @@ import {
   readToday,
   openPopup,
   setPageFocus,
+  openInterval,
+  checkpoint,
   shadowText,
   clickInShadow,
   LIMITS_KEY,
@@ -213,8 +215,10 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
 
   await clickInShadow(page, BLOCK_ID, 'button.snooze')
   await expect(block).toBeHidden()
-  const { snoozeUntil } = (await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil: number }
-  expect(snoozeUntil).toBeGreaterThan(Date.now() + 4 * MINUTE)
+  // The page lifts the block at the click; the worker stores the snooze after.
+  await expect
+    .poll(async () => ((await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil)
+    .toBeGreaterThan(Date.now() + 4 * MINUTE)
 
   // Fast-forward: expire the snooze in storage instead of waiting 5 minutes.
   await seed(serviceWorker, {
@@ -277,12 +281,15 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   const page = await context.newPage()
   await page.goto(site(SITE_A))
   await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  await expect.poll(() => openInterval(serviceWorker)).not.toBeNull()
 
-  // Take window focus away so SITE_A stops accruing, then let the last
-  // report (every 5 s) land and put the stored total back on a whole
-  // minute: the stored total is what the limit compares.
+  // Take window focus away so SITE_A stops accruing, wait for the worker to
+  // close its interval (a transaction queued after it: credited too), then
+  // put the stored total back on a whole minute: the stored total is what
+  // the limit compares.
   await setPageFocus(page, false)
-  await page.waitForTimeout(6_000)
+  await expect.poll(() => openInterval(serviceWorker)).toBeNull()
+  await checkpoint(serviceWorker)
   await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 3 * MINUTE }))
   expect(await readToday(serviceWorker, SITE_A)).toBe(3 * MINUTE)
   const block = page.locator(`#${BLOCK_ID}`)
