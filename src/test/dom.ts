@@ -2,6 +2,7 @@
 import { vi } from 'vitest'
 import popupHtml from '../../popup.html?raw'
 import optionsHtml from '../../options.html?raw'
+import usageHtml from '../../usage.html?raw'
 
 // The overlay and block screen live in *closed* shadow roots, which the page
 // (and so a test) can't reach via `host.shadowRoot`. Record each root as it's
@@ -82,8 +83,8 @@ export function click(el: Element | null | undefined): void {
 }
 
 // Load the <body> of one of the extension's HTML pages into the document.
-export function loadPageBody(file: 'popup.html' | 'options.html'): void {
-  const html = file === 'popup.html' ? popupHtml : optionsHtml
+export function loadPageBody(file: 'popup.html' | 'options.html' | 'usage.html'): void {
+  const html = { 'popup.html': popupHtml, 'options.html': optionsHtml, 'usage.html': usageHtml }[file]
   const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(html)?.[1] ?? ''
   // Drop the module script tag; tests import the entry module themselves.
   document.body.innerHTML = body.replace(/<script[\s\S]*?<\/script>/g, '')

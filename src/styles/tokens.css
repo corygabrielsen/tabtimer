@@ -23,6 +23,13 @@
   --rule-strong: #8f8f8f;
   --focus: #000000;
 
+  /* Usage chart series: the top three sites, then everyone else. Each is
+     >= 3:1 on paper; adjacent segments are parted by a paper rule. */
+  --series-0: #000000;
+  --series-1: #484848;
+  --series-2: #707070;
+  --series-other: #949494;
+
   --font-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-figure: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 
@@ -58,6 +65,10 @@
     --rule: #2c2c2c;
     --rule-strong: #6e6e6e;
     --focus: #f5f5f5;
+    --series-0: #f5f5f5;
+    --series-1: #bdbdbd;
+    --series-2: #8a8a8a;
+    --series-other: #5e5e5e;
   }
 }
 
@@ -327,6 +338,53 @@ a:hover {
 .limit-hint {
   color: var(--ink-3);
   font-size: var(--t-xs);
+}
+
+/* --- Segmented control: radio inputs in one strip; the checked one inverts */
+
+.segmented {
+  display: inline-flex;
+  margin-left: auto;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.segmented label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--s-3);
+  cursor: pointer;
+  color: var(--ink-2);
+}
+
+.segmented label + label {
+  border-left: 1px solid var(--rule-strong);
+}
+
+.segmented input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.segmented label:has(input:checked) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.segmented label:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  z-index: 1;
+}
+
+.segmented label:has(input:disabled) {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* --- Switch (role="switch" button) --------------------------------------- */

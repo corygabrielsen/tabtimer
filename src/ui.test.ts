@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, vi } from 'vitest'
-import { h, formatDuration, validateMinutes, flashSaved, MAX_LIMIT_MINUTES } from './ui'
+import { h, firstDayOfWeek, formatDuration, uiLocale, validateMinutes, flashSaved, MAX_LIMIT_MINUTES } from './ui'
 
 describe('h', () => {
   it('builds an element with attributes and text children, never parsing HTML', () => {
@@ -62,5 +62,30 @@ describe('flashSaved', () => {
 
   it('ignores a missing element', () => {
     expect(() => flashSaved(null)).not.toThrow()
+  })
+})
+
+describe('locale', () => {
+  it('is the browser UI language', () => {
+    expect(uiLocale()).toBe('en-US')
+    vi.spyOn(chrome.i18n, 'getUILanguage').mockReturnValue('')
+    expect(uiLocale()).toBe('en')
+  })
+
+  it('knows where the week starts', () => {
+    expect(firstDayOfWeek('en-US')).toBe(0)
+    expect(firstDayOfWeek('en-GB')).toBe(1)
+    expect(firstDayOfWeek('not a locale!')).toBe(0)
+  })
+
+  it('reads the older weekInfo property, or falls back to Sunday', () => {
+    // Engines differ in which of the two they have; stand in for both.
+    let locale: object = { weekInfo: { firstDay: 1 } }
+    vi.spyOn(Intl, 'Locale').mockImplementation(function () {
+      return locale as Intl.Locale
+    } as never)
+    expect(firstDayOfWeek('en-GB')).toBe(1)
+    locale = {}
+    expect(firstDayOfWeek('en-GB')).toBe(0)
   })
 })

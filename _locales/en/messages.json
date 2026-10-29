@@ -167,5 +167,75 @@
   },
   "optionsPrivacyLink": { "message": "Privacy policy" },
   "optionsSourceLink": { "message": "Source code" },
+  "usageDocTitle": { "message": "Tab Timer activity" },
+  "usageTitle": { "message": "Activity" },
+  "usageModeLabel": { "message": "Show" },
+  "usageDay": { "message": "Day" },
+  "usageWeek": { "message": "Week" },
+  "usagePrevDay": { "message": "Previous day" },
+  "usageNextDay": { "message": "Next day" },
+  "usagePrevWeek": { "message": "Previous week" },
+  "usageNextWeek": { "message": "Next week" },
+  "usageToday": { "message": "Today" },
+  "usageYesterday": { "message": "Yesterday" },
+  "usageThisWeek": { "message": "This week" },
+  "usageLastWeek": { "message": "Last week" },
+  "usageUp": {
+    "message": "↑ $pct$% from $since$",
+    "placeholders": { "pct": { "content": "$1" }, "since": { "content": "$2" } }
+  },
+  "usageDown": {
+    "message": "↓ $pct$% from $since$",
+    "placeholders": { "pct": { "content": "$1" }, "since": { "content": "$2" } }
+  },
+  "usageUpAria": {
+    "message": "Up $pct$ percent from $since$",
+    "placeholders": { "pct": { "content": "$1" }, "since": { "content": "$2" } }
+  },
+  "usageDownAria": {
+    "message": "Down $pct$ percent from $since$",
+    "placeholders": { "pct": { "content": "$1" }, "since": { "content": "$2" } }
+  },
+  "usageSinceYesterday": { "message": "yesterday" },
+  "usageSinceDayBefore": { "message": "the day before" },
+  "usageSinceLastWeek": { "message": "last week" },
+  "usageSinceWeekBefore": { "message": "the week before" },
+  "usageDailyAverage": { "message": "Daily average $time$", "placeholders": { "time": { "content": "$1" } } },
+  "usageAverageLine": { "message": "avg" },
+  "usageLimitLine": { "message": "$time$ limit", "placeholders": { "time": { "content": "$1" } } },
+  "usageOther": { "message": "Other" },
+  "usageChartDayAria": {
+    "message": "Time by hour, $day$. Use the arrow keys to move between hours.",
+    "placeholders": { "day": { "content": "$1" } }
+  },
+  "usageChartWeekAria": {
+    "message": "Time by day, $range$. Use the arrow keys to move between days.",
+    "placeholders": { "range": { "content": "$1" } }
+  },
+  "usageBarAria": {
+    "message": "$slot$, $time$",
+    "placeholders": { "slot": { "content": "$1" }, "time": { "content": "$2" } }
+  },
+  "usageShowTable": { "message": "Show as table" },
+  "usageShowChart": { "message": "Show as chart" },
+  "usageColHour": { "message": "Hour" },
+  "usageColDay": { "message": "Day" },
+  "usageColTotal": { "message": "Total" },
+  "usageSitesHeading": { "message": "Sites" },
+  "usageOfLimit": {
+    "message": "$used$ of $limit$ limit",
+    "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
+  },
+  "usageAverageOfLimit": {
+    "message": "Daily average $used$ of $limit$ limit",
+    "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
+  },
+  "usageShowing": { "message": "Showing $site$", "placeholders": { "site": { "content": "$1" } } },
+  "usageShowAll": { "message": "Show all sites" },
+  "usageEmptyTitle": { "message": "No activity yet" },
+  "usageEmptyBody": { "message": "Time you spend on tracked sites shows up here, by hour and by day." },
+  "usageEmptyLink": { "message": "Choose sites to track" },
+  "usageNoneDay": { "message": "No time on tracked sites this day." },
+  "usageNoneWeek": { "message": "No time on tracked sites this week." },
   "blockSeeActivity": { "message": "See activity" }
 }

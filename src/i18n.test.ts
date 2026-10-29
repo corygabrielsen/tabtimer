@@ -4,6 +4,7 @@ import { t, localizeDom } from './i18n'
 import enMessages from '../_locales/en/messages.json'
 import popupHtml from '../popup.html?raw'
 import optionsHtml from '../options.html?raw'
+import usageHtml from '../usage.html?raw'
 import manifestJson from '../manifest.json?raw'
 
 const sources = import.meta.glob<string>(['./**/*.ts', '!./**/*.test.ts', '!./test/**'], {
@@ -52,7 +53,7 @@ describe('localizeDom', () => {
 // Every place a message key can be referenced. Add a page or script here and
 // both directions of the coverage check below include it.
 const SCRIPTS = Object.values(sources)
-const PAGES = [popupHtml, optionsHtml]
+const PAGES = [popupHtml, optionsHtml, usageHtml]
 const MANIFESTS = [manifestJson]
 
 function keysInScripts(): Set<string> {
