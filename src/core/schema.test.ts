@@ -5,6 +5,7 @@ import {
   dayTotal,
   emptyBuckets,
   expiredDayKeys,
+  snoozeKey,
   normalizeClock,
   normalizeDay,
   normalizePrefs,
@@ -45,6 +46,12 @@ describe('retention', () => {
     const keys = ['day:2026-06-30', 'day:2026-06-01', 'day:2026-05-31', 'day:2025-12-25']
     // 1 June is 29 days before 30 June: the oldest day kept.
     expect(expiredDayKeys(keys, now)).toEqual(['day:2026-05-31', 'day:2025-12-25'])
+  })
+
+  it('expires a day’s snoozes with its usage', () => {
+    expect(snoozeKey('2026-06-30')).toBe('snoozes:2026-06-30')
+    const keys = ['snoozes:2026-06-30', 'snoozes:2026-05-31', 'snoozes:junk', 'day:2026-05-31']
+    expect(expiredDayKeys(keys, now)).toEqual(['snoozes:2026-05-31', 'snoozes:junk', 'day:2026-05-31'])
   })
 
   it('drops malformed day keys and leaves every other key alone', () => {

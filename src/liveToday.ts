@@ -1,5 +1,5 @@
-// Today's times for an extension page, as the service worker sees them
-// (todayTotals): asked again whenever today's storage changes and at
+// Today's times and snoozes for an extension page, as the service worker
+// sees them (todayTotals): asked again whenever today's storage changes and at
 // midnight, run on each second while a site is running, and storage's own
 // (`stored`, today's usage as the page holds it) while the worker doesn't
 // answer. `onChange` runs whenever they may read differently.
@@ -7,7 +7,7 @@ import { bus } from './chrome/bus'
 import { chromeStore } from './chrome/store'
 import { dayOf } from './core/day'
 import { latestTotals, type TodayTotals } from './core/messages'
-import { dayKey, siteTotal, type DayUsage } from './core/schema'
+import { dayKey, siteTotal, snoozeKey, type DayUsage } from './core/schema'
 
 export type LiveToday = {
   // Settles once the worker first answers, or doesn't.
@@ -25,7 +25,8 @@ export function liveToday(stored: () => DayUsage, onChange: () => void): LiveTod
 
   let day = dayOf(Date.now())
   chromeStore('local').onChanged((changes) => {
-    if (dayKey(dayOf(Date.now())) in changes) {
+    const today = dayOf(Date.now())
+    if (dayKey(today) in changes || snoozeKey(today) in changes) {
       again()
     }
   })
@@ -48,7 +49,7 @@ export function liveToday(stored: () => DayUsage, onChange: () => void): LiveTod
       const now = Date.now()
       const usage = stored()
       const sites = Object.fromEntries(Object.keys(usage).map((site) => [site, siteTotal(usage, site)]))
-      return { day: dayOf(now), asOf: now, seq: 0, running: null, sites }
+      return { day: dayOf(now), asOf: now, seq: 0, running: null, sites, snoozes: {} }
     },
   }
 }

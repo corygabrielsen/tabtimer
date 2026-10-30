@@ -70,6 +70,7 @@ describe('presence', () => {
       running: true,
       blockAt: null,
       limit: null,
+      snoozes: [],
       prefs: { hidden: false, scale: 1 },
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
@@ -451,6 +452,40 @@ describe('limits', () => {
       [1, NOON + 5 * MIN],
       [2, null],
     ])
+  })
+
+  it('snooze records who took it and the times it began at, open interval included', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 2, perSite: { 'a.com': 1 } } })
+    const tracker = worker()
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, audible: false, ...SHOWN })
+    now += 90 * S
+    await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, audible: false, ...HIDDEN })
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now += MIN
+    await tracker.snooze('a.com')
+    expect(browser.storage.local.data['snoozes:2026-06-10']).toEqual([
+      { site: 'a.com', at: now, ms: 5 * MIN, siteMs: MIN, globalMs: MIN + 90 * S },
+    ])
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: now + 5 * MIN })
+    await tracker.presence(1, { ...PAGE, ...HIDDEN })
+    // States carry the snoozes that count against their limit: a.com's own
+    // here; b.com's all-sites limit counts every site's.
+    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ limit: { scope: 'site' }, snoozes: [MIN] })
+    await expect(tracker.tabState(2, 'b.com')).resolves.toMatchObject({
+      limit: { scope: 'global' },
+      snoozes: [MIN + 90 * S],
+    })
+    await expect(tracker.todayTotals()).resolves.toMatchObject({ snoozes: { 'a.com': 1 } })
+  })
+
+  it('snooze counts only tracked sites toward the all-sites time', async () => {
+    granted = originsForSite('a.com')
+    browser.storage.local.seed({
+      'day:2026-06-10': { 'a.com': emptyBuckets(), 'x.com': [MIN, ...emptyBuckets().slice(1)] },
+    })
+    const tracker = worker()
+    await tracker.snooze('a.com')
+    expect(browser.storage.local.data['snoozes:2026-06-10']).toMatchObject([{ siteMs: 0, globalMs: 0 }])
   })
 
   it('resetToday drops the open interval’s time so far too', async () => {

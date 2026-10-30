@@ -36,6 +36,10 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
+  // The snoozes today that count against that limit (this site's own, when
+  // none applies): the time each began at, in the limit's measure, oldest
+  // first (core/snooze.ts snoozeMarks).
+  snoozes: number[]
   // The overlay preferences (the worker is their only writer).
   prefs: Prefs
 }
@@ -77,6 +81,8 @@ export type TodayTotals = {
   seq: number
   running: Site | null
   sites: Record<Site, number>
+  // How many snoozes each site's block screen took today.
+  snoozes: Record<Site, number>
 }
 
 // One site's time today at `now`.
@@ -215,6 +221,9 @@ export function parseStatePush(raw: unknown): StatePush | null {
     }
     limit = { scope: l.scope, ms: l.ms }
   }
+  if (!Array.isArray(s.snoozes) || !(s.snoozes as unknown[]).every(isFiniteNumber)) {
+    return null
+  }
   const p = s.prefs
   if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
     return null
@@ -229,6 +238,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
+    snoozes: [...(s.snoozes as number[])],
     prefs: { hidden: p.hidden, scale: p.scale },
   }
   return { type: 'state', state, probe: raw.probe }

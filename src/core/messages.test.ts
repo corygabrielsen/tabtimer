@@ -38,6 +38,7 @@ describe('a state read at a later moment', () => {
     running: true,
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
+    snoozes: [],
     prefs: { hidden: false, scale: 1 },
   }
 
@@ -104,6 +105,7 @@ describe('every site’s time today, read at a later moment', () => {
     seq: 1,
     running: 'a.com',
     sites: { 'a.com': 50_000, 'b.com': 20_000 },
+    snoozes: {},
   }
 
   it('runs on for the running site only, and starts again at midnight', () => {
@@ -136,6 +138,7 @@ describe('every site’s time today, read at a later moment', () => {
       running: true,
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
+      snoozes: [],
       prefs: { hidden: false, scale: 1 },
     }
     for (const at of [NOON, NOON + 9999, NOON + 10_000, NOON + 60_000, NOON + PROJECT_MS + 1]) {
@@ -145,7 +148,14 @@ describe('every site’s time today, read at a later moment', () => {
 })
 
 describe('latestTotals', () => {
-  const totals = (seq: number): TodayTotals => ({ day: '2026-06-10', asOf: 0, seq, running: null, sites: {} })
+  const totals = (seq: number): TodayTotals => ({
+    day: '2026-06-10',
+    asOf: 0,
+    seq,
+    running: null,
+    sites: {},
+    snoozes: {},
+  })
 
   it('keeps the later transaction’s answer, and none when the worker fails', () => {
     expect(latestTotals(null, { ok: true, value: totals(1) })).toEqual(totals(1))
@@ -167,6 +177,7 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
+    snoozes: [60_000],
     prefs: { hidden: false, scale: 1 },
   }
 
@@ -200,6 +211,8 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, limit: { scope: 'week', ms: 1 } }, probe: false },
     { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } }, probe: false },
     { type: 'state', state: { ...state, limit: 5 }, probe: false },
+    { type: 'state', state: { ...state, snoozes: undefined }, probe: false },
+    { type: 'state', state: { ...state, snoozes: ['1'] }, probe: false },
     { type: 'state', state: { ...state, prefs: undefined }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: 'no', scale: 1 } }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: false, scale: '1' } }, probe: false },

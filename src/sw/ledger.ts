@@ -26,6 +26,7 @@ import {
   normalizeClock,
   normalizePrefs,
   settleClock,
+  snoozeKey,
   CLOCK_KEY,
   LIMITS_KEY,
   PREFS_KEY,
@@ -37,6 +38,7 @@ import {
 } from '../core/schema'
 import { isFiniteNumber } from '../core/guards'
 import { serial } from '../core/serial'
+import { normalizeSnoozes, type Snooze } from '../core/snooze'
 import { normalizeTracker, type Accrual, type TrackerState } from '../core/tracker'
 import type { Site } from '../core/site'
 import type { Clock, Store } from '../ports'
@@ -68,7 +70,12 @@ export type Tx = {
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
   prefs(): Promise<Prefs>
-  // Zero one site's time for today.
+  // Today's snoozes, oldest first.
+  snoozes(): Promise<Snooze[]>
+  // Suppress all blocking for SNOOZE_MS from now, and record the snooze
+  // (`taken`: who took it, and the times when it began).
+  snooze(taken: Pick<Snooze, 'site' | 'siteMs' | 'globalMs'>): Promise<void>
+  // Zero one site's time for today, and forget its snoozes.
   resetToday(site: Site): Promise<void>
 }
 
@@ -113,8 +120,13 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     // The day usages read so far, and those changed.
     const days = new Map<string, DayUsage>()
     const changed = new Set<string>()
-    // The limits with a void snooze cleared, to write back.
-    let unsnoozed: Limits | null = null
+    // The limits to write back: a void snooze cleared, or a new one.
+    let newLimits: Limits | null = null
+    // Today's snoozes as read, and whether they changed.
+    let snoozed: Snooze[] | null = null
+    let snoozedChanged = false
+    const todaySnoozes = async (): Promise<Snooze[]> =>
+      (snoozed ??= normalizeSnoozes(await local.get(snoozeKey(today))))
 
     async function day(key: string): Promise<DayUsage> {
       let usage = days.get(key)
@@ -163,12 +175,21 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
       idleState: () => away.state,
       today: () => day(todayKey),
       limits: async () => {
+        if (newLimits) {
+          return newLimits
+        }
         const limits = normalizeLimits(await local.get(LIMITS_KEY))
         if (snoozeOf(limits, now) !== limits.snoozeUntil) {
-          unsnoozed = { ...limits, snoozeUntil: 0 }
-          return unsnoozed
+          newLimits = { ...limits, snoozeUntil: 0 }
+          return newLimits
         }
         return limits
+      },
+      snoozes: todaySnoozes,
+      snooze: async (taken) => {
+        newLimits = { ...(await tx.limits()), snoozeUntil: now + SNOOZE_MS }
+        snoozed = [...(await todaySnoozes()), { ...taken, at: now, ms: SNOOZE_MS }]
+        snoozedChanged = true
       },
       prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
       resetToday: async (site) => {
@@ -179,13 +200,21 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         }
         // Time already reset can't be taken back again by a later idle.
         away = { ...away, recent: away.recent.filter((c) => c.site !== site) }
+        const snoozes = await todaySnoozes()
+        if (snoozes.some((s) => s.site === site)) {
+          snoozed = snoozes.filter((s) => s.site !== site)
+          snoozedChanged = true
+        }
       },
     }
 
     const result = await task(tx)
     const writes: Record<string, unknown> = Object.fromEntries([...changed].map((key) => [key, days.get(key)]))
-    if (unsnoozed) {
-      writes[LIMITS_KEY] = unsnoozed
+    if (newLimits) {
+      writes[LIMITS_KEY] = newLimits
+    }
+    if (snoozedChanged) {
+      writes[snoozeKey(today)] = snoozed
     }
     if (clockCheck && clockCheck.next !== clockCheck.mark) {
       writes[CLOCK_KEY] = clockCheck.next
@@ -236,13 +265,6 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     setLimit: (edit: LimitEdit): Promise<void> =>
       enqueue(async () => {
         await local.set({ [LIMITS_KEY]: applyLimit(normalizeLimits(await local.get(LIMITS_KEY)), edit) })
-      }),
-
-    // Suppress all blocking for SNOOZE_MS of wall-clock time.
-    snooze: (): Promise<void> =>
-      enqueue(async () => {
-        const snoozeUntil = clock.now() + SNOOZE_MS
-        await local.set({ [LIMITS_KEY]: { ...normalizeLimits(await local.get(LIMITS_KEY)), snoozeUntil } })
       }),
 
     setPrefs: (change: Partial<Prefs>): Promise<void> =>

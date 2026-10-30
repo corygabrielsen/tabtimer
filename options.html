@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title data-i18n="optionsDocTitle">Tab Timer settings</title>
     <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
     <link rel="stylesheet" href="/src/styles/options.css" />
   </head>
   <body>
@@ -15,20 +16,20 @@
       </header>
 
       <!-- This week at a glance; the detail is on the activity page. -->
-      <section id="week-card" class="week-card" aria-labelledby="week-h" hidden>
+      <section id="week-card" class="week-card card" aria-labelledby="week-h" hidden>
         <div class="week-text">
           <h2 id="week-h" data-i18n="optionsWeekHeading">This week</h2>
           <p id="week-total" class="week-total"></p>
           <p id="week-average" class="week-average"></p>
         </div>
         <div id="week-bars" class="week-bars" aria-hidden="true"></div>
-        <a id="week-link" class="week-link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
+        <a id="week-link" class="week-link link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
           >See all activity</a
         >
       </section>
 
       <!-- Sites ------------------------------------------------------------ -->
-      <section class="section" aria-labelledby="sites-h">
+      <section class="section card" aria-labelledby="sites-h">
         <div class="section-head">
           <h2 id="sites-h" data-i18n="optionsSitesHeading">Sites</h2>
         </div>
@@ -69,7 +70,7 @@
 
           <div class="list-head suggest-head">
             <h3 id="suggested-h" data-i18n="optionsSuggested">Suggested</h3>
-            <button id="enable-suggested" type="button" class="btn" data-i18n="optionsEnableAll">
+            <button id="enable-suggested" type="button" class="btn btn-sm" data-i18n="optionsEnableAll">
               Track all suggested
             </button>
           </div>
@@ -78,7 +79,7 @@
       </section>
 
       <!-- Limits ----------------------------------------------------------- -->
-      <section class="section" aria-labelledby="limits-h">
+      <section class="section card" aria-labelledby="limits-h">
         <div class="section-head">
           <h2 id="limits-h" data-i18n="optionsLimitsHeading">Daily limits</h2>
         </div>
@@ -96,7 +97,7 @@
       </section>
 
       <!-- Overlay ---------------------------------------------------------- -->
-      <section class="section" aria-labelledby="overlay-h">
+      <section class="section card" aria-labelledby="overlay-h">
         <div class="section-head">
           <h2 id="overlay-h" data-i18n="optionsOverlayHeading">On-page timer</h2>
           <p data-i18n="optionsOverlayHelp">Click the timer to switch views.</p>
@@ -140,7 +141,7 @@
       </section>
 
       <!-- Privacy ---------------------------------------------------------- -->
-      <section class="section" aria-labelledby="privacy-h">
+      <section class="section card" aria-labelledby="privacy-h">
         <div class="section-head">
           <h2 id="privacy-h" data-i18n="optionsPrivacyHeading">Privacy</h2>
         </div>

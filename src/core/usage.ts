@@ -174,6 +174,26 @@ export function stack(bar: Bar, top: string[]): number[] {
 
 // The change from `previous` to `current` as a fraction (0.22 = 22% more), or
 // null when there is nothing to compare against.
+// A slot's time against a daily limit: the part within it, the part over
+// it, and whether this is the slot the limit fell in (the first over it).
+export type LimitSplit = { within: number; over: number; crosses: boolean }
+
+// Each slot's time split at `limit` (ms; null: none). `cumulative`: the
+// slots are one day's hours, and the limit is reached by their running
+// total; otherwise each slot is a day of its own against it.
+export function splitAtLimit(values: readonly number[], limit: number | null, cumulative: boolean): LimitSplit[] {
+  let before = 0
+  let fell = false
+  return values.map((ms) => {
+    const room = limit === null ? ms : Math.max(0, limit - (cumulative ? before : 0))
+    const within = Math.min(ms, room)
+    const crosses = cumulative && !fell && ms > within
+    fell ||= crosses
+    before += ms
+    return { within, over: ms - within, crosses }
+  })
+}
+
 export function change(current: number, previous: number): number | null {
   return previous > 0 ? (current - previous) / previous : null
 }
