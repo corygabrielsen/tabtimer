@@ -22,6 +22,7 @@
     "message": "Take a break. $site$ limit reached.",
     "placeholders": { "site": { "content": "$1" } }
   },
+  "blockAllSites": { "message": "All tracked sites" },
   "blockAriaAllSites": { "message": "Take a break. All-sites limit reached." },
   "blockClose": { "message": "Close tab" },
   "blockHoldToContinue": { "message": "Hold to continue" },

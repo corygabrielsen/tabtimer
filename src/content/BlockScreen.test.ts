@@ -133,7 +133,10 @@ describe('deciding to block', () => {
     logged('youtube.com', minutes(20))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
+    // The all-sites label in the site's slot, and every tracked site's time
+    // against the all-sites limit.
+    expect(normText(screen().querySelector('.site'))).toBe('All tracked sites')
+    expect(normText(screen().querySelector('.readout'))).toBe('Today01:00:00/ 01:00:00')
     // One site's hours can't be split at the all-sites limit: no cap, no
     // label for it.
     expect(screen().querySelectorAll('.seg.over')).toHaveLength(0)
@@ -423,6 +426,16 @@ describe('what it shows', () => {
       'day:2026-06-10': { 'reddit.com': bucketsOf({ 10: minutes(30), 12: minutes(40) }), 'x.com': bucketsOf({ 9: 1 }) },
     })
     seedLimits({ perSite: { 'reddit.com': 60 } })
+  })
+
+  it('orders the title, then the site and its time as one block', async () => {
+    await mount()
+    const column = screen().querySelector('.column')!
+    expect([...column.children].slice(0, 3).map((el) => el.className || el.localName)).toEqual([
+      'h1',
+      'site',
+      'readout readout-secondary',
+    ])
   })
 
   it('reads out today against the limit as the popup does, with no meter', async () => {

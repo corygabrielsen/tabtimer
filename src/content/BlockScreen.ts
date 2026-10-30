@@ -3,7 +3,7 @@ import BASE from '../styles/base.css?raw'
 import { bus as chromeBus } from '../chrome/bus'
 import { hourOf } from '../core/day'
 import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
-import { hoursAt, totalsAt, type TabState } from '../core/messages'
+import { hoursAt, type TabState } from '../core/messages'
 import { hourLabel } from '../core/usage'
 import type { Bus } from '../ports'
 import { drawBar, drawReadout, HOUR_FLOOR_MS } from '../bars'
@@ -65,13 +65,14 @@ const STYLES = `${BASE}
     animation: column-in 0.48s var(--ease) both;
   }
   @keyframes column-in { from { opacity: 0; transform: translateY(14px); } }
+  /* The site, then its time against the limit: one block of facts under
+     the title, the same size, the site in regular text ink. */
   .site {
-    display: flex;
-    align-items: center;
-    gap: var(--s-2);
-    min-width: 0;
-    color: var(--muted);
-    font-size: var(--t-md);
+    margin: var(--s-4) 0 0;
+    color: var(--text);
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.3;
     overflow-wrap: anywhere;
   }
   /* Settings: an icon in a 32 px round quiet button, in the screen's top
@@ -86,16 +87,16 @@ const STYLES = `${BASE}
     padding: 0;
   }
   .btn.gear svg { width: 20px; height: 20px; margin: 0; }
-  /* One title. Rhythm: the site, 8 px, the title, 8 px, the readout as its
-     secondary line, 24 px, the chart, 24 px, the actions. */
+  /* One title. Rhythm: the title, 16 px, the site and the readout (4 px
+     apart), 24 px, the chart, 24 px, the actions. */
   h1 {
-    margin: var(--s-2) 0 0;
+    margin: 0;
     font-size: 36px;
     line-height: 1.1;
     letter-spacing: -0.022em;
     font-weight: 680;
   }
-  .column .readout { margin: var(--s-2) 0 0; }
+  .column .readout { margin: var(--s-1) 0 0; }
   .chart { margin: var(--s-6) 0; }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
@@ -202,7 +203,8 @@ const STYLES = `${BASE}
      the actions always stay in view. */
   @media (max-height: 680px) {
     dialog.screen { padding: var(--s-4); }
-    h1 { margin: var(--s-2) 0 0; font-size: 30px; }
+    h1 { font-size: 30px; }
+    .site { margin-top: var(--s-3); }
     .chart { margin: var(--s-5) 0; }
     .plot { height: 84px; padding-top: 16px; }
     .close { min-height: 48px; }
@@ -213,7 +215,8 @@ const STYLES = `${BASE}
   }
   @media (max-height: 460px) {
     dialog.screen { padding: var(--s-3) var(--s-4); }
-    h1 { margin: var(--s-1) 0 0; font-size: 26px; }
+    h1 { font-size: 26px; }
+    .site { margin-top: var(--s-2); }
     .chart { display: none; }
     .column .readout { margin-bottom: var(--s-5); }
     .close { min-height: 44px; }
@@ -349,8 +352,8 @@ export default class BlockScreen {
       h(
         'div',
         { class: 'column' },
-        h('div', { class: 'site' }, this.siteName),
         h('h1', { id: 'title' }, t('blockTitle')),
+        h('p', { class: 'site' }, this.siteName),
         h(
           'p',
           { class: 'readout readout-secondary', title: t('tooltipToday') },
@@ -417,27 +420,18 @@ export default class BlockScreen {
     const now = Date.now()
     const hours = hoursAt(state, now)
     const { scope, limit, elapsed } = reason
-    const { siteToday } = totalsAt(state, now)
-    const shown = [
-      state.site,
-      scope,
-      limit,
-      state.siteLimit,
-      Math.floor(siteToday / 1000),
-      elapsed,
-      hours.map(toMinutes),
-      hourOf(now),
-    ]
+    const shown = [state.site, scope, limit, Math.floor(elapsed / 1000), hours.map(toMinutes), hourOf(now)]
     const key = JSON.stringify(shown)
     if (key === this.drawn) {
       return
     }
     this.drawn = key
-    this.siteName.textContent = state.site
+    this.siteName.textContent = scope === 'site' ? state.site : t('blockAllSites')
     this.dialog.setAttribute('aria-label', scope === 'site' ? t('blockAriaSite', state.site) : t('blockAriaAllSites'))
-    // The popup's readout, from the same state: this site's time against
-    // its own limit.
-    drawReadout(this.time, this.limitText, siteToday, state.siteLimit)
+    // The time against the limit that blocked, by the worker's state: this
+    // site's against its own (the popup's readout), or every tracked site's
+    // against the all-sites limit.
+    drawReadout(this.time, this.limitText, elapsed, limit)
     drawChart(this.chart, hours, hourOf(now), state.site)
   }
 

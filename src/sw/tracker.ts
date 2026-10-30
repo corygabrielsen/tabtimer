@@ -7,7 +7,7 @@
 // Pages are told their state by message; a page's reply is its presence,
 // which is how the worker asks a page to report again (`probe`).
 import { dayOf, startOfDay } from '../core/day'
-import { blockAt, limitsFor, type Limits } from '../core/limits'
+import { blockAt, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, withTimeAt, type DayUsage, type Prefs } from '../core/schema'
 import { trackedSite, type Site } from '../core/site'
@@ -77,7 +77,6 @@ export function createTracker(deps: TrackerDeps) {
         running: open !== null,
         blockAt: block?.at ?? null,
         limit: block ? { scope: block.scope, ms: block.limit } : null,
-        siteLimit: limitsFor(limits, attest.site).site,
         hours: withTimeAt(usage[attest.site], tx.now, extra),
         prefs,
       }
