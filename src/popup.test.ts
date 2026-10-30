@@ -4,7 +4,7 @@ import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
-import { dayEntry, dayKeyOf, seedToday, startBackground, storedToday } from './test/content'
+import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 import { bus } from './chrome/bus'
 
 let browser: FakeChrome
@@ -308,22 +308,19 @@ describe('popup on a tracked site', () => {
       expect(text('summary')).toBe('3 min over · 4 min left')
     })
 
-    it('snoozed twice: counts them, and splits the time over at each', async () => {
-      const day = dayKeyOf()
-      const taken = (siteMs: number) => ({ site: 'reddit.com', at: 0, ms: 5 * MIN, siteMs, globalMs: siteMs })
+    it('over: the time over as one accent piece after the limit’s mark', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 }, snoozeUntil: Date.now() + 2 * MIN },
-        [`snoozes:${day.slice(4)}`]: [taken(60 * MIN), taken(65 * MIN)],
         ...dayEntry({ 'reddit.com': 70 * MIN }),
       })
       await openReddit()
       expect($('today').textContent).toBe('01:10:00')
       expect($('today').querySelector('small')?.textContent).toBe(':00')
       expect(text('readout-of')).toBe('of 1 h')
-      expect(text('summary')).toBe('Snoozed twice, 10 min over · 2 min left')
+      expect(text('summary')).toBe('10 min over · 2 min left')
       expect($('summary').querySelector('.over-ink')?.textContent).toBe('10 min over')
       const meter = $('meter')
-      expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over', 'over'])
+      expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over'])
       expect(text('meter-label')).toBe('1 h')
       expect($('status').getAttribute('data-tone')).toBe('accent')
     })

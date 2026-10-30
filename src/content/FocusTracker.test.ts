@@ -38,7 +38,6 @@ const STATE: TabState = {
   running: false,
   blockAt: null,
   limit: null,
-  snoozes: [],
   hours: Array<number>(24).fill(0),
   prefs: { hidden: false, scale: 1 },
 }
@@ -395,7 +394,6 @@ describe('reporting to the service worker', () => {
       running: false,
       blockAt: null,
       limit: null,
-      snoozes: [],
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
     }

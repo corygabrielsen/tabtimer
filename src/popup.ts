@@ -4,13 +4,12 @@ import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
-import { overSegments } from './core/snooze'
 import { hourLabel, splitAtLimit, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
-import { byId, formatDuration, h, setDocumentLang, snoozedText, uiLocale } from './ui'
+import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
 import { drawBar, drawMeter, HOUR_FLOOR_MS } from './bars'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
@@ -104,8 +103,7 @@ function faceFor(base: string, s: Snapshot) {
   const scope = tab?.limit?.scope ?? (siteLimit !== null ? 'site' : 'global')
   const meterLimit = scope === 'site' ? siteLimit : globalLimit
   const meterValue = scope === 'site' ? totals.siteToday : totals.globalToday
-  const snoozes = tab?.snoozes ?? []
-  return { state, reason, resumes, siteLimit, globalLimit, scope, meterLimit, meterValue, snoozes, ...totals }
+  return { state, reason, resumes, siteLimit, globalLimit, scope, meterLimit, meterValue, ...totals }
 }
 
 type Face = ReturnType<typeof faceFor>
@@ -155,7 +153,7 @@ function renderFace(base: string, s: Snapshot) {
     meterWrap.hidden = meterLimit === null
     meter.hidden = meterLimit === null
     if (meterLimit !== null) {
-      const over = overSegments(meterLimit, meterValue, face.snoozes)
+      const over = meterValue > meterLimit ? [meterValue - meterLimit] : []
       drawMeter(meter, byId('meter-label'), meterValue, meterLimit, over, formatDuration(meterLimit))
       meter.setAttribute('aria-valuemax', String(msToMinutes(meterLimit)))
       meter.setAttribute('aria-valuenow', String(Math.min(msToMinutes(meterValue), msToMinutes(meterLimit))))
@@ -181,16 +179,14 @@ function renderFace(base: string, s: Snapshot) {
   }
 }
 
-// Under: the time left. Over: the snoozes taken, then the time over in the
-// accent (the meter's over pieces), then a snooze's time left.
+// Under: the time left. Over: the time over in the accent (the meter's
+// over piece), then a snooze's time left.
 function renderSummary(el: HTMLElement, face: Face) {
   const { reason, meterLimit, meterValue } = face
   if (reason) {
     const over = formatDuration(reason.elapsed - reason.limit)
-    const snoozed = snoozedText(face.snoozes.length)
     const left = face.resumes === null ? null : t('popupSnoozeLeft', formatDuration(Math.max(60000, face.resumes)))
     el.replaceChildren(
-      snoozed ? `${snoozed}, ` : '',
       h('span', { class: 'over-ink' }, reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)),
       left ? ` · ${left}` : ''
     )
@@ -236,7 +232,7 @@ function renderTracked(tabId: number, base: string, focus = false) {
   // Today's hours with the time not yet stored in the current one.
   const drawStrip = () => {
     const now = Date.now()
-    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today }, snoozes: {} }
+    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today } }
     const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
     renderStrip(base, usage[base] ?? emptyBuckets(), limitsFor(limits, base).site)
   }

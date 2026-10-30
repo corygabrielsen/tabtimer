@@ -39,7 +39,6 @@ describe('a state read at a later moment', () => {
     running: true,
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
-    snoozes: [],
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
@@ -123,7 +122,6 @@ describe('every site’s time today, read at a later moment', () => {
     seq: 1,
     running: 'a.com',
     sites: { 'a.com': 50_000, 'b.com': 20_000 },
-    snoozes: {},
   }
 
   it('runs on for the running site only, and starts again at midnight', () => {
@@ -156,7 +154,6 @@ describe('every site’s time today, read at a later moment', () => {
       running: true,
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
-      snoozes: [],
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
     }
@@ -173,7 +170,6 @@ describe('latestTotals', () => {
     seq,
     running: null,
     sites: {},
-    snoozes: {},
   })
 
   it('keeps the later transaction’s answer, and none when the worker fails', () => {
@@ -196,7 +192,6 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
-    snoozes: [60_000],
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
@@ -231,8 +226,6 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, limit: { scope: 'week', ms: 1 } }, probe: false },
     { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } }, probe: false },
     { type: 'state', state: { ...state, limit: 5 }, probe: false },
-    { type: 'state', state: { ...state, snoozes: undefined }, probe: false },
-    { type: 'state', state: { ...state, snoozes: ['1'] }, probe: false },
     { type: 'state', state: { ...state, hours: undefined }, probe: false },
     { type: 'state', state: { ...state, hours: [1, 2] }, probe: false },
     { type: 'state', state: { ...state, hours: Array(24).fill('1') }, probe: false },

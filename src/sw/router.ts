@@ -93,8 +93,8 @@ export function createRouter(deps: RouterDeps): Handler {
       await ledger.setLimit(edit)
       return null
     },
-    snooze: async (_req, ctx) => {
-      await tracker.snooze(ctx.site!)
+    snooze: async () => {
+      await tracker.snooze()
       return null
     },
     closeTab: async (_req, ctx) => {

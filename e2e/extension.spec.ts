@@ -5,8 +5,6 @@ import {
   read,
   today,
   readToday,
-  todayKey,
-  openPopup,
   setPageFocus,
   openInterval,
   checkpoint,
@@ -223,31 +221,6 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 }, snoozeUntil: Date.now() - 1_000 },
   })
   await expect(block).toBeVisible()
-})
-
-test('a snooze is recorded for the day, and the popup counts it', async ({
-  context,
-  serviceWorker,
-  extensionId,
-  site,
-}) => {
-  await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
-    ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
-  })
-  const page = await context.newPage()
-  await page.goto(site(SITE_A))
-  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-  await snoozeBlock(page)
-  const key = (await todayKey(serviceWorker)).replace('day:', 'snoozes:')
-  await expect
-    .poll(() => read(serviceWorker, key))
-    .toEqual([expect.objectContaining({ site: SITE_A, ms: 5 * MINUTE, siteMs: 2 * MINUTE })])
-
-  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
-  await expect(popup.locator('#summary')).toHaveText(/^Snoozed once, 1 min over · [45] min left$/)
-  // The minute over before the block, then the time since the snooze.
-  await expect(popup.locator('#meter .over')).toHaveCount(2)
 })
 
 test('changing the limit lifts or restores the block live', async ({ context, serviceWorker, site }) => {

@@ -61,7 +61,7 @@ export function drawBar(
 }
 
 // The meter: grey up to the limit's mark, an empty track to it while under,
-// and one accent piece per stretch over (core/snooze.ts overSegments).
+// and one accent piece for any time over it.
 // `label` names the limit under its mark.
 export function drawMeter(
   meter: HTMLElement,

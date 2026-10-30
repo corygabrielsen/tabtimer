@@ -307,34 +307,6 @@ describe('week view', () => {
   })
 })
 
-describe('snoozes', () => {
-  const snoozed = (site: string, n: number) =>
-    Array.from({ length: n }, (_, i) => ({ site, at: i, ms: 300_000, siteMs: 0, globalMs: 0 }))
-
-  it('names how many each site took on the day shown, today’s as the worker counts them', async () => {
-    await open({
-      ...SEED,
-      'snoozes:2026-10-28': snoozed('reddit.com', 2),
-      'snoozes:2026-10-27': snoozed('github.com', 3),
-    })
-    const snoozes = (site: string) => row(site).querySelector('.site-snoozes')?.textContent
-    expect(snoozes('reddit.com')).toBe('Snoozed twice')
-    expect(snoozes('github.com')).toBe('')
-    click($('prev'))
-    expect(snoozes('github.com')).toBe('Snoozed 3 times')
-    expect(snoozes('reddit.com')).toBe('')
-    browser.storage.local.set({ 'snoozes:2026-10-27': snoozed('github.com', 1) })
-    await flush()
-    expect(snoozes('github.com')).toBe('Snoozed once')
-  })
-
-  it('names none in a week', async () => {
-    await open({ ...SEED, 'snoozes:2026-10-28': snoozed('reddit.com', 2) })
-    mode('week')
-    expect(row('reddit.com').querySelector('.site-snoozes')?.textContent).toBe('')
-  })
-})
-
 describe('a selected site', () => {
   beforeEach(() => open())
 

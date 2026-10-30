@@ -1,17 +1,5 @@
 import type { CDPSession, Page } from '@playwright/test'
-import {
-  test,
-  expect,
-  seed,
-  today,
-  todayKey,
-  openPopup,
-  snoozeBlock,
-  LIMITS_KEY,
-  OVERLAY_ID,
-  BLOCK_ID,
-  MINUTE,
-} from './fixtures'
+import { test, expect, seed, today, openPopup, snoozeBlock, LIMITS_KEY, OVERLAY_ID, BLOCK_ID, MINUTE } from './fixtures'
 
 // WCAG AA on the real built pages, light and dark: every visible text
 // against what is behind it (4.5:1, 3:1 when large), and the graphics that
@@ -270,18 +258,15 @@ for (const scheme of ['light', 'dark'] as const) {
       site,
     }) => {
       const now = await serviceWorker.evaluate(() => Date.now())
-      const day = (await todayKey(serviceWorker)).slice(4)
-      const snooze = (siteMs: number) => ({ site: SITE_A, at: now, ms: 5 * MINUTE, siteMs, globalMs: siteMs })
       await seed(serviceWorker, {
         ...(await today(serviceWorker, { [SITE_A]: 70 * MINUTE, 'site-b.test': 20 * MINUTE })),
-        [`snoozes:${day}`]: [snooze(60 * MINUTE), snooze(65 * MINUTE)],
         [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60, 'site-b.test': 30 }, snoozeUntil: now + 4 * MINUTE },
       })
       const tab = await context.newPage()
       await tab.goto(site(SITE_A))
       const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
       await popup.emulateMedia({ colorScheme: scheme })
-      await expect(popup.locator('#summary')).toContainText('Snoozed twice')
+      await expect(popup.locator('#summary')).toContainText('10 min over')
       const findings = [...(await audit(popup)), ...(await tokenPairs(popup))]
 
       const tabB = await context.newPage()

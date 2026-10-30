@@ -6,8 +6,7 @@ import { chromeStore, loadThenPatch } from './chrome/store'
 import { dayOf, type DayStamp } from './core/day'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { siteOverAt } from './core/messages'
-import { LIMITS_KEY, SNOOZE_KEY_PREFIX } from './core/schema'
-import { normalizeSnoozes, snoozeCounts } from './core/snooze'
+import { LIMITS_KEY } from './core/schema'
 import {
   barTotal,
   dayLabel,
@@ -32,7 +31,7 @@ import {
 import { localizeDom, t } from './i18n'
 import { liveToday } from './liveToday'
 import { createSiteLimitPicker, formatChipMinutes, type LimitPicker } from './limitPicker'
-import { byId, firstDayOfWeek, formatDuration, h, placeChildren, setDocumentLang, snoozedText, uiLocale } from './ui'
+import { byId, firstDayOfWeek, formatDuration, h, placeChildren, setDocumentLang, uiLocale } from './ui'
 import { drawBar } from './bars'
 
 const local = chromeStore('local')
@@ -47,9 +46,6 @@ type State = {
   bar: number
   history: History
   limits: Limits
-  // Each past day's snoozes by site, as stored (today's come from the
-  // worker).
-  snoozes: Map<string, Record<string, number>>
 }
 
 const state: State = {
@@ -60,20 +56,6 @@ const state: State = {
   bar: -1,
   history: new Map(),
   limits: DEFAULT_LIMITS,
-  snoozes: new Map(),
-}
-
-// Take the snoozes:<day> entries among `items` (a value of undefined: gone).
-// True if any was there.
-function patchSnoozes(items: Record<string, unknown>): boolean {
-  let any = false
-  for (const [key, value] of Object.entries(items)) {
-    if (key.startsWith(SNOOZE_KEY_PREFIX)) {
-      state.snoozes.set(key.slice(SNOOZE_KEY_PREFIX.length), snoozeCounts(normalizeSnoozes(value)))
-      any = true
-    }
-  }
-  return any
 }
 
 const locale = uiLocale()
@@ -323,11 +305,6 @@ function selectedRowOf(site: string, button: HTMLButtonElement): HTMLLIElement {
   return selectedRow.row
 }
 
-// How many snoozes `site` took on `day`: today's as the worker counts them.
-function snoozesOn(day: DayStamp, site: string, now: number): number {
-  return (day === dayOf(now) ? live.totals().snoozes : state.snoozes.get(day))?.[site] ?? 0
-}
-
 function siteRow(period: Period, site: string, ms: number, days: number, now: number): HTMLLIElement {
   const limit = siteLimit(site)
   const selected = state.site === site
@@ -350,11 +327,6 @@ function siteRow(period: Period, site: string, ms: number, days: number, now: nu
       'data-over': over,
     },
     h('span', { class: 'site-name' }, site),
-    h(
-      'span',
-      { class: 'site-snoozes' },
-      period.mode === 'day' ? snoozedText(snoozesOn(period.days[0]!, site, now)) : ''
-    ),
     h('span', { class: 'site-time' }, formatDuration(ms))
   )
   if (limit !== null) {
@@ -456,7 +428,6 @@ async function load(): Promise<void> {
   const [items] = await Promise.all([local.getAll().catch(() => ({}) as Record<string, unknown>), live.ready])
   state.history = historyOf(items)
   state.limits = normalizeLimits(items[LIMITS_KEY])
-  patchSnoozes(items)
   render()
 }
 
@@ -495,13 +466,12 @@ function init(): void {
   // changed.
   void loadThenPatch(local, load, (changes) => {
     const days = patchHistory(state.history, changes)
-    const snoozed = patchSnoozes(Object.fromEntries(Object.entries(changes).map(([k, c]) => [k, c.newValue])))
     const limits = LIMITS_KEY in changes
     if (limits) {
       state.limits = normalizeLimits(changes[LIMITS_KEY]!.newValue)
     }
     const period = periodOf(state.mode, state.offset, today(), firstDay)
-    if (limits || snoozed || days.some((day) => period.days.includes(day) || period.previous.includes(day))) {
+    if (limits || days.some((day) => period.days.includes(day) || period.previous.includes(day))) {
       render()
     }
   })

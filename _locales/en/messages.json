@@ -68,9 +68,6 @@
   "popupOverGlobal": { "message": "$over$ over (all sites)", "placeholders": { "over": { "content": "$1" } } },
   "popupSnoozeLeft": { "message": "$time$ left", "placeholders": { "time": { "content": "$1" } } },
   "popupOf": { "message": "of $limit$", "placeholders": { "limit": { "content": "$1" } } },
-  "snoozedOnce": { "message": "Snoozed once" },
-  "snoozedTwice": { "message": "Snoozed twice" },
-  "snoozedTimes": { "message": "Snoozed $n$ times", "placeholders": { "n": { "content": "$1" } } },
   "popupGlobalLine": {
     "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }

@@ -8,7 +8,7 @@ import { hourLabel, splitAtLimit } from '../core/usage'
 import type { Bus } from '../ports'
 import { drawBar, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
-import { formatDuration, h, snoozedText, svg, uiLocale } from '../ui'
+import { formatDuration, h, svg, uiLocale } from '../ui'
 import { HoldButton } from './hold'
 import { mountShadowHost, shadowRootOf } from './shadowHost'
 
@@ -235,8 +235,8 @@ type Tracker = Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'sit
 // the last button, or browsers without a modal top layer), and the page
 // taking the host or <body> away.
 //
-// What it shows is a pause, not a lock: the site, today's time and snoozes
-// as the worker counts them, today's hours, and leaving (Close tab) first.
+// What it shows is a pause, not a lock: the site, today's time as the
+// worker counts it, today's hours, and leaving (Close tab) first.
 // Five more minutes takes a deliberate press and hold.
 export default class BlockScreen {
   private host: HTMLDivElement
@@ -399,15 +399,7 @@ export default class BlockScreen {
     const now = Date.now()
     const hours = hoursAt(state, now)
     const { scope, limit, elapsed } = reason
-    const shown = [
-      state.site,
-      state.snoozes.length,
-      scope,
-      limit,
-      toMinutes(elapsed),
-      hours.map(toMinutes),
-      hourOf(now),
-    ]
+    const shown = [state.site, scope, limit, toMinutes(elapsed), hours.map(toMinutes), hourOf(now)]
     const key = JSON.stringify(shown)
     if (key === this.drawn) {
       return
@@ -415,7 +407,7 @@ export default class BlockScreen {
     this.drawn = key
     this.fav.textContent = state.site.charAt(0)
     this.siteName.textContent = state.site
-    this.summary.replaceChildren(...summaryOf(reason, state.snoozes.length))
+    this.summary.replaceChildren(...summaryOf(reason))
     // The site's hours split where its own limit fell; against the
     // all-sites limit, the hours of one site can't be.
     drawChart(this.chart, hours, scope === 'site' ? limit : null, hourOf(now), state.site)
@@ -747,25 +739,15 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
 
 const toMinutes = (ms: number) => Math.round(ms / 60_000)
 
-// "1 h 10 min today · snoozed twice, 10 min over": the time against the
-// limit that blocked, the snoozes it took, and the time past it in the
-// accent (the chart's overage). Snoozes and overage only when there are any.
-function summaryOf(reason: BlockReason, snoozes: number): Array<Node | string> {
+// "1 h 10 min today · 10 min over": the time against the limit that
+// blocked, then the time past it in the accent (the chart's overage), when
+// there is any.
+function summaryOf(reason: BlockReason): Array<Node | string> {
   const today = reason.scope === 'site' ? t('blockToday') : t('blockTodayAllSites')
   const parts: Array<Node | string> = [h('b', {}, formatDuration(reason.elapsed)), ` ${today}`]
   const over = reason.elapsed - reason.limit
-  const snoozed = snoozedText(snoozes)
-  const showOver = toMinutes(over) >= 1
-  if (!snoozed && !showOver) {
-    return parts
-  }
-  parts.push(' · ')
-  if (snoozed) {
-    // Mid-sentence: "snoozed twice".
-    parts.push(snoozed.charAt(0).toLocaleLowerCase(uiLocale()) + snoozed.slice(1))
-  }
-  if (showOver) {
-    parts.push(snoozed ? ', ' : '', h('span', { class: 'over-ink' }, t('popupOverSite', formatDuration(over))))
+  if (toMinutes(over) >= 1) {
+    parts.push(' · ', h('span', { class: 'over-ink' }, t('popupOverSite', formatDuration(over))))
   }
   return parts
 }

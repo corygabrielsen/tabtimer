@@ -83,10 +83,6 @@ describe('liveToday', () => {
     browser.storage.local.seed(dayEntry({ 'reddit.com': 9000 }, new Date(2026, 9, 27)))
     await flush()
     expect(changes).toBe(1)
-    // A snooze taken today.
-    browser.storage.local.seed({ 'snoozes:2026-10-28': [] })
-    await flush()
-    expect(changes).toBe(2)
   })
 
   it('asks again at midnight, telling the page at once', async () => {
@@ -111,7 +107,6 @@ describe('liveToday', () => {
       seq: 0,
       running: null,
       sites: { 'reddit.com': 7000 },
-      snoozes: {},
     })
     vi.advanceTimersByTime(5000)
     expect(changes).toBe(0)

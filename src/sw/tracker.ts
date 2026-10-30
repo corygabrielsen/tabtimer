@@ -11,7 +11,6 @@ import { blockAt, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, withTimeAt, type DayUsage, type Prefs } from '../core/schema'
 import { trackedSite, type Site } from '../core/site'
-import { snoozeCounts, snoozeMarks, type Snooze } from '../core/snooze'
 import { creditEnd, step, type Attest, type Open, type TrackerEvent, type TrackerState } from '../core/tracker'
 import type { Ledger, Tx } from './ledger'
 
@@ -57,11 +56,11 @@ export function createTracker(deps: TrackerDeps) {
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
-    let ctx: Promise<[DayUsage, Limits, Prefs, (site: Site) => boolean, Snooze[]]> | null = null
+    let ctx: Promise<[DayUsage, Limits, Prefs, (site: Site) => boolean]> | null = null
     return async (tabId: number, attest: Pick<Attest, 'site'>, s: TrackerState): Promise<TabState> => {
       // Grants that can't be read count every site.
-      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), counted(), tx.snoozes()])
-      const [usage, limits, prefs, counts, snoozes] = await ctx
+      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), counted()])
+      const [usage, limits, prefs, counts] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
       const extra = open ? uncredited(open, tx.now) : 0
       const today = siteTotal(usage, attest.site) + extra
@@ -78,7 +77,6 @@ export function createTracker(deps: TrackerDeps) {
         running: open !== null,
         blockAt: block?.at ?? null,
         limit: block ? { scope: block.scope, ms: block.limit } : null,
-        snoozes: snoozeMarks(snoozes, attest.site, block?.scope ?? 'site'),
         hours: withTimeAt(usage[attest.site], tx.now, extra),
         prefs,
       }
@@ -227,24 +225,11 @@ export function createTracker(deps: TrackerDeps) {
         if (open) {
           sites[open.site] = (sites[open.site] ?? 0) + uncredited(open, tx.now)
         }
-        const snoozes = snoozeCounts(await tx.snoozes())
-        return { day: dayOf(tx.now), asOf: tx.now, seq: tx.seq, running: open?.site ?? null, sites, snoozes }
+        return { day: dayOf(tx.now), asOf: tx.now, seq: tx.seq, running: open?.site ?? null, sites }
       }),
 
-    // A block screen on `site` took a snooze: blocking stops for SNOOZE_MS,
-    // and the snooze is recorded with the times it began at (the open
-    // interval's uncredited part included).
-    snooze: (site: Site): Promise<void> =>
-      ledger.transaction(async (tx) => {
-        const [usage, counts] = await Promise.all([tx.today(), counted()])
-        const open = tx.tracker.open
-        const extra = open ? uncredited(open, tx.now) : 0
-        await tx.snooze({
-          site,
-          siteMs: siteTotal(usage, site) + (open?.site === site ? extra : 0),
-          globalMs: dayTotal(usage, counts) + (open && counts(open.site) ? extra : 0),
-        })
-      }),
+    // A block screen took a snooze: blocking stops for SNOOZE_MS.
+    snooze: (): Promise<void> => ledger.transaction((tx) => tx.snooze()),
 
     // A browser event (tab, window, idle, alarm).
     dispatch: async (event: TrackerEvent): Promise<void> => settle(await run(event)),

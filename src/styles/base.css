@@ -455,7 +455,7 @@ a:hover {
   transform: translateX(13px);
 }
 
-/* --- Meter: grey up to the limit's mark, then one accent piece per snooze.
+/* --- Meter: grey up to the limit's mark, then one accent piece for the time over.
    Under the limit the rest of the way is an empty track. */
 
 .meter {

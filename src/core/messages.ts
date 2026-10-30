@@ -36,10 +36,6 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
-  // The snoozes today that count against that limit (this site's own, when
-  // none applies): the time each began at, in the limit's measure, oldest
-  // first (core/snooze.ts snoozeMarks).
-  snoozes: number[]
   // This site's time today per local hour (index 0 = 00:00), the open
   // interval's uncredited part in the hour of `asOf`: `today`, by hour.
   hours: number[]
@@ -92,8 +88,6 @@ export type TodayTotals = {
   seq: number
   running: Site | null
   sites: Record<Site, number>
-  // How many snoozes each site's block screen took today.
-  snoozes: Record<Site, number>
 }
 
 // One site's time today at `now`.
@@ -232,9 +226,6 @@ export function parseStatePush(raw: unknown): StatePush | null {
     }
     limit = { scope: l.scope, ms: l.ms }
   }
-  if (!Array.isArray(s.snoozes) || !(s.snoozes as unknown[]).every(isFiniteNumber)) {
-    return null
-  }
   const hours = s.hours
   if (!Array.isArray(hours) || hours.length !== HOURS_PER_DAY || !(hours as unknown[]).every(isFiniteNumber)) {
     return null
@@ -253,7 +244,6 @@ export function parseStatePush(raw: unknown): StatePush | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
-    snoozes: [...(s.snoozes as number[])],
     hours: [...(hours as number[])],
     prefs: { hidden: p.hidden, scale: p.scale },
   }

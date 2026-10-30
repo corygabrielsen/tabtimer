@@ -421,22 +421,18 @@ describe('block screen', () => {
 })
 
 describe('what it shows', () => {
-  // An hour at 10, 40 min in this hour (noon) against a 1 h limit, and two
-  // snoozes taken at 1 h and 1 h 5 min.
+  // Half an hour at 10, 40 min in this hour (noon) against a 1 h limit.
   beforeEach(() => {
-    const now = Date.now()
-    const taken = (siteMs: number) => ({ site: 'reddit.com', at: now, ms: SNOOZE_MS, siteMs, globalMs: siteMs })
     browser.storage.local.seed({
       'day:2026-06-10': { 'reddit.com': bucketsOf({ 10: minutes(30), 12: minutes(40) }), 'x.com': bucketsOf({ 9: 1 }) },
-      'snoozes:2026-06-10': [taken(minutes(60)), taken(minutes(65))],
     })
     seedLimits({ perSite: { 'reddit.com': 60 } })
   })
 
-  it('sums up today as the worker counts it: time, snoozes, and time over', async () => {
+  it('sums up today as the worker counts it: the time, and the time over', async () => {
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.used'))).toBe('1 h 10 min today · snoozed twice, 10 min over')
+    expect(normText(screen().querySelector('.used'))).toBe('1 h 10 min today · 10 min over')
     expect(normText(screen().querySelector('.used .over-ink'))).toBe('10 min over')
   })
 
@@ -462,7 +458,7 @@ describe('what it shows', () => {
     expect(chart.querySelector('.axis .now')?.getAttribute('style')).toContain('--h: 12')
   })
 
-  it('counts a snooze it takes in the summary when it blocks again', async () => {
+  it('counts the time a snooze took when it blocks again', async () => {
     const blocker = await mount()
     await snooze()
     expect(isBlocked()).toBe(false)
@@ -470,7 +466,7 @@ describe('what it shows', () => {
     blocker.tick()
     await flush()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.used'))).toContain('snoozed 3 times')
+    expect(normText(screen().querySelector('.used'))).toBe('1 h 15 min today · 15 min over')
     // Back at rest.
     expect(holdButton()!.className).toBe('btn hold')
   })
@@ -484,15 +480,12 @@ describe('what it shows', () => {
 })
 
 describe('summary line', () => {
-  it('names snoozes without time over, and once', async () => {
-    const now = Date.now()
-    browser.storage.local.seed({
-      'snoozes:2026-06-10': [{ site: 'reddit.com', at: now, ms: SNOOZE_MS, siteMs: 0, globalMs: 0 }],
-    })
+  it('is the time alone when not over', async () => {
     seedLimits({ perSite: { 'reddit.com': 30 } })
     logged('reddit.com', minutes(30))
     await mount()
-    expect(normText(screen().querySelector('.used'))).toBe('30 min today · snoozed once')
+    expect(normText(screen().querySelector('.used'))).toBe('30 min today')
+    expect(screen().querySelector('.used .over-ink')).toBeNull()
   })
 })
 

@@ -11,7 +11,6 @@ import {
   read,
   shadowText,
   snoozeBlock,
-  todayKey,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -102,18 +101,14 @@ test('shows the worker’s numbers, as the popup does, and marks the current hou
   extensionId,
   site,
 }) => {
-  const now = await serviceWorker.evaluate(() => Date.now())
-  const day = (await todayKey(serviceWorker)).slice(4)
-  const taken = (siteMs: number) => ({ site: SITE_A, at: now, ms: 5 * MINUTE, siteMs, globalMs: siteMs })
   await seed(serviceWorker, {
     ...(await today(serviceWorker, { [SITE_A]: 70 * MINUTE })),
-    [`snoozes:${day}`]: [taken(60 * MINUTE), taken(65 * MINUTE)],
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60 } },
   })
   const page = await blockedPage(context, site(SITE_A))
-  expect(await shadowText(page, BLOCK_ID, '.used')).toBe('1 h 10 min today · snoozed twice, 10 min over')
+  expect(await shadowText(page, BLOCK_ID, '.used')).toBe('1 h 10 min today · 10 min over')
   const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
-  await expect(popup.locator('#summary')).toHaveText('Snoozed twice, 10 min over')
+  await expect(popup.locator('#summary')).toHaveText('10 min over')
 
   const hour = String(await page.evaluate(() => new Date().getHours()))
   expect(await shadowAttribute(page, BLOCK_ID, '[data-now]', 'data-hour')).toBe(hour)
