@@ -75,8 +75,6 @@ export type Tx = {
   // Suppress all blocking for SNOOZE_MS from now, and record the snooze
   // (`taken`: who took it, and the times when it began).
   snooze(taken: Pick<Snooze, 'site' | 'siteMs' | 'globalMs'>): Promise<void>
-  // Zero one site's time for today, and forget its snoozes.
-  resetToday(site: Site): Promise<void>
 }
 
 export type Ledger = ReturnType<typeof createLedger>
@@ -145,7 +143,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
           const key = dayKey(stamp)
           const usage = await day(key)
           if (sign === -1 && !usage[site]) {
-            continue // reset since: nothing to take back
+            continue // no longer stored: nothing to take back
           }
           const buckets = (usage[site] ??= emptyBuckets())
           buckets[hour] = Math.max(0, (buckets[hour] ?? 0) + sign * ms)
@@ -192,20 +190,6 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         snoozedChanged = true
       },
       prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
-      resetToday: async (site) => {
-        const usage = await day(todayKey)
-        if (site in usage) {
-          delete usage[site]
-          changed.add(todayKey)
-        }
-        // Time already reset can't be taken back again by a later idle.
-        away = { ...away, recent: away.recent.filter((c) => c.site !== site) }
-        const snoozes = await todaySnoozes()
-        if (snoozes.some((s) => s.site === site)) {
-          snoozed = snoozes.filter((s) => s.site !== site)
-          snoozedChanged = true
-        }
-      },
     }
 
     const result = await task(tx)

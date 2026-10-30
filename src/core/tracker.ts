@@ -12,9 +12,8 @@
 //     is playing media, or the browser hears its tab);
 //   - browser events (tab switch, window focus, removal, navigation, idle,
 //     lock, blocking) only close the interval, or ask a page to report
-//     again (`probe`); a reset of the open site's time only moves the
-//     interval's start up to `now`, crediting nothing; a tab moving to
-//     another window only updates where it is;
+//     again (`probe`); a tab moving to another window only updates where
+//     it is;
 //   - an interval is credited up to `now` while its checkpoints keep
 //     coming; after a silence longer than SUSPEND_GAP_MS (the device slept
 //     without locking, so no alarm fired) it is credited only up to its
@@ -93,8 +92,6 @@ export type TrackerEvent =
   | { kind: 'checkpoint' }
   // The open tab's site is over its limit (the worker's backstop).
   | { kind: 'overLimit'; tabId: number }
-  // The site's time today was zeroed.
-  | { kind: 'reset'; site: Site }
   // The browser started or stopped hearing the tab.
   | { kind: 'audible'; tabId: number; audible: boolean }
 
@@ -403,17 +400,6 @@ export function step(s: TrackerState, e: TrackerEvent, now: number, idle: IdleSt
     case 'overLimit':
       if (open?.tabId === e.tabId) {
         b.close()
-      }
-      break
-    case 'reset':
-      // The open interval's time so far goes too: it starts again from now.
-      if (open?.site === e.site) {
-        b.open = { ...open, since: now }
-      }
-      for (const [id, attest] of Object.entries(b.tabs)) {
-        if (attest.site === e.site) {
-          b.push.add(Number(id))
-        }
       }
       break
     case 'audible': {

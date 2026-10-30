@@ -480,22 +480,7 @@ describe('limits', () => {
   })
 })
 
-describe('resets and days', () => {
-  it('shows a reset from the popup straight away', async () => {
-    seedToday({ 'reddit.com': minutes(9) })
-    const model = started()
-    await run(seconds(5))
-    browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('popup.html') }
-    await bus.send('resetToday', { site: 'reddit.com' })
-    browser.sender = null
-    await flush()
-    expect(today(model)).toBe(0)
-    await run(seconds(3))
-    expect(today(model)).toBe(seconds(3))
-    await close(model)
-    expect(storedToday()).toBe(seconds(3))
-  })
-
+describe('days', () => {
   it('starts a fresh day at local midnight, splitting the time by when it was spent', async () => {
     useClock(new Date(2026, 5, 10, 23, 59, 30))
     seedToday({ 'reddit.com': minutes(9) })

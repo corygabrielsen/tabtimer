@@ -23,8 +23,6 @@ const VIEWS: View[] = ['tracked', 'enable', 'untracked', 'loading']
 // snoozed: over a limit but blocking is paused by "5 more minutes".
 type FaceState = 'open' | 'ok' | 'over' | 'snoozed'
 
-const RESET_ARM_MS = 4000
-
 function showView(view: View) {
   for (const v of VIEWS) {
     byId(v)?.toggleAttribute('hidden', v !== view)
@@ -287,48 +285,6 @@ function renderTracked(tabId: number, base: string, focus = false) {
   const renderToggle = () => toggleBtn?.setAttribute('aria-checked', String(!hidden))
   toggleBtn?.addEventListener('click', () => {
     void bus.send('setPrefs', { hidden: !hidden })
-  })
-
-  // --- reset: arm, then confirm (today's time can't be recovered) ---
-  const resetBtn = byId<HTMLButtonElement>('reset-btn')
-  let disarm = 0
-  const setArmed = (armed: boolean) => {
-    if (!resetBtn) {
-      return
-    }
-    resetBtn.toggleAttribute('data-armed', armed)
-    resetBtn.textContent = armed ? t('popupResetConfirm') : t('popupResetToday')
-    resetBtn.setAttribute('aria-label', armed ? t('popupResetConfirmAria', base) : t('popupResetAria', base))
-  }
-  setArmed(false)
-  resetBtn?.addEventListener('click', () => {
-    if (!resetBtn.hasAttribute('data-armed')) {
-      setArmed(true)
-      disarm = window.setTimeout(() => setArmed(false), RESET_ARM_MS)
-      return
-    }
-    window.clearTimeout(disarm)
-    setArmed(false)
-    const before = tab
-    if (tab) {
-      // Optimistic: this site's time goes, from the total too.
-      const now = Date.now()
-      const totals = totalsAt(tab, now)
-      tab = { ...tab, asOf: now, today: 0, globalToday: Math.max(0, totals.globalToday - totals.siteToday) }
-      drawFace()
-    }
-    const optimistic = tab
-    void bus.send('resetToday', { site: base }).then((res) => {
-      // Not reset: the time comes back.
-      if (!res.ok && tab === optimistic) {
-        tab = before
-        drawFace()
-      }
-    })
-  })
-  resetBtn?.addEventListener('blur', () => {
-    window.clearTimeout(disarm)
-    setArmed(false)
   })
 
   const read = (key: string) => local.get(key).catch(() => undefined)

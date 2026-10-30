@@ -297,12 +297,7 @@ test('untracked site gets no overlay', async ({ context, serviceWorker, site }) 
   expect(await untracked.evaluate(() => document.documentElement.style.overflow)).toBe('')
 })
 
-test('a limit exactly equal to today’s time blocks; popup reset clears it', async ({
-  context,
-  serviceWorker,
-  extensionId,
-  site,
-}) => {
+test('a limit exactly equal to today’s time blocks', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 3 * MINUTE }))
   const page = await context.newPage()
   await page.goto(site(SITE_A))
@@ -327,16 +322,4 @@ test('a limit exactly equal to today’s time blocks; popup reset clears it', as
   await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 3 } } })
   await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
   await expect(block).toBeVisible()
-
-  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
-
-  // Two clicks: arm, then confirm.
-  await popup.getByRole('button', { name: `Reset today's time for ${SITE_A}` }).click()
-  await popup.getByRole('button', { name: `Confirm: reset today's time for ${SITE_A}` }).click()
-  await expect.poll(() => readToday(serviceWorker, SITE_A)).toBe(0)
-
-  // Back on the site: unblocked, and the overlay starts again from zero.
-  await page.bringToFront()
-  await expect(block).toBeHidden()
-  await expect.poll(async () => seconds(await shadowText(page, OVERLAY_ID))).toBeLessThan(10)
 })

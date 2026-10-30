@@ -65,7 +65,7 @@ describe('overSegments', () => {
   })
 
   it('clamps marks into the time over, and leaves out empty stretches', () => {
-    // A snooze before the limit was raised, and one after a reset.
+    // A snooze before the limit was raised, and one after time away was taken back.
     expect(overSegments(60 * MIN, 70 * MIN, [20 * MIN, 90 * MIN])).toEqual([10 * MIN])
     // A snooze with no time spent in it.
     expect(overSegments(60 * MIN, 64 * MIN, [60 * MIN, 64 * MIN])).toEqual([4 * MIN])

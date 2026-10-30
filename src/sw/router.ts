@@ -17,7 +17,7 @@ import type { Tracker } from './tracker'
 
 export type RouterDeps = {
   ledger: Pick<Ledger, 'setLimit' | 'setPrefs'>
-  tracker: Pick<Tracker, 'presence' | 'untracked' | 'tabState' | 'todayTotals' | 'resetToday' | 'snooze'>
+  tracker: Pick<Tracker, 'presence' | 'untracked' | 'tabState' | 'todayTotals' | 'snooze'>
   // The tracked grants (sw/grants.ts).
   granted: () => Promise<readonly string[]>
   extensionId: string
@@ -87,10 +87,6 @@ export function createRouter(deps: RouterDeps): Handler {
     },
     tabState: ({ tabId, site }) => tracker.tabState(tabId, site),
     todayTotals: () => tracker.todayTotals(),
-    resetToday: async ({ site }) => {
-      await tracker.resetToday(site)
-      return null
-    },
     setLimit: async (edit) => {
       await ledger.setLimit(edit)
       return null

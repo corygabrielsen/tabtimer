@@ -57,7 +57,6 @@ browsing history, form data, or anything you type.
 
 ## Your control
 
-- Use **Reset today** in the popup to clear the current day's count for a site.
 - Days older than 30 days are deleted automatically.
 - Uninstalling the extension removes all of its local storage.
 
