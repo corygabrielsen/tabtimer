@@ -259,20 +259,14 @@ describe('block screen', () => {
   it('opens Settings', async () => {
     await mount()
     const settings = screen().querySelector('.settings')
-    expect(settings?.textContent).toBe('Settings')
+    // An icon, named for assistive tech and in a tooltip.
+    expect(settings?.textContent).toBe('')
+    expect(settings?.querySelector('svg')).not.toBeNull()
+    expect(settings?.getAttribute('aria-label')).toBe('Settings')
+    expect(settings?.getAttribute('title')).toBe('Settings')
     click(settings)
     await flush()
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
-  })
-
-  it('opens the activity page in a new tab and stays blocked', async () => {
-    await mount()
-    const activity = screen().querySelector('.activity')
-    expect(activity?.textContent).toBe('See activity')
-    click(activity)
-    await flush()
-    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
-    expect(isBlocked()).toBe(true)
   })
 
   it('replaces a stale block screen instead of stacking a second one', async () => {
@@ -337,15 +331,14 @@ describe('block screen', () => {
   it('cycles Tab and Shift+Tab through its buttons', async () => {
     await mount()
     const settings = screen().querySelector<HTMLButtonElement>('.settings')!
-    const activity = screen().querySelector<HTMLButtonElement>('.activity')!
     const seen: (Element | null)[] = []
-    for (const shiftKey of [false, false, false, false, true, true]) {
+    for (const shiftKey of [false, false, false, true, true]) {
       const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
       screen().activeElement!.dispatchEvent(tab)
       expect(tab.defaultPrevented).toBe(true)
       seen.push(screen().activeElement)
     }
-    expect(seen).toEqual([holdButton(), settings, activity, closeButton(), activity, settings])
+    expect(seen).toEqual([holdButton(), settings, closeButton(), settings, holdButton()])
   })
 
   it('leaves other keys alone', async () => {

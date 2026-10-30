@@ -13,7 +13,6 @@ import { createRouter } from './router'
 import { installTestHook, offsetClock } from './testHook'
 import { createTracker } from './tracker'
 
-const ACTIVITY_PAGE = 'usage.html'
 const OPTIONS_PAGE = 'options.html'
 
 // Bring a window to the front (a page opened in a window behind seems to do
@@ -138,20 +137,15 @@ serveRouter(
     extensionUrl: chrome.runtime.getURL(''),
     // Brought to the front with its window: the options page may be a tab
     // already open in another window.
-    open: async (page) => {
-      if (page === 'options') {
-        await chrome.runtime.openOptionsPage()
-        const [tab] = await chrome.runtime
-          .getContexts({
-            contextTypes: ['TAB' as chrome.runtime.ContextType],
-            documentUrls: [chrome.runtime.getURL(OPTIONS_PAGE)],
-          })
-          .catch(() => [])
-        await focusWindow(tab?.windowId)
-      } else {
-        const tab = await chrome.tabs.create({ url: chrome.runtime.getURL(ACTIVITY_PAGE) })
-        await focusWindow(tab.windowId)
-      }
+    open: async () => {
+      await chrome.runtime.openOptionsPage()
+      const [tab] = await chrome.runtime
+        .getContexts({
+          contextTypes: ['TAB' as chrome.runtime.ContextType],
+          documentUrls: [chrome.runtime.getURL(OPTIONS_PAGE)],
+        })
+        .catch(() => [])
+      await focusWindow(tab?.windowId)
     },
     closeTab: (tabId) => chrome.tabs.remove(tabId),
   })

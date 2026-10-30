@@ -65,6 +65,22 @@ test('Close tab closes the tab', async ({ context, serviceWorker, site }) => {
   ).toBe(0)
 })
 
+test('the gear opens Settings, and the block stays up', async ({ context, serviceWorker, extensionId, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
+  expect(await shadowAttribute(page, BLOCK_ID, 'button.settings', 'aria-label')).toBe('Settings')
+  // The install opened Settings already: close it, so the gear opens it anew.
+  for (const open of context.pages().filter((p) => p.url().endsWith('/options.html'))) {
+    await open.close()
+  }
+  const [options] = await Promise.all([context.waitForEvent('page'), clickInShadow(page, BLOCK_ID, 'button.settings')])
+  await options.waitForLoadState()
+  expect(options.url()).toBe(`chrome-extension://${extensionId}/options.html`)
+  await options.close()
+  await page.bringToFront()
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+})
+
 test('holding 2 more minutes for 2 s snoozes; a short press or a click does not', async ({
   context,
   serviceWorker,
@@ -114,7 +130,7 @@ for (const [width, height] of [
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
     // The card's entrance settles first.
     await page.waitForTimeout(600)
-    for (const selector of ['button.close', 'button.hold', 'button.settings', 'button.activity']) {
+    for (const selector of ['button.close', 'button.hold', 'button.settings']) {
       const box = await shadowBox(page, BLOCK_ID, selector)
       expect(box.top, selector).toBeGreaterThanOrEqual(0)
       expect(box.left, selector).toBeGreaterThanOrEqual(0)
@@ -460,12 +476,12 @@ test('is fully opaque over a bright page, in light and dark', async ({ context, 
   expect(await ground()).toBe('rgb(231, 235, 239)')
 
   // Every pixel in a strip across the top of the viewport, clear of the
-  // block screen's card and its shadow, is that ground: none of the bright
-  // page shows.
+  // centred column and of the Settings button in the top right corner, is
+  // that ground: none of the bright page shows.
   const decoder = await context.newPage()
   const colours = async () => {
     const { width } = page.viewportSize()!
-    const png = await page.screenshot({ clip: { x: 0, y: 0, width, height: 40 } })
+    const png = await page.screenshot({ clip: { x: 0, y: 0, width: width - 64, height: 40 } })
     return decoder.evaluate(async (b64) => {
       const img = new Image()
       img.src = `data:image/png;base64,${b64}`

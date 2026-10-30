@@ -66,6 +66,8 @@ const GRAPHICS: Array<[string, (node: Node) => boolean]> = [
   ['meter mark', (n) => classes(n).includes('lim')],
   ['switch', (n) => classes(n).includes('switch')],
   ['chosen chip', (n) => classes(n).includes('limit-chip') && attr(n, 'aria-checked') === 'true'],
+  // An icon button: its glyph is drawn in its text colour.
+  ['gear', (n) => classes(n).includes('gear')],
 ]
 
 type Finding = { what: string; ratio: number; need: number }
@@ -182,7 +184,7 @@ async function audit(page: Page): Promise<Finding[]> {
       continue
     }
     const s = await style(el)
-    const fill = parse(s['background-color'])!
+    const fill = parse(kind === 'gear' ? s.color : s['background-color'])!
     const { bg } = await behind(el, false)
     findings.push({ what: `${kind} (${s['background-color']} on ${bg})`, ratio: ratio(over(fill, bg), bg), need: 3 })
   }
@@ -333,7 +335,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text', 'hour bar', 'limit tick'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'gear'])).toEqual([])
     })
   })
 }

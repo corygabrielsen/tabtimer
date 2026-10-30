@@ -345,14 +345,18 @@ describe('handlers', () => {
     await expect(handle({ ...presence, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
   })
 
-  it('open the options or the activity page, from a tab only', async () => {
+  it('open the options page, from a tab only', async () => {
     await expect(handle({ type: 'open', page: 'options' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'open', page: 'activity' }, page('usage.html'))).resolves.toEqual({
+    await expect(handle({ type: 'open', page: 'options' }, page('usage.html'))).resolves.toEqual({
       ok: false,
       error: 'forbidden',
     })
-    expect(open.mock.calls).toEqual([['options'], ['activity']])
+    // The activity page is opened from the extension's own pages only.
+    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({
+      ok: false,
+      error: 'bad_request',
+    })
+    expect(open.mock.calls).toEqual([['options']])
   })
 
   it('closeTab closes the sending tab, from a tab only', async () => {

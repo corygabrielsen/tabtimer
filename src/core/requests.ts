@@ -54,7 +54,7 @@ export function parseRequest(raw: unknown): Request | null {
     case 'todayTotals':
       return { type: 'todayTotals' }
     case 'open':
-      return raw.page === 'options' || raw.page === 'activity' ? { type: 'open', page: raw.page } : null
+      return raw.page === 'options' ? { type: 'open', page: raw.page } : null
     case 'presence': {
       const presence = parsePresence(raw)
       return presence ? { type: 'presence', ...presence } : null

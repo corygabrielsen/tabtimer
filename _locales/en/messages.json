@@ -202,6 +202,5 @@
   "usageNoneWeek": { "message": "No activity." },
   "usageSeeAll": { "message": "See all activity" },
   "popupStripAria": { "message": "Today on $host$, by hour", "placeholders": { "host": { "content": "$1" } } },
-  "blockSeeActivity": { "message": "See activity" },
   "optionsWeekHeading": { "message": "This week" }
 }

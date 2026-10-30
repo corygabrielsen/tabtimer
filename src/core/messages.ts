@@ -15,7 +15,7 @@ import type { Presence } from './tracker'
 type Empty = Record<never, never>
 
 // The extension pages a content script may open.
-export type Page = 'options' | 'activity'
+export type Page = 'options'
 
 // What a tracked page shows and enforces, as the service worker sees it at
 // `asOf`. The page keeps the display ticking from there: while `running`
@@ -145,8 +145,7 @@ export type Contract = {
   setPrefs: { req: Partial<Prefs>; res: null }
   // content: close the sending page's tab (the block screen's way out).
   closeTab: { req: Empty; res: null }
-  // content: open the options page, or the activity page in a new tab (the
-  // block stays up).
+  // content: open the options page (the block stays up).
   open: { req: { page: Page }; res: null }
 }
 

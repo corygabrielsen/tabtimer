@@ -15,10 +15,6 @@ describe('parseRequest', () => {
       { type: 'open', page: 'options' },
     ],
     [
-      { type: 'open', page: 'activity', extra: 1 },
-      { type: 'open', page: 'activity' },
-    ],
-    [
       { type: 'presence', ...PRESENT },
       { type: 'presence', ...PRESENT },
     ],

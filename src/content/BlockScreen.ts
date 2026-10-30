@@ -28,7 +28,7 @@ const STYLES = `${BASE}
     max-width: none;
     max-height: none;
     margin: 0;
-    padding: var(--s-4);
+    padding: var(--s-6);
     border: 0;
     overflow: auto;
     overscroll-behavior: contain;
@@ -57,17 +57,14 @@ const STYLES = `${BASE}
     clip: rect(0 0 0 0);
     white-space: nowrap;
   }
-  .sheet {
+  /* One centred column straight on the surface. */
+  .column {
     width: 100%;
-    max-width: 560px;
+    max-width: 480px;
     margin: auto;
-    padding: var(--s-10) var(--s-10) var(--s-8);
-    border-radius: var(--r-2xl);
-    background: var(--sheet);
-    box-shadow: var(--shadow);
-    animation: sheet-in 0.48s var(--ease) both;
+    animation: column-in 0.48s var(--ease) both;
   }
-  @keyframes sheet-in { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+  @keyframes column-in { from { opacity: 0; transform: translateY(14px); } }
   .site {
     display: flex;
     align-items: center;
@@ -77,6 +74,18 @@ const STYLES = `${BASE}
     font-size: var(--t-md);
     overflow-wrap: anywhere;
   }
+  /* Settings: an icon in a 32 px round quiet button, in the screen's top
+     right corner. */
+  .btn.gear {
+    position: absolute;
+    top: var(--s-4);
+    right: var(--s-4);
+    width: 32px;
+    min-height: 32px;
+    height: 32px;
+    padding: 0;
+  }
+  .btn.gear svg { width: 20px; height: 20px; margin: 0; }
   .site .fav { width: 24px; height: 24px; border-radius: var(--r-sm); font-size: var(--t-xs); }
   h1 {
     margin: var(--s-4) 0 var(--s-2);
@@ -93,12 +102,7 @@ const STYLES = `${BASE}
     font-variant-numeric: tabular-nums;
   }
   .used b { color: var(--text); font-weight: 600; }
-  .panel {
-    margin: var(--s-6) 0;
-    padding: var(--s-4) var(--s-5) var(--s-3);
-    border-radius: var(--r-lg);
-    background: var(--sunk);
-  }
+  .chart { margin: var(--s-8) 0 var(--s-6); }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
     position: relative;
@@ -164,7 +168,7 @@ const STYLES = `${BASE}
     min-height: 48px;
     margin-top: var(--s-3);
     border: 1px solid var(--bar);
-    background: var(--sheet);
+    background: transparent;
     box-shadow: none;
     color: var(--text);
     font-size: var(--t-md);
@@ -176,7 +180,7 @@ const STYLES = `${BASE}
   .btn.hold.holding,
   .btn.hold.released {
     border-color: var(--accent-ink);
-    background: var(--sheet);
+    background: transparent;
     color: var(--accent-ink);
   }
   .btn.hold.holding { transform: scale(0.985); }
@@ -204,37 +208,31 @@ const STYLES = `${BASE}
   .hold.done .lbl { animation: settle 0.36s var(--ease); }
   @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
   .check { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .subrow { display: flex; justify-content: center; gap: var(--s-2); margin-top: var(--s-4); }
-  .subrow .btn { padding: 0 var(--s-4); font-size: var(--t-md); }
   @media (max-width: 480px) {
-    .sheet { padding: var(--s-6) var(--s-5) var(--s-5); border-radius: var(--r-xl); }
     h1 { font-size: 30px; }
     .plot { column-gap: 3px; }
   }
-  /* Short viewports (a laptop, or a page zoomed in): the card fits without
+  /* Short viewports (a laptop, or a page zoomed in): it all fits without
      scrolling. Tighter spacing first, then a shorter chart, then none:
      the actions always stay in view. */
   @media (max-height: 680px) {
-    dialog.screen { padding: var(--s-2); }
-    .sheet { padding: var(--s-6) var(--s-8) var(--s-5); border-radius: var(--r-xl); }
+    dialog.screen { padding: var(--s-4); }
     h1 { margin: var(--s-3) 0 var(--s-1); font-size: 30px; }
-    .panel { margin: var(--s-4) 0; padding: var(--s-3) var(--s-4) var(--s-2); }
+    .chart { margin: var(--s-5) 0 var(--s-4); }
     .plot { height: 84px; padding-top: 16px; }
     .close { min-height: 48px; }
     .btn.hold { min-height: 44px; margin-top: var(--s-2); }
-    .subrow { margin-top: var(--s-2); }
   }
   @media (max-height: 540px) {
     .plot { height: 60px; }
   }
   @media (max-height: 460px) {
-    .sheet { padding: var(--s-4) var(--s-6); }
+    dialog.screen { padding: var(--s-3) var(--s-4); }
     h1 { margin: var(--s-2) 0 var(--s-1); font-size: 26px; }
-    .panel { display: none; }
+    .chart { display: none; }
     .used { margin-bottom: var(--s-4); }
     .close { min-height: 44px; }
     .btn.hold { min-height: 40px; }
-    .subrow { margin-top: var(--s-1); }
   }
   @media (prefers-reduced-motion: reduce) {
     .btn.hold.holding { transform: none; }
@@ -273,7 +271,6 @@ export default class BlockScreen {
   private closeButton: HTMLButtonElement
   private holdButton: HoldButton
   private settingsButton: HTMLButtonElement
-  private activityButton: HTMLButtonElement
   // What the content was last drawn from, so a tick redraws only on change.
   private drawn = ''
   private blocked = false
@@ -330,18 +327,25 @@ export default class BlockScreen {
         void this.tracker.snooze()
       }
     )
-    // Each opens in a tab of its own, through the service worker; this page
-    // stays blocked.
+    // Settings opens through the service worker, in a tab of its own; this
+    // page stays blocked.
     this.settingsButton = button(
-      'btn btn-quiet settings',
+      'btn btn-quiet gear settings',
       () => void this.bus.send('open', { page: 'options' }),
-      t('popupSettings')
+      svg(
+        '0 0 24 24',
+        'icon',
+        ['circle', { cx: '12', cy: '12', r: '3' }],
+        [
+          'path',
+          {
+            d: 'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z',
+          },
+        ]
+      )
     )
-    this.activityButton = button(
-      'btn btn-quiet activity',
-      () => void this.bus.send('open', { page: 'activity' }),
-      t('blockSeeActivity')
-    )
+    this.settingsButton.setAttribute('aria-label', t('popupSettings'))
+    this.settingsButton.title = t('popupSettings')
     this.fav = h('span', { class: 'fav', 'aria-hidden': 'true' })
     this.siteName = h('span', { class: 'name' })
     this.summary = h('p', { class: 'used', id: 'used' })
@@ -359,17 +363,17 @@ export default class BlockScreen {
       },
       h(
         'div',
-        { class: 'sheet' },
+        { class: 'column' },
         h('div', { class: 'site' }, this.fav, this.siteName),
         h('h1', { id: 'title' }, t('blockTitle')),
         this.summary,
-        h('div', { class: 'panel' }, this.chart),
+        this.chart,
         this.closeButton,
         hold.el,
         hold.hint,
-        hold.status,
-        h('div', { class: 'subrow' }, this.settingsButton, this.activityButton)
-      )
+        hold.status
+      ),
+      this.settingsButton
     )
     this.dialog.addEventListener('cancel', this.handleCancel)
     this.dialog.addEventListener('close', this.handleClose)
@@ -690,7 +694,7 @@ export default class BlockScreen {
       return
     }
     e.preventDefault()
-    const order = [this.closeButton, this.holdButton.el, this.settingsButton, this.activityButton]
+    const order = [this.closeButton, this.holdButton.el, this.settingsButton]
     const current = order.indexOf(this.shadow.activeElement as HTMLButtonElement)
     const step = e.shiftKey ? order.length - 1 : 1
     const next = current === -1 ? this.closeButton : order[(current + step) % order.length]!

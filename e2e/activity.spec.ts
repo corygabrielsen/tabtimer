@@ -10,7 +10,6 @@ import {
   openInterval,
   advance,
   readToday,
-  clickInShadow,
   LIMITS_KEY,
   BLOCK_ID,
   MINUTE,
@@ -73,19 +72,6 @@ test('opens from the settings', async ({ context, serviceWorker, extensionId }) 
   await expect(options.locator('#week-total')).toHaveText(/min/)
   const page = await opens(context, () => options.getByRole('link', { name: 'See all activity' }).click())
   expect(page.url()).toBe(`chrome-extension://${extensionId}/usage.html`)
-})
-
-test('opens from the block screen, which stays up', async ({ context, serviceWorker, extensionId, site }) => {
-  await seedUsage(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 10 } } })
-  const tab = await context.newPage()
-  await tab.goto(site(SITE_A))
-  await expect(blocked(tab)).toBeVisible()
-
-  const page = await opens(context, () => clickInShadow(tab, BLOCK_ID, '.activity'))
-  expect(page.url()).toBe(`chrome-extension://${extensionId}/usage.html`)
-  await page.close()
-  await tab.bringToFront()
-  await expect(blocked(tab)).toBeVisible()
 })
 
 test('switches between day and week and steps through periods', async ({ context, serviceWorker, extensionId }) => {
