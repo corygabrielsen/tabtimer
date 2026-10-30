@@ -33,83 +33,61 @@ const STYLES = `
   :host { all: initial; }
   * { box-sizing: border-box; }
   .widget {
-    padding-top: 8px;
-    font-family: var(--font);
-    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #f5f5f5;
     font-variant-numeric: tabular-nums;
-    -webkit-font-smoothing: antialiased;
     -webkit-user-select: none;
     user-select: none;
   }
-  /* The time only; over the limit, the one accent state. */
   .pill {
     display: block;
-    height: 32px;
     margin: 0;
-    padding: 0 14px;
-    border: 1px solid var(--edge);
-    border-radius: 999px;
-    background: var(--sheet);
-    box-shadow: var(--shadow-sm);
-    color: var(--text);
+    border: 0;
+    background: rgba(0, 0, 0, 0.72);
+    color: #f5f5f5;
+    padding: 3px 9px;
+    border-radius: 0 0 2px 2px;
     cursor: pointer;
     font: inherit;
-    font-size: 14px;
-    font-weight: 600;
-    line-height: 30px;
-    pointer-events: auto;
-    transition: background-color 0.15s;
-  }
-  .pill:hover { background: var(--hover); }
-  .pill[data-over] {
-    border-color: var(--accent-ink);
-    background: var(--accent-soft);
-    color: var(--accent-ink);
+    font-size: 12px;
+    letter-spacing: 0.02em;
   }
   .panel {
-    min-width: 168px;
-    padding: 4px;
+    background: rgba(0, 0, 0, 0.82);
+    border-radius: 0 0 2px 2px;
     overflow: hidden;
-    border: 1px solid var(--edge);
-    border-radius: 16px;
-    background: var(--sheet);
-    box-shadow: var(--shadow);
-    pointer-events: auto;
+    min-width: 130px;
   }
   .row {
     display: flex;
     width: 100%;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
-    min-height: 32px;
+    gap: 18px;
     margin: 0;
-    padding: 0 12px;
+    padding: 3px 9px;
     border: 0;
-    border-radius: 12px;
+    border-left: 2px solid transparent;
     background: transparent;
-    color: var(--muted);
+    color: #8a8a8a;
     cursor: pointer;
     text-align: left;
     font: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    transition: background-color 0.15s;
+    font-size: 12px;
+    transition: background 0.1s;
   }
-  .row:hover { background: var(--hover); color: var(--text); }
+  .row:hover { background: rgba(255, 255, 255, 0.05); }
   .row[aria-pressed='true'] {
-    background: var(--accent-soft);
-    color: var(--accent-ink);
-    font-weight: 600;
+    color: #f5f5f5;
+    border-left-color: #f5f5f5;
   }
-  .label { font-size: 12px; }
+  .label { font-size: 11px; }
   .controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 4px;
-    padding: 4px 0 0;
-    border-top: 1px solid var(--line);
+    padding: 2px 5px 3px;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
   }
   .sizes {
     display: flex;
@@ -117,37 +95,34 @@ const STYLES = `
   }
   .size,
   .close {
-    width: 32px;
-    height: 28px;
     margin: 0;
     border: 0;
-    border-radius: 999px;
+    border-radius: 0;
     background: transparent;
-    color: var(--quiet-ink);
+    color: #8a8a8a;
     cursor: pointer;
     font: inherit;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 12px;
     line-height: 1;
+    padding: 1px 6px;
   }
   .size:hover:not(:disabled),
   .close:hover {
-    background: var(--hover);
-    color: var(--text);
+    color: #f5f5f5;
   }
   .size:disabled {
-    color: var(--edge);
+    opacity: 0.3;
     cursor: default;
   }
   .pill:focus-visible,
   .row:focus-visible,
   .size:focus-visible,
   .close:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+    outline: 1px solid #9a9a9a;
+    outline-offset: -1px;
   }
   @media (prefers-reduced-motion: reduce) {
-    .pill, .row { transition: none; }
+    .row { transition: none; }
   }
 `
 
@@ -173,7 +148,7 @@ export default class Overlay {
   private unsubscribeState: () => void
 
   constructor(
-    private tracker: Pick<FocusTracker, 'readElapsed' | 'onState' | 'prefs' | 'isOver'>,
+    private tracker: Pick<FocusTracker, 'readElapsed' | 'onState' | 'prefs'>,
     private bus: Bus = chromeBus
   ) {
     const { host, shadow, attach } = mountShadowHost(HOST_ID, STYLES)
@@ -223,8 +198,6 @@ export default class Overlay {
     this.host.popover = 'manual'
     const s = this.host.style
     for (const [prop, value] of [
-      // Only the pill and panel take clicks, not the gap above the pill.
-      ['pointer-events', 'none'],
       ['inset', 'auto'],
       ['margin', '0'],
       ['padding', '0'],
@@ -298,7 +271,6 @@ export default class Overlay {
   private setPillTime(pill: HTMLElement, elapsed: ElapsedState) {
     const time = formatTime(elapsed[this.selectedTimer])
     pill.textContent = time
-    pill.toggleAttribute('data-over', this.tracker.isOver())
     pill.setAttribute('aria-label', t('overlayPillAria', [LABELS[this.selectedTimer], time]))
   }
 

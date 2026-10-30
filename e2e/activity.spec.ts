@@ -196,7 +196,7 @@ test('shows the popup’s minute for a running site before a checkpoint', async 
   // Not yet credited.
   expect(await readToday(serviceWorker, SITE_A)).toBe(9 * MINUTE)
   const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
-  await expect(popup.locator('#today')).toHaveText(/^0:10:/)
+  await expect(popup.locator('#today')).toHaveText(/^00:10:/)
 })
 
 test('shows the chart as a table', async ({ context, serviceWorker, extensionId }) => {

@@ -57,7 +57,7 @@ describe('time limits end to end', () => {
     expect(isBlocked()).toBe(false)
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.detail')?.textContent).toBe('0:01:00 today · 0:01:00 limit')
+    expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
   })
 
   it('includes time other tabs already spent on the site today', async () => {
@@ -81,7 +81,7 @@ describe('time limits end to end', () => {
     setPageState({ hidden: false, focused: true })
     await run(seconds(30))
     expect(isBlocked()).toBe(false)
-    expect(pillText()).toMatch(/^0:00:(29|30)$/)
+    expect(pillText()).toMatch(/^00:00:(29|30)$/)
   })
 
   it('does not accrue while the window is unfocused', async () => {
@@ -102,7 +102,7 @@ describe('time limits end to end', () => {
     await run(minutes(1))
     expect(isBlocked()).toBe(true)
     await run(minutes(10))
-    expect(blockScreen().querySelector('.detail')?.textContent).toBe('0:01:00 today · 0:01:00 limit')
+    expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
     expect(storedToday()).toBe(minutes(1))
   })
 
@@ -139,7 +139,7 @@ describe('time limits end to end', () => {
     await run(SNOOZE_MS - seconds(2))
     expect(isBlocked()).toBe(false)
     // Time still accrued during the snooze.
-    expect(pillText()).toMatch(/^0:05:5\d$/)
+    expect(pillText()).toMatch(/^00:05:5\d$/)
     await run(seconds(3))
     expect(isBlocked()).toBe(true)
   })
@@ -150,10 +150,10 @@ describe('time limits end to end', () => {
     await openTab()
     await run(minutes(1)) // 23:59:00
     expect(isBlocked()).toBe(true)
-    await run(seconds(60)) // 0:00:00
+    await run(seconds(60)) // 00:00:00
     await run(seconds(2))
     expect(isBlocked()).toBe(false)
-    expect(pillText()).toMatch(/^0:00:0[12]$/)
+    expect(pillText()).toMatch(/^00:00:0[12]$/)
   })
 })
 

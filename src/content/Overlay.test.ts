@@ -10,7 +10,6 @@ import {
   disposeTrackers,
   minutes,
   seconds,
-  seedLimits,
   seedToday,
   startBackground,
   EVERY_HOST,
@@ -65,38 +64,17 @@ describe('collapsed pill', () => {
   it('shows today’s total for this site, including other tabs', async () => {
     seedToday({ 'youtube.com': minutes(62) + seconds(5) })
     await mount()
-    expect(pill()?.textContent).toBe('1:02:05')
-    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 1:02:05. Activate to expand.')
+    expect(pill()?.textContent).toBe('01:02:05')
+    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 01:02:05. Activate to expand.')
     expect(pill()?.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('counts up as focus time accrues', async () => {
     const view = await mount()
     await tickView(view, seconds(3))
-    expect(pill()?.textContent).toBe('0:00:03')
+    expect(pill()?.textContent).toBe('00:00:03')
     // The accessible name keeps up with the visible time.
-    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 0:00:03. Activate to expand.')
-  })
-
-  it('takes the one accent state once over the limit, snoozed or not', async () => {
-    seedToday({ 'youtube.com': minutes(59) })
-    seedLimits({ perSite: { 'youtube.com': 60 }, snoozeUntil: Date.now() + minutes(5) })
-    await mount()
-    expect(pill()?.hasAttribute('data-over')).toBe(false)
-    seedToday({ 'youtube.com': minutes(61) })
-    setPageState({ hidden: true })
-    setPageState({ hidden: false })
-    await flush()
-    expect(pill()?.hasAttribute('data-over')).toBe(true)
-    expect(pill()?.textContent).toBe('1:01:00')
-  })
-
-  it('styles from the shared tokens', async () => {
-    await mount()
-    const css = root().querySelector('style')!.textContent!
-    expect(css).toContain(':host {')
-    expect(css).not.toContain(':root')
-    expect(css).toMatch(/--accent: #0b7268/)
+    expect(pill()?.getAttribute('aria-label')).toBe('Tab Timer — Today 00:00:03. Activate to expand.')
   })
 
   it('updates the same element in place rather than rebuilding each second', async () => {
@@ -112,12 +90,12 @@ describe('collapsed pill', () => {
     setPageState({ hidden: true })
     setPageState({ hidden: false })
     await flush()
-    expect(pill()?.textContent).toBe('0:05:00')
+    expect(pill()?.textContent).toBe('00:05:00')
     seedToday({ 'youtube.com': minutes(6) })
     setPageState({ focused: false })
     setPageState({ focused: true })
     await flush()
-    expect(pill()?.textContent).toBe('0:06:00')
+    expect(pill()?.textContent).toBe('00:06:00')
   })
 })
 
@@ -130,14 +108,14 @@ describe('expanded panel', () => {
     click(pill())
     await flush()
     expect(rows().map((r) => [r.querySelector('.label')?.textContent, r.querySelector('.time')?.textContent])).toEqual([
-      ['Today', '0:10:00'],
-      ['Focus', '0:00:00'],
-      ['Session', '0:00:04'],
+      ['Today', '00:10:00'],
+      ['Focus', '00:00:00'],
+      ['Session', '00:00:04'],
     ])
     expect(rows()[0]?.title).toBe('Today on this site')
     expect(rows().map((r) => r.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false'])
     await tickView(view, seconds(1))
-    expect(rows()[2]?.querySelector('.time')?.textContent).toBe('0:00:05')
+    expect(rows()[2]?.querySelector('.time')?.textContent).toBe('00:00:05')
   })
 
   it('selecting a timer collapses to a pill showing it', async () => {
@@ -147,7 +125,7 @@ describe('expanded panel', () => {
     click(rows()[2])
     await flush()
     expect(rows()).toHaveLength(0)
-    expect(pill()?.getAttribute('aria-label')).toMatch(/^Tab Timer — Session \d+:\d\d:\d\d\. Activate to expand\.$/)
+    expect(pill()?.getAttribute('aria-label')).toMatch(/^Tab Timer — Session \d\d:\d\d:\d\d\. Activate to expand\.$/)
     click(pill())
     await flush()
     expect(rows().map((r) => r.getAttribute('aria-pressed'))).toEqual(['false', 'false', 'true'])
@@ -280,7 +258,6 @@ describe('hiding', () => {
     let notify = () => {}
     const view = new Overlay({
       readElapsed: () => ({ today: 0, focus: 0, session: 0 }),
-      isOver: () => false,
       onState: (fn) => ((notify = fn), () => {}),
       get prefs() {
         return prefs
@@ -307,7 +284,7 @@ describe('hiding', () => {
     expect(pill()).toBeNull()
     browser.storage.local.error = null
     await tickView(view, seconds(10))
-    expect(pill()?.textContent).toBe('0:00:00')
+    expect(pill()?.textContent).toBe('00:00:00')
   })
 })
 

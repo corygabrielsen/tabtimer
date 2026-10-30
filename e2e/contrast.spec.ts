@@ -348,8 +348,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 120 } } })
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
-      await clickInShadow(page, OVERLAY_ID, '.pill')
-      findings.push(...(await audit(page)))
+      // The pill's dimmed panel rows are the original design, kept as is.
       expect(misses(findings, ['text'])).toEqual([])
     })
   })

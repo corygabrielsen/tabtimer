@@ -24,7 +24,7 @@ const UNTRACKED = 'untracked.test'
 
 // HH:MM:SS from the overlay pill, as seconds.
 function seconds(text: string): number {
-  const match = /(\d+):(\d\d):(\d\d)/.exec(text)
+  const match = /(\d\d):(\d\d):(\d\d)/.exec(text)
   if (!match) {
     return NaN
   }
@@ -165,8 +165,7 @@ test('the overlay stays pinned to the top of the viewport under a page transform
   await expect
     .poll(() =>
       page.evaluate(
-        // The pill floats 8 px below the top edge; y = 20 is inside it.
-        ([id, x]) => [document.getElementById(id)!.getBoundingClientRect().top, document.elementFromPoint(x, 20)?.id],
+        ([id, x]) => [document.getElementById(id)!.getBoundingClientRect().top, document.elementFromPoint(x, 2)?.id],
         [OVERLAY_ID, width / 2] as const
       )
     )
@@ -186,7 +185,7 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
   expect(text).toContain("Time's up")
   expect(text).toContain(SITE_A)
   expect(text).not.toContain('all tracked sites')
-  expect(text).toContain('0:10:00 limit')
+  expect(text).toContain('00:10:00 limit')
 })
 
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
@@ -201,7 +200,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
     const text = await shadowText(page, BLOCK_ID)
     expect(text).toContain('all tracked sites')
-    expect(text).toContain('0:10:00 limit')
+    expect(text).toContain('00:10:00 limit')
   }
 })
 

@@ -90,7 +90,7 @@ describe('deciding to block', () => {
     expect(isBlocked()).toBe(true)
     expect(normText(screen().querySelector('.title'))).toBe("Time's up")
     expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
-    expect(normText(screen().querySelector('.detail'))).toBe('0:30:00 today · 0:30:00 limit')
+    expect(normText(screen().querySelector('.detail'))).toBe('00:30:00 today · 00:30:00 limit')
   })
 
   it('counts this tab’s not-yet-reported time toward the limit', async () => {
@@ -119,7 +119,7 @@ describe('deciding to block', () => {
     await mount()
     expect(isBlocked()).toBe(true)
     expect(normText(screen().querySelector('.host'))).toBe('all tracked sites')
-    expect(normText(screen().querySelector('.detail'))).toBe('1:00:00 today · 1:00:00 limit')
+    expect(normText(screen().querySelector('.detail'))).toBe('01:00:00 today · 01:00:00 limit')
   })
 
   it('does not count earlier days toward the global cap', async () => {
@@ -136,7 +136,7 @@ describe('deciding to block', () => {
     logged('x.com', minutes(10))
     await mount()
     expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
-    expect(normText(screen().querySelector('.detail'))).toBe('0:16:00 today · 0:15:00 limit')
+    expect(normText(screen().querySelector('.detail'))).toBe('00:16:00 today · 00:15:00 limit')
   })
 
   it('fails open when limits cannot be read', async () => {

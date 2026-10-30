@@ -116,7 +116,7 @@ function faceFor(base: string, s: Snapshot) {
 
 type Face = ReturnType<typeof faceFor>
 
-// "1:10" then ":04", the seconds set smaller.
+// "01:10" then ":04", the seconds set smaller.
 function renderReadout(el: HTMLElement, ms: number) {
   const time = formatTime(ms)
   const cut = time.lastIndexOf(':')

@@ -154,14 +154,14 @@ describe('popup on a tracked site', () => {
     await openReddit()
     expect(visibleSection()).toEqual(['tracked'])
     expect($('site').textContent).toBe('reddit.com')
-    expect($('today').textContent).toBe('0:01:05')
+    expect($('today').textContent).toBe('00:01:05')
   })
 
   it('updates live while open', async () => {
     await openReddit()
     seedToday({ 'reddit.com': 3_600_000 })
     await flush()
-    expect($('today').textContent).toBe('1:00:00')
+    expect($('today').textContent).toBe('01:00:00')
   })
 
   it('shows today on this site by hour, and links to all activity', async () => {
@@ -317,7 +317,7 @@ describe('popup on a tracked site', () => {
         ...dayEntry({ 'reddit.com': 70 * MIN }),
       })
       await openReddit()
-      expect($('today').textContent).toBe('1:10:00')
+      expect($('today').textContent).toBe('01:10:00')
       expect($('today').querySelector('small')?.textContent).toBe(':00')
       expect(text('readout-of')).toBe('of 1 h')
       expect(text('summary')).toBe('Snoozed twice, 10 min over · 2 min left')
@@ -370,7 +370,7 @@ describe('popup on a tracked site', () => {
       vi.advanceTimersByTime(3000)
       await flush()
       expect(on()).toBe(0)
-      expect($('today').textContent).toBe('0:00:00')
+      expect($('today').textContent).toBe('00:00:00')
     } finally {
       vi.useRealTimers()
     }
@@ -410,11 +410,11 @@ describe('popup on a tracked site', () => {
         await inUse(50_000)
         await openReddit()
         expect(storedToday('reddit.com')).toBe(0)
-        expect($('today').textContent).toBe('0:00:50')
+        expect($('today').textContent).toBe('00:00:50')
         expect(face()).toBe('ok')
         // It runs on while the tab does, and goes over when the page blocks.
         vi.advanceTimersByTime(10_000)
-        expect($('today').textContent).toBe('0:01:00')
+        expect($('today').textContent).toBe('00:01:00')
         expect(face()).toBe('over')
       } finally {
         vi.useRealTimers()
@@ -440,7 +440,7 @@ describe('popup on a tracked site', () => {
     it('counts another tab’s running time only as that tab’s page is told', async () => {
       await inUse(30_000)
       await openPopup({ id: 2, url: 'https://www.reddit.com/' })
-      expect($('today').textContent).toBe('0:00:00')
+      expect($('today').textContent).toBe('00:00:00')
     })
   })
 
@@ -448,7 +448,7 @@ describe('popup on a tracked site', () => {
     seedToday({ 'reddit.com': 65_000 })
     browser.storage.local.writeDuringNextRead(dayEntry({ 'reddit.com': 3_600_000 }))
     await openReddit()
-    expect($('today').textContent).toBe('1:00:00')
+    expect($('today').textContent).toBe('01:00:00')
   })
 
   it('ignores another day’s usage', async () => {
@@ -457,7 +457,7 @@ describe('popup on a tracked site', () => {
     const bar = $('strip').querySelector('span')
     browser.storage.local.set(dayEntry({ 'reddit.com': 3_600_000 }, new Date(Date.now() - 86_400_000)))
     await flush()
-    expect($('today').textContent).toBe('0:01:05')
+    expect($('today').textContent).toBe('00:01:05')
     expect($('strip').querySelector('span')).toBe(bar)
   })
 
@@ -485,13 +485,13 @@ describe('popup on a tracked site', () => {
     browser.runtime.onMessage.listeners.clear()
     await openReddit()
     expect(visibleSection()).toEqual(['tracked'])
-    expect($('today').textContent).toBe('0:00:00')
+    expect($('today').textContent).toBe('00:00:00')
     expect($('toggle-btn').getAttribute('aria-checked')).toBe('true')
     click($('toggle-btn'))
     click($('reset-btn'))
     click($('reset-btn'))
     await flush()
-    expect($('today').textContent).toBe('0:00:00')
+    expect($('today').textContent).toBe('00:00:00')
   })
 
   describe('reset today', () => {
@@ -514,7 +514,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       click($('reset-btn'))
       click($('reset-btn'))
-      expect($('today').textContent).toBe('0:00:00') // optimistic
+      expect($('today').textContent).toBe('00:00:00') // optimistic
       await flush()
       expect(storedToday('reddit.com')).toBe(0)
       expect(storedToday('x.com')).toBe(5)
@@ -536,9 +536,9 @@ describe('popup on a tracked site', () => {
       browser.storage.local.error = 'quota'
       click($('reset-btn'))
       click($('reset-btn'))
-      expect($('today').textContent).toBe('0:00:00') // optimistic
+      expect($('today').textContent).toBe('00:00:00') // optimistic
       await flush()
-      expect($('today').textContent).toBe('0:01:05')
+      expect($('today').textContent).toBe('00:01:05')
     })
 
     it('disarms by itself after a few seconds', async () => {
