@@ -132,8 +132,6 @@ export type Contract = {
   tabState: { req: { tabId: number; site: Site }; res: TabState }
   // extension pages: every site's time today (the settings page's figures).
   todayTotals: { req: Empty; res: TodayTotals }
-  // extension pages: zero one site's time today.
-  resetToday: { req: { site: Site }; res: null }
   // extension pages: change one limit (read-modify-write in the worker).
   setLimit: { req: LimitEdit; res: null }
   // content: suppress blocking for SNOOZE_MS.
@@ -174,7 +172,6 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   presence: ['content'],
   tabState: ['extension'],
   todayTotals: ['extension'],
-  resetToday: ['extension'],
   setLimit: ['extension'],
   snooze: ['content'],
   setPrefs: ['content', 'extension'],

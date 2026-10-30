@@ -20,7 +20,7 @@ describe('t', () => {
 
   it('fills placeholders from substitutions', () => {
     expect(t('blockDetail', ['00:10:00', '00:30:00'])).toBe('00:10:00 today · 00:30:00 limit')
-    expect(t('popupResetAria', 'reddit.com')).toBe("Reset today's time for reddit.com")
+    expect(t('popupLimitAria', 'reddit.com')).toBe('Daily limit for reddit.com')
   })
 
   it('falls back to the key when no message exists', () => {
@@ -100,7 +100,7 @@ describe('locale catalogue', () => {
     // Guard against the pattern silently matching nothing.
     expect(used.size).toBeGreaterThan(30)
     expect(used).toContain('blockSnooze')
-    expect(used).toContain('popupResetToday')
+    expect(used).toContain('popupLimitAria')
     expect(missing(used)).toEqual([])
   })
 

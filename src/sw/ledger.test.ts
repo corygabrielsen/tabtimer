@@ -24,7 +24,6 @@ const addElapsed = (site: string, spans: Span[], media = false, on: Ledger = led
     return siteTotal(await tx.today(), site)
   })
 const setIdleState = (state: IdleState, on: Ledger = ledger) => on.transaction((tx) => tx.observeIdle(state))
-const resetToday = (site: string) => ledger.transaction((tx) => tx.resetToday(site))
 const snooze = (site = 'a.com', siteMs = HOUR, globalMs = HOUR) =>
   ledger.transaction((tx) => tx.snooze({ site, siteMs, globalMs }))
 
@@ -241,30 +240,6 @@ describe('ensureSchema', () => {
   })
 })
 
-describe('resetToday', () => {
-  it('zeroes one site today, keeping other sites and other days', async () => {
-    browser.storage.local.seed({
-      'day:2026-06-09': { 'a.com': bucketsOf({ 3: 100 }) },
-      'day:2026-06-10': { 'a.com': bucketsOf({ 3: 100 }), 'b.com': bucketsOf({ 4: 200 }) },
-    })
-    await resetToday('a.com')
-    expect(data()['day:2026-06-10']).toEqual({ 'b.com': bucketsOf({ 4: 200 }) })
-    expect(data()['day:2026-06-09']).toEqual({ 'a.com': bucketsOf({ 3: 100 }) })
-  })
-
-  it('writes nothing for a site with no time today', async () => {
-    const set = vi.spyOn(browser.storage.local, 'set')
-    await resetToday('a.com')
-    expect(set).not.toHaveBeenCalled()
-  })
-
-  it('applies after additions queued before it', async () => {
-    browser.latency = 2
-    await Promise.all([addElapsed('a.com', [[NOON - 1000, NOON]]), resetToday('a.com')])
-    expect(data()['day:2026-06-10']).toEqual({})
-  })
-})
-
 describe('setLimit', () => {
   it('Copilot 4408399271: concurrent edits from the popup and the options page both survive', async () => {
     browser.latency = 3
@@ -320,16 +295,6 @@ describe('snooze and prefs', () => {
         return [(await tx.limits()).snoozeUntil, (await tx.snoozes()).length]
       })
     ).resolves.toEqual([now + SNOOZE_MS, 3])
-  })
-
-  it('resetting a site today forgets its snoozes, and only its', async () => {
-    await snooze('a.com')
-    await snooze('b.com')
-    await resetToday('a.com')
-    expect(data()['snoozes:2026-06-10']).toMatchObject([{ site: 'b.com' }])
-    const before = data()['snoozes:2026-06-10']
-    await resetToday('a.com')
-    expect(data()['snoozes:2026-06-10']).toBe(before)
   })
 
   it('prunes snoozes with the days they were taken on', async () => {
@@ -412,12 +377,10 @@ describe('time away from the computer', () => {
     expect(day('2026-06-11')).toEqual({ 'a.com': bucketsOf({}) })
   })
 
-  it('never takes back below zero, nor time reset since it was credited', async () => {
+  it('never takes back below zero, nor time no longer stored', async () => {
     now = NOON
     await addElapsed('a.com', [[NOON - MIN, NOON]])
     await addElapsed('b.com', [[NOON - MIN, NOON]])
-    await resetToday('a.com')
-    await addElapsed('a.com', [[NOON - 1000, NOON]])
     browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': bucketsOf({ 11: 500 }) } })
     await setIdleState('idle')
     expect(day()).toEqual({ 'a.com': bucketsOf({ 11: 0 }) })

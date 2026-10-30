@@ -5,7 +5,7 @@ import { createTracker } from './tracker'
 import { watchGrants } from './grants'
 import { chromeStore } from '../chrome/store'
 import type { Handler, Sender } from '../chrome/bus'
-import { LIMITS_KEY, PREFS_KEY, emptyBuckets } from '../core/schema'
+import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { SNOOZE_MS } from '../core/limits'
 import type { Page } from '../core/messages'
 import { originsForSite } from '../core/site'
@@ -70,7 +70,7 @@ describe('sender policy', () => {
     ]) {
       await expect(handle(presence, sender)).resolves.toEqual({ ok: false, error: 'forbidden' })
     }
-    await expect(handle({ type: 'resetToday', site: 'reddit.com' }, { url: `${EXT}popup.html` })).resolves.toEqual({
+    await expect(handle({ type: 'todayTotals' }, { url: `${EXT}popup.html` })).resolves.toEqual({
       ok: false,
       error: 'forbidden',
     })
@@ -166,16 +166,13 @@ describe('sender policy', () => {
     })
   })
 
-  it('reserves resets and limits for extension pages (closes key injection)', async () => {
-    browser.storage.local.seed({ 'day:2026-06-10': { 'x.com': emptyBuckets().fill(1000) } })
+  it('reserves limits for extension pages (closes key injection)', async () => {
     for (const raw of [
-      { type: 'resetToday', site: 'x.com' },
       { type: 'setLimit', scope: 'global', minutes: 1 },
       { type: 'setLimit', scope: 'site', site: 'x.com', minutes: 1 },
     ]) {
       await expect(handle(raw, content())).resolves.toEqual({ ok: false, error: 'forbidden' })
     }
-    expect(today()?.['x.com']).toEqual(emptyBuckets().fill(1000))
     expect(browser.storage.local.data[LIMITS_KEY]).toBeUndefined()
   })
 
@@ -186,7 +183,6 @@ describe('sender policy', () => {
 
   it('wants sites from extension pages in canonical form', async () => {
     for (const site of ['www.reddit.com', 'news.bbc.co.uk']) {
-      await expect(handle({ type: 'resetToday', site }, page())).resolves.toEqual({ ok: false, error: 'bad_request' })
       await expect(handle({ type: 'setLimit', scope: 'site', site, minutes: 1 }, page())).resolves.toEqual({
         ok: false,
         error: 'bad_request',
@@ -280,20 +276,6 @@ describe('the current grants', () => {
 })
 
 describe('handlers', () => {
-  it('reset today for one site, from the popup, including time not yet credited', async () => {
-    browser.storage.local.seed({ 'day:2026-06-10': { 'reddit.com': emptyBuckets(), 'a.com': emptyBuckets() } })
-    await handle(presence, content())
-    NOW += 3000
-    await expect(handle({ type: 'resetToday', site: 'reddit.com' }, page())).resolves.toEqual({
-      ok: true,
-      value: null,
-    })
-    expect(Object.keys(today() ?? {})).toEqual(['a.com'])
-    NOW += 2000
-    await handle(hidden, content())
-    expect(today()?.['reddit.com']?.[12]).toBe(2000)
-  })
-
   it('tell an extension page the state of a tab, and only an extension page', async () => {
     await handle(presence, content())
     NOW += 3000

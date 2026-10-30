@@ -108,9 +108,8 @@ test('a forged message naming another site is ignored or refused', async ({ cont
     error: 'bad_request',
   })
 
-  // Resetting another site, or changing limits, is for extension pages only.
+  // Changing limits is for extension pages only.
   for (const forged of [
-    { type: 'resetToday', site: SITE_B },
     { type: 'setLimit', scope: 'global', minutes: 1 },
     { type: 'setLimit', scope: 'site', site: SITE_B, minutes: 1 },
   ]) {

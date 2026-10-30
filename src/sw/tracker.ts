@@ -97,8 +97,6 @@ export function createTracker(deps: TrackerDeps) {
       const wasOpen = state.open !== null
       if (event?.kind === 'idle') {
         await tx.observeIdle(event.state)
-      } else if (event?.kind === 'reset') {
-        await tx.resetToday(event.site)
       }
       const idle = tx.idleState()
       const push = new Set<number>()
@@ -253,10 +251,6 @@ export function createTracker(deps: TrackerDeps) {
     // Limits, the snooze or the prefs changed: every page that reported
     // learns its new state (and an open interval now over its limit closes).
     refresh: async (): Promise<void> => settle(await run(null, allTabs)),
-
-    // Zero one site's time today, including the open interval's uncredited
-    // part, and tell every page (the total across sites changed too).
-    resetToday: async (site: Site): Promise<void> => settle(await run({ kind: 'reset', site }, allTabs)),
 
     // The worker started: put the checkpoint alarm in line with the state.
     resume: (): Promise<void> => ledger.transaction((tx) => deps.alarm(tx.tracker.open !== null).catch(ignore)),

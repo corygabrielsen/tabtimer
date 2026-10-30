@@ -487,22 +487,6 @@ describe('limits', () => {
     await tracker.snooze('a.com')
     expect(browser.storage.local.data['snoozes:2026-06-10']).toMatchObject([{ siteMs: 0, globalMs: 0 }])
   })
-
-  it('resetToday drops the open interval’s time so far too', async () => {
-    const tracker = worker()
-    await tracker.presence(1, { ...PAGE, ...SHOWN })
-    now += 30 * S
-    await tracker.resetToday('a.com')
-    now += 5 * S
-    await tracker.presence(1, { ...PAGE, ...HIDDEN })
-    expect(stored()).toBe(5 * S)
-    // A reset of another site leaves this one alone.
-    await tracker.presence(1, { ...PAGE, ...SHOWN })
-    now += 5 * S
-    await tracker.resetToday('b.com')
-    await tracker.presence(1, { ...PAGE, ...HIDDEN })
-    expect(stored()).toBe(10 * S)
-  })
 })
 
 describe('background wiring', () => {

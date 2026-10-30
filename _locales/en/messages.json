@@ -85,13 +85,6 @@
   "popupMeterGlobalAria": { "message": "Time used of the daily limit for all tracked sites" },
   "popupLimit": { "message": "Daily limit" },
   "popupLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
-  "popupResetToday": { "message": "Reset today" },
-  "popupResetAria": { "message": "Reset today's time for $host$", "placeholders": { "host": { "content": "$1" } } },
-  "popupResetConfirm": { "message": "Click again to reset" },
-  "popupResetConfirmAria": {
-    "message": "Confirm: reset today's time for $host$",
-    "placeholders": { "host": { "content": "$1" } }
-  },
   "popupNotTrackedTitle": { "message": "Not tracked" },
   "popupEnableSite": { "message": "Track this site" },
   "popupEnableSiteAria": { "message": "Track time on $host$", "placeholders": { "host": { "content": "$1" } } },

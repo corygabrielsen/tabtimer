@@ -488,70 +488,8 @@ describe('popup on a tracked site', () => {
     expect($('today').textContent).toBe('00:00:00')
     expect($('toggle-btn').getAttribute('aria-checked')).toBe('true')
     click($('toggle-btn'))
-    click($('reset-btn'))
-    click($('reset-btn'))
     await flush()
     expect($('today').textContent).toBe('00:00:00')
-  })
-
-  describe('reset today', () => {
-    beforeEach(() => {
-      seedToday({ 'reddit.com': 65_000, 'x.com': 5 })
-    })
-
-    it('asks for a second click before resetting', async () => {
-      await openReddit()
-      const btn = $('reset-btn')
-      expect(btn.getAttribute('aria-label')).toBe("Reset today's time for reddit.com")
-      click(btn)
-      await flush()
-      expect(btn.textContent).toBe('Click again to reset')
-      expect(btn.getAttribute('aria-label')).toBe("Confirm: reset today's time for reddit.com")
-      expect(storedToday('reddit.com')).toBe(65_000)
-    })
-
-    it('resets only this site on the second click', async () => {
-      await openReddit()
-      click($('reset-btn'))
-      click($('reset-btn'))
-      expect($('today').textContent).toBe('00:00:00') // optimistic
-      await flush()
-      expect(storedToday('reddit.com')).toBe(0)
-      expect(storedToday('x.com')).toBe(5)
-      expect($('reset-btn').textContent).toBe('Reset today')
-    })
-
-    it('disarms when focus leaves the button', async () => {
-      await openReddit()
-      click($('reset-btn'))
-      $('reset-btn').dispatchEvent(new Event('blur'))
-      expect($('reset-btn').textContent).toBe('Reset today')
-      click($('reset-btn'))
-      await flush()
-      expect(storedToday('reddit.com')).toBe(65_000)
-    })
-
-    it('shows the time again when the reset fails', async () => {
-      await openReddit()
-      browser.storage.local.error = 'quota'
-      click($('reset-btn'))
-      click($('reset-btn'))
-      expect($('today').textContent).toBe('00:00:00') // optimistic
-      await flush()
-      expect($('today').textContent).toBe('00:01:05')
-    })
-
-    it('disarms by itself after a few seconds', async () => {
-      vi.useFakeTimers()
-      try {
-        await openReddit()
-        click($('reset-btn'))
-        vi.advanceTimersByTime(4000)
-        expect($('reset-btn').textContent).toBe('Reset today')
-      } finally {
-        vi.useRealTimers()
-      }
-    })
   })
 
   describe('on-page timer switch', () => {

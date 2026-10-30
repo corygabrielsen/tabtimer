@@ -370,18 +370,6 @@ describe('event ordering', () => {
     expect(credited(run(events).credits)).toEqual(expected)
   })
 
-  it('a reset moves the open interval on that site up to now, crediting nothing, and tells its tabs', () => {
-    const { state, credits, pushes } = run([
-      [0, presence(1)],
-      [0, presence(2, { focused: false })],
-      [3 * S, { kind: 'reset', site: 'a.com' }],
-      [4 * S, { kind: 'reset', site: 'c.com' }],
-    ])
-    expect(credits).toEqual([])
-    expect(state.open).toMatchObject({ tabId: 1, since: T + 3 * S, checkpoint: T })
-    expect(pushes.slice(2)).toEqual([[1], []])
-  })
-
   it('never has two intervals open: two windows reporting at once alternate, never overlap', () => {
     const events: Timed[] = []
     for (let t = 0; t < 60; t++) {

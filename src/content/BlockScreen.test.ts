@@ -3,7 +3,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
-import { bus } from '../chrome/bus'
 import { SNOOZE_MS } from '../core/limits'
 import { LIMITS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
@@ -176,19 +175,6 @@ describe('live re-evaluation', () => {
     expect(isBlocked()).toBe(true)
     seedLimits({ global: 60 })
     await flush()
-    expect(isBlocked()).toBe(false)
-  })
-
-  it('lifts the block when today is reset from the popup', async () => {
-    seedLimits({ perSite: { 'reddit.com': 30 } })
-    logged('reddit.com', minutes(45))
-    const blocker = await mount()
-    expect(isBlocked()).toBe(true)
-    browser.sender = { id: browser.runtime.id, url: browser.runtime.getURL('popup.html') }
-    await bus.send('resetToday', { site: 'reddit.com' })
-    browser.sender = null
-    await flush()
-    blocker.tick()
     expect(isBlocked()).toBe(false)
   })
 

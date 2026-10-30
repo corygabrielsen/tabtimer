@@ -222,9 +222,8 @@ describe('parseStatePush', () => {
 })
 
 describe('SENDERS', () => {
-  it('lets only content scripts report presence, and only extension pages reset or set limits', () => {
+  it('lets only content scripts report presence, and only extension pages set limits', () => {
     expect(SENDERS.presence).toEqual(['content'])
-    expect(SENDERS.resetToday).toEqual(['extension'])
     expect(SENDERS.setLimit).toEqual(['extension'])
     expect(SENDERS.todayTotals).toEqual(['extension'])
   })
