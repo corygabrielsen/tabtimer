@@ -3,9 +3,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { DONE_MS, HOLD_MS, HoldButton } from './hold'
 
 const LABELS = {
-  rest: 'Hold for 5 more minutes',
+  rest: 'Hold for 2 more minutes',
   holding: 'Keep holding',
-  done: '5 more minutes',
+  done: '2 more minutes',
   hint: 'Press and hold',
 }
 

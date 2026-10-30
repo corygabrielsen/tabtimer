@@ -19,7 +19,7 @@ const VIEWS: View[] = ['tracked', 'enable', 'untracked', 'loading']
 
 // Visual state of the tracked view's face.
 // open: no limit applies; ok: under every limit; over: blocking now;
-// snoozed: over a limit but blocking is paused by "5 more minutes".
+// snoozed: over a limit but blocking is paused by "2 more minutes".
 type FaceState = 'open' | 'ok' | 'over' | 'snoozed'
 
 function showView(view: View) {

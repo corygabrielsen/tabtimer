@@ -16,7 +16,7 @@ limit you set for it.
 - **A block screen that means it** — once a limit is reached the page is
   covered: no scrolling behind it, fullscreen video exits, playing media
   pauses. It leads with **Close tab** and shows today's time by the hour;
-  holding **5 more minutes** for two seconds snoozes, and limits reset at
+  holding **2 more minutes** for two seconds snoozes, and limits reset at
   midnight.
 - **Honest counting** — time only counts while the tab is visible and focused.
   It pauses after 5 minutes without keyboard or mouse input and while the

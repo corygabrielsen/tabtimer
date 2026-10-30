@@ -260,7 +260,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const now = await serviceWorker.evaluate(() => Date.now())
       await seed(serviceWorker, {
         ...(await today(serviceWorker, { [SITE_A]: 70 * MINUTE, 'site-b.test': 20 * MINUTE })),
-        [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60, 'site-b.test': 30 }, snoozeUntil: now + 4 * MINUTE },
+        [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60, 'site-b.test': 30 }, snoozeUntil: now + MINUTE },
       })
       const tab = await context.newPage()
       await tab.goto(site(SITE_A))

@@ -45,7 +45,7 @@ const screen = () => shadowOf('tabtimer-block')
 const closeButton = () => screen().querySelector<HTMLButtonElement>('.close')
 const holdButton = () => screen().querySelector<HTMLButtonElement>('.hold')
 
-// Hold "5 more minutes" down to the end, as a pointer would, and let the
+// Hold "2 more minutes" down to the end, as a pointer would, and let the
 // done state run out.
 async function snooze(): Promise<void> {
   const hold = holdButton()!
@@ -209,9 +209,9 @@ describe('snooze', () => {
     logged('reddit.com', minutes(30))
   })
 
-  it('offers five more minutes, then blocks again', async () => {
+  it('offers two more minutes, then blocks again', async () => {
     const blocker = await mount()
-    expect(normText(holdButton())).toBe('Hold for 5 more minutes')
+    expect(normText(holdButton())).toBe('Hold for 2 more minutes')
     await snooze()
     expect(isBlocked()).toBe(false)
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: Date.now() + SNOOZE_MS })
@@ -466,7 +466,7 @@ describe('what it shows', () => {
     blocker.tick()
     await flush()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.used'))).toBe('1 h 15 min today · 15 min over')
+    expect(normText(screen().querySelector('.used'))).toBe('1 h 12 min today · 12 min over')
     // Back at rest.
     expect(holdButton()!.className).toBe('btn hold')
   })

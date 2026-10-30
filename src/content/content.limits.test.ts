@@ -128,7 +128,7 @@ describe('time limits end to end', () => {
     expect(isBlocked()).toBe(true)
   })
 
-  it('gives a five-minute reprieve on snooze, then blocks again', async () => {
+  it('gives a two-minute reprieve on snooze, then blocks again', async () => {
     seedLimits({ perSite: { 'reddit.com': 1 } })
     await openTab()
     await run(minutes(1))
@@ -143,7 +143,7 @@ describe('time limits end to end', () => {
     await run(SNOOZE_MS - seconds(2))
     expect(isBlocked()).toBe(false)
     // Time still accrued during the snooze.
-    expect(pillText()).toMatch(/^00:05:5\d$/)
+    expect(pillText()).toMatch(/^00:02:5\d$/)
     await run(seconds(3))
     expect(isBlocked()).toBe(true)
   })

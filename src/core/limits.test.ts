@@ -113,7 +113,7 @@ describe('blockAt', () => {
 
   it('waits for a snooze to end', () => {
     const snoozed = (until: number) => ({ ...limits, snoozeUntil: until })
-    expect(blockAt(snoozed(T + 5 * MIN), 'reddit.com', 40 * MIN, 40 * MIN, T, false)?.at).toBe(T + 5 * MIN)
+    expect(blockAt(snoozed(T + 2 * MIN), 'reddit.com', 40 * MIN, 40 * MIN, T, false)?.at).toBe(T + 2 * MIN)
     expect(blockAt(snoozed(T + MIN), 'reddit.com', 20 * MIN, 20 * MIN, T, true)?.at).toBe(T + 10 * MIN)
   })
 })

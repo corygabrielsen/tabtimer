@@ -15,8 +15,9 @@ All notable changes to Tab Timer. The format follows
 
 - A new, calmer look across the popup, Settings, Activity, the on-page timer
   and the block screen, in light and dark.
-- The block screen leads with Close tab. 5 more minutes now takes holding the
+- The block screen leads with Close tab. 2 more minutes now takes holding the
   button for two seconds.
+- A snooze lasts 2 minutes (was 5).
 - The popup's meter marks your limit, and shows time past it in the accent.
 
 ### Removed

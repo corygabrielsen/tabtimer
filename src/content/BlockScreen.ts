@@ -237,7 +237,7 @@ type Tracker = Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'sit
 //
 // What it shows is a pause, not a lock: the site, today's time as the
 // worker counts it, today's hours, and leaving (Close tab) first.
-// Five more minutes takes a deliberate press and hold.
+// Two more minutes take a deliberate press and hold.
 export default class BlockScreen {
   private host: HTMLDivElement
   private shadow: ShadowRoot

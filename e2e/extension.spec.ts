@@ -199,7 +199,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
   }
 })
 
-test('"5 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
+test('"2 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
     ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
@@ -214,9 +214,9 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
   // The page lifts the block once held; the worker stores the snooze after.
   await expect
     .poll(async () => ((await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil)
-    .toBeGreaterThan(Date.now() + 4 * MINUTE)
+    .toBeGreaterThan(Date.now() + MINUTE)
 
-  // Fast-forward: expire the snooze in storage instead of waiting 5 minutes.
+  // Fast-forward: expire the snooze in storage instead of waiting 2 minutes.
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 }, snoozeUntil: Date.now() - 1_000 },
   })

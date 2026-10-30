@@ -299,13 +299,13 @@ describe('popup on a tracked site', () => {
 
     it('snoozed: still over, says when blocking resumes', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 2 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('snoozed')
       expect(text('status')).toBe('Snoozed')
-      expect(text('summary')).toBe('3 min over · 4 min left')
+      expect(text('summary')).toBe('3 min over · 2 min left')
     })
 
     it('over: the time over as one accent piece after the limit’s mark', async () => {
@@ -462,15 +462,15 @@ describe('popup on a tracked site', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
     try {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 2 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
-      expect(text('summary')).toContain('· 4 min left')
-      vi.advanceTimersByTime(2 * MIN)
       expect(text('summary')).toContain('· 2 min left')
+      vi.advanceTimersByTime(MIN)
+      expect(text('summary')).toContain('· 1 min left')
       // Once the snooze lapses the face goes back to blocking.
-      vi.advanceTimersByTime(3 * MIN)
+      vi.advanceTimersByTime(2 * MIN)
       expect(face()).toBe('over')
     } finally {
       vi.useRealTimers()

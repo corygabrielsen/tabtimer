@@ -64,7 +64,7 @@ test('Close tab closes the tab', async ({ context, serviceWorker, site }) => {
   ).toBe(0)
 })
 
-test('holding 5 more minutes for 2 s snoozes; a short press or a click does not', async ({
+test('holding 2 more minutes for 2 s snoozes; a short press or a click does not', async ({
   context,
   serviceWorker,
   site,
@@ -81,10 +81,10 @@ test('holding 5 more minutes for 2 s snoozes; a short press or a click does not'
 
   await holdInShadow(page, BLOCK_ID, 'button.hold', 2300)
   await expect(block).toBeHidden()
-  await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + 4 * MINUTE)
+  await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
 })
 
-test('holding Space on 5 more minutes snoozes too', async ({ context, serviceWorker, site }) => {
+test('holding Space on 2 more minutes snoozes too', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A))
   await expect.poll(() => activeId(page)).toBe(BLOCK_ID)

@@ -19,7 +19,7 @@ describe('t', () => {
   })
 
   it('fills placeholders from substitutions', () => {
-    expect(t('blockHold', '5')).toBe('Hold for 5 more minutes')
+    expect(t('blockHold', '2')).toBe('Hold for 2 more minutes')
     expect(t('popupLimitAria', 'reddit.com')).toBe('Daily limit for reddit.com')
   })
 

@@ -375,7 +375,7 @@ export async function holdInShadow(page: Page, hostId: string, selector: string,
   await page.mouse.up()
 }
 
-// Hold the block screen's "5 more minutes" through (2 s), and wait for it to
+// Hold the block screen's "2 more minutes" through (2 s), and wait for it to
 // lift.
 export async function snoozeBlock(page: Page): Promise<void> {
   await holdInShadow(page, BLOCK_ID, 'button.hold', 2400)

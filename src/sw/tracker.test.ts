@@ -8,6 +8,7 @@ import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY } from '../core/schem
 import { CHECKPOINT_MS, type Presence } from '../core/tracker'
 import type { StatePush } from '../core/messages'
 import { originsForSite } from '../core/site'
+import { SNOOZE_MS } from '../core/limits'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
 
@@ -452,10 +453,10 @@ describe('limits', () => {
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     await tracker.presence(2, { site: 'b.com', windowId: 1, doc: 'doc-b', departing: false, audible: false, ...HIDDEN })
     sent = []
-    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: NOON + 5 * MIN } })
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: 1, perSite: {}, snoozeUntil: NOON + 2 * MIN } })
     await tracker.refresh()
     expect(sent.map(([tabId, , push]) => [tabId, push.state.blockAt])).toEqual([
-      [1, NOON + 5 * MIN],
+      [1, NOON + 2 * MIN],
       [2, null],
     ])
   })
@@ -466,8 +467,8 @@ describe('limits', () => {
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += MIN
     await tracker.snooze()
-    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: now + 5 * MIN })
-    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ blockAt: now + 5 * MIN })
+    expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: now + SNOOZE_MS })
+    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ blockAt: now + SNOOZE_MS })
     expect(Object.keys(browser.storage.local.data).filter((key) => key.startsWith('snoozes'))).toEqual([])
   })
 })
