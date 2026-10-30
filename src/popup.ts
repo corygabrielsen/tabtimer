@@ -75,7 +75,7 @@ function renderStrip(base: string, hours: number[], limit: number | null) {
     ...STRIP_MARKS.map((hour) => placed(h('i', { class: 'mark' }), hour)),
     ...splitAtLimit(hours, limit, true).map((part) => {
       const bar = h('span', { 'data-on': part.within + part.over > 0 })
-      drawBar(bar, part, top, null, false)
+      drawBar(bar, part, top)
       return bar
     }),
     nowMark
@@ -120,9 +120,6 @@ function renderFace(base: string, s: Snapshot) {
   const globalLine = byId('global-line')
 
   hero?.setAttribute('data-state', face.state)
-  if (today) {
-    drawReadout(today, face.siteToday)
-  }
   if (status) {
     status.textContent = {
       open: t('popupStatusTracking'),
@@ -138,15 +135,15 @@ function renderFace(base: string, s: Snapshot) {
   }
 
   const { meterLimit, meterValue } = face
-  // The readout counts this site's time: "of" names its own limit only.
-  if (of) {
-    of.textContent = face.siteLimit !== null ? t('popupOf', formatDuration(face.siteLimit)) : ''
+  // The readout counts this site's time, against its own limit only.
+  if (today && of) {
+    drawReadout(today, of, face.siteToday, face.siteLimit)
   }
   if (meterWrap && meter) {
     meterWrap.hidden = meterLimit === null
     meter.hidden = meterLimit === null
     if (meterLimit !== null) {
-      drawLimitMeter(meter, byId('meter-label'), meterValue, meterLimit, face.scope, base)
+      drawLimitMeter(meter, meterValue, meterLimit, face.scope, base)
     }
   }
 
@@ -187,14 +184,6 @@ function renderSummary(el: HTMLElement, face: Face) {
 
 const local = chromeStore('local')
 
-// A site's monogram: its first letter.
-function setFav(id: string, site: string) {
-  const fav = byId(id)
-  if (fav) {
-    fav.textContent = site.charAt(0)
-  }
-}
-
 // `focus`: move focus into the view once shown (the enable view it replaces
 // held it).
 function renderTracked(tabId: number, base: string, focus = false) {
@@ -203,7 +192,6 @@ function renderTracked(tabId: number, base: string, focus = false) {
     siteEl.textContent = base
     siteEl.title = base
   }
-  setFav('site-fav', base)
 
   // The face follows the worker's state for this tab (what its page is
   // told), asked again whenever stored time or limits change. The strip,
@@ -327,7 +315,6 @@ function renderEnable(tab: ActiveTab, base: string) {
     siteEl.textContent = base
     siteEl.title = base
   }
-  setFav('enable-fav', base)
   const btn = byId('enable-btn')
   btn?.setAttribute('aria-label', t('popupEnableSiteAria', base))
   showView('enable')

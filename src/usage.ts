@@ -195,9 +195,7 @@ function chart(period: Period, summary: Summary): HTMLElement {
     })
     col.style.setProperty('--h', `${(total / top) * 100}%`)
     if (parts) {
-      // The day's hour the limit fell in names it beside its tick.
-      const label = { text: formatDuration(limit!), side: i < 3 ? ('right' as const) : ('left' as const) }
-      drawBar(col, parts[i]!, top, label)
+      drawBar(col, parts[i]!, top)
     } else {
       col.classList.add('stack')
       segments(bar, summary).forEach((ms, series) => {

@@ -363,32 +363,32 @@ describe('withUncredited', () => {
 describe('splitAtLimit', () => {
   it('splits a day’s hours where their running total reaches the limit', () => {
     expect(splitAtLimit([30, 0, 25, 15], 60, true)).toEqual([
-      { within: 30, over: 0, crosses: false },
-      { within: 0, over: 0, crosses: false },
-      { within: 25, over: 0, crosses: false },
-      { within: 5, over: 10, crosses: true },
+      { within: 30, over: 0 },
+      { within: 0, over: 0 },
+      { within: 25, over: 0 },
+      { within: 5, over: 10 },
     ])
   })
 
   it('marks the first hour over even when the limit fell at its start', () => {
     expect(splitAtLimit([60, 10, 5], 60, true)).toEqual([
-      { within: 60, over: 0, crosses: false },
-      { within: 0, over: 10, crosses: true },
-      { within: 0, over: 5, crosses: false },
+      { within: 60, over: 0 },
+      { within: 0, over: 10 },
+      { within: 0, over: 5 },
     ])
   })
 
   it('compares each day with the limit on its own', () => {
     expect(splitAtLimit([70, 50], 60, false)).toEqual([
-      { within: 60, over: 10, crosses: false },
-      { within: 50, over: 0, crosses: false },
+      { within: 60, over: 10 },
+      { within: 50, over: 0 },
     ])
   })
 
   it('keeps everything within when there is no limit', () => {
     expect(splitAtLimit([5, 7], null, true)).toEqual([
-      { within: 5, over: 0, crosses: false },
-      { within: 7, over: 0, crosses: false },
+      { within: 5, over: 0 },
+      { within: 7, over: 0 },
     ])
   })
 })

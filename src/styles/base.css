@@ -83,23 +83,6 @@ a:hover {
   box-shadow: var(--shadow-sm);
 }
 
-/* A site's monogram. */
-.fav {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--sunk);
-  box-shadow: 0 0 0 1px var(--line) inset;
-  color: var(--text);
-  font-size: var(--t-2xs);
-  font-weight: 700;
-  line-height: 1;
-  text-transform: lowercase;
-}
-
 /* A short state word. */
 .badge {
   display: inline-flex;
@@ -455,8 +438,8 @@ a:hover {
   transform: translateX(13px);
 }
 
-/* --- Readout: today's time, the seconds smaller and lighter so the minutes
-   read first, then "of 1 h". */
+/* --- Readout: today's time, then " / " and the limit, muted: one size,
+   one notation (HH:MM:SS). */
 
 .readout {
   display: flex;
@@ -466,22 +449,18 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.readout .time {
-  font-size: var(--t-xl);
-  font-weight: 620;
-  letter-spacing: -0.03em;
-}
-
-.readout .time small {
+.readout {
   font-size: 26px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--muted);
+  letter-spacing: -0.02em;
 }
 
-.readout .of {
+.readout .time {
+  font-weight: 620;
+}
+
+.readout .limit {
   color: var(--muted);
-  font-size: 14px;
+  font-weight: 500;
 }
 
 /* --- Meter: grey up to the limit's mark, then one accent piece for the time over.
@@ -532,30 +511,9 @@ a:hover {
   background: var(--mark);
 }
 
-/* The limit's name, under its mark. */
-.meter-label {
-  position: relative;
-  height: 16px;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--t-2xs);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.meter-label span {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  white-space: nowrap;
-}
-
-.meter-label span[data-edge='end'] {
-  transform: translateX(-100%);
-}
-
-/* --- Hour bars: grey within the limit, an accent cap over it, and a dark
-   tick where the limit fell, named beside it. Gaps come out of the bar. */
+/* --- Hour bars: grey for the time before the daily limit was reached, an
+   accent cap for the time after. No limit mark: the limit is a daily total,
+   not an hour's. The gap between comes out of the bar. */
 
 .hbar {
   position: relative;
@@ -581,31 +539,6 @@ a:hover {
 
 .hbar > .seg.over {
   background: var(--accent);
-}
-
-.hbar > .tick {
-  position: absolute;
-  left: -4px;
-  right: -4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--mark);
-}
-
-.hbar > .tick-label {
-  position: absolute;
-  right: calc(100% + 6px);
-  transform: translateY(50%);
-  color: var(--text);
-  font-size: var(--t-2xs);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.hbar > .tick-label[data-side='right'] {
-  right: auto;
-  left: calc(100% + 6px);
 }
 
 @media (prefers-reduced-motion: reduce) {

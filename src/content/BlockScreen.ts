@@ -8,7 +8,7 @@ import { hourLabel, splitAtLimit } from '../core/usage'
 import type { Bus } from '../ports'
 import { drawBar, drawLimitMeter, drawReadout, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
-import { formatDuration, h, svg, uiLocale } from '../ui'
+import { h, svg, uiLocale } from '../ui'
 import { HoldButton } from './hold'
 import { mountShadowHost, shadowRootOf } from './shadowHost'
 
@@ -86,7 +86,6 @@ const STYLES = `${BASE}
     padding: 0;
   }
   .btn.gear svg { width: 20px; height: 20px; margin: 0; }
-  .site .fav { width: 24px; height: 24px; border-radius: var(--r-sm); font-size: var(--t-xs); }
   h1 {
     margin: var(--s-4) 0 var(--s-2);
     font-size: 36px;
@@ -94,8 +93,7 @@ const STYLES = `${BASE}
     letter-spacing: -0.022em;
     font-weight: 680;
   }
-  .column .readout { margin: var(--s-3) 0 var(--s-4); }
-  .column .meter-label { margin-bottom: 0; }
+  .column .readout { margin: var(--s-3) 0 var(--s-4); font-size: 36px; }
   .chart { margin: var(--s-5) 0 var(--s-6); }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
@@ -152,8 +150,10 @@ const STYLES = `${BASE}
     font-size: 17px;
   }
   .close svg { width: 20px; height: 20px; }
-  /* Hold to snooze: one cue, a soft fill whose leading edge shows how far.
-     --p: 0..1. */
+  /* Hold to snooze: one cue, a solid accent fill whose crisp right edge
+     shows how far (clipped, so the label inside it stays put). The label
+     reads in accent ink on the track and in the accent's own ink on the
+     fill. --p: 0..1. */
   .btn.hold {
     position: relative;
     isolation: isolate;
@@ -178,26 +178,19 @@ const STYLES = `${BASE}
     color: var(--accent-ink);
   }
   .btn.hold.holding { transform: scale(0.985); }
-  .btn.hold.done { border-color: var(--accent-ink); background: var(--accent-soft); color: var(--accent-ink); }
+  .btn.hold.done { border-color: var(--accent); color: var(--accent-ink); }
   .hold .fill {
     position: absolute;
     inset: 0;
-    z-index: -1;
-    background: var(--accent-soft);
-    transform: translateX(calc((var(--p, 0) - 1) * 100%));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: var(--on-accent);
+    clip-path: inset(0 calc((1 - var(--p, 0)) * 100%) 0 0);
+    pointer-events: none;
   }
-  /* The leading edge: above and below the label, never across it. */
-  .hold .fill::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 2px;
-    background: linear-gradient(var(--accent) 28%, transparent 28% 72%, var(--accent) 72%);
-  }
-  .hold.done .fill::after { display: none; }
-  .hold.released .fill { transition: transform 0.32s var(--ease); }
+  .hold.released .fill { transition: clip-path 0.32s var(--ease); }
   .hold .lbl { display: inline-flex; align-items: center; gap: var(--s-2); }
   .hold.done .lbl { animation: settle 0.36s var(--ease); }
   @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
@@ -225,9 +218,8 @@ const STYLES = `${BASE}
     dialog.screen { padding: var(--s-3) var(--s-4); }
     h1 { margin: var(--s-2) 0 var(--s-1); font-size: 26px; }
     .chart { display: none; }
-    .column .meter-label { margin-bottom: var(--s-4); }
-    .readout .time { font-size: 36px; }
-    .readout .time small { font-size: 22px; }
+    .column .meter { margin-bottom: var(--s-4); }
+    .column .readout { font-size: 30px; }
     .close { min-height: 44px; }
     .btn.hold { min-height: 40px; }
   }
@@ -261,12 +253,10 @@ export default class BlockScreen {
   private shadow: ShadowRoot
   private attach: () => boolean
   private dialog: HTMLDialogElement
-  private fav: HTMLSpanElement
   private siteName: HTMLSpanElement
   private time: HTMLSpanElement
-  private of: HTMLSpanElement
+  private limitText: HTMLSpanElement
   private meter: HTMLDivElement
-  private meterLabel: HTMLDivElement
   private chart: HTMLDivElement
   private closeButton: HTMLButtonElement
   private holdButton: HoldButton
@@ -347,12 +337,10 @@ export default class BlockScreen {
     )
     this.settingsButton.setAttribute('aria-label', t('popupSettings'))
     this.settingsButton.title = t('popupSettings')
-    this.fav = h('span', { class: 'fav', 'aria-hidden': 'true' })
     this.siteName = h('span', { class: 'name' })
     this.time = h('span', { class: 'time' })
-    this.of = h('span', { class: 'of' })
+    this.limitText = h('span', { class: 'limit' })
     this.meter = h('div', { class: 'meter', role: 'meter', 'aria-valuemin': '0' })
-    this.meterLabel = h('div', { class: 'meter-label', 'aria-hidden': 'true' })
     this.chart = h('div', { class: 'chart', role: 'img' })
 
     const hold = this.holdButton
@@ -367,17 +355,16 @@ export default class BlockScreen {
       h(
         'div',
         { class: 'column' },
-        h('div', { class: 'site' }, this.fav, this.siteName),
+        h('div', { class: 'site' }, this.siteName),
         h('h1', { id: 'title' }, t('blockTitle')),
         h(
           'p',
           { class: 'readout', title: t('tooltipToday') },
           h('span', { class: 'sr' }, t('labelToday')),
           this.time,
-          this.of
+          this.limitText
         ),
         this.meter,
-        this.meterLabel,
         this.chart,
         this.closeButton,
         hold.el,
@@ -453,14 +440,12 @@ export default class BlockScreen {
       return
     }
     this.drawn = key
-    this.fav.textContent = state.site.charAt(0)
     this.siteName.textContent = state.site
     this.dialog.setAttribute('aria-label', scope === 'site' ? t('blockAriaSite', state.site) : t('blockAriaAllSites'))
     // The popup's readout and meter, from the same state: this site's time
-    // "of" its own limit, and the meter against the limit that blocked.
-    drawReadout(this.time, siteToday)
-    this.of.textContent = state.siteLimit !== null ? t('popupOf', formatDuration(state.siteLimit)) : ''
-    drawLimitMeter(this.meter, this.meterLabel, elapsed, limit, scope, state.site)
+    // against its own limit, and the meter against the limit that blocked.
+    drawReadout(this.time, this.limitText, siteToday, state.siteLimit)
+    drawLimitMeter(this.meter, elapsed, limit, scope, state.site)
     // The site's hours split where its own limit fell; against the
     // all-sites limit, the hours of one site can't be.
     drawChart(this.chart, hours, scope === 'site' ? limit : null, hourOf(now), state.site)
@@ -792,9 +777,10 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
 
 const toMinutes = (ms: number) => Math.round(ms / 60_000)
 
-// Today on `site` by hour: grey within `limit` (null: none to split at), an
-// accent cap past it, the limit's tick named where it fell, a value over the
-// busiest bars that have room, and the current hour marked Now.
+// Today on `site` by hour: grey for the time before the daily `limit` was
+// reached (null: none to split at), the accent after it, a value over the
+// busiest bars that have room, and the current hour marked Now. The limit
+// itself is on the meter: it is a daily total, not an hour's.
 function drawChart(el: HTMLElement, hours: number[], limit: number | null, now: number, site: string): void {
   const top = Math.max(HOUR_FLOOR_MS, ...hours)
   const parts = splitAtLimit(hours, limit, true)
@@ -807,13 +793,9 @@ function drawChart(el: HTMLElement, hours: number[], limit: number | null, now: 
       labelled.add(i)
     }
   }
-  const empty = (i: number) => i < 0 || i >= hours.length || hours[i]! === 0
   const cols = parts.map((part, i) => {
     const col = h('div', { 'data-hour': String(i), 'data-now': i === now })
-    // The limit's name on the side with room: left unless that neighbour has
-    // a bar and the right one doesn't (or there is no room left).
-    const side = i >= 2 && (empty(i - 1) || !empty(i + 1)) ? 'left' : 'right'
-    drawBar(col, part, top, limit === null ? null : { text: formatDuration(limit), side })
+    drawBar(col, part, top)
     if (labelled.has(i)) {
       col.append(h('span', { class: 'val' }, t('limitChipMinutes', String(toMinutes(hours[i]!)))))
     }

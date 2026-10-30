@@ -319,13 +319,12 @@ describe('a selected site', () => {
     expect(text('total')).toBe('48 min')
     expect(legend()).toEqual([])
     expect(bars()[14]!.getAttribute('aria-label')).toBe('2 PM, 38 min')
-    // Split where its 30 min limit fell: 10 + 20 within, 18 over, the tick named.
+    // Split where its 30 min daily limit was reached: 10 + 20 within, 18
+    // over. An hour bar carries no limit mark.
     const parts = (i: number) => [...bars()[i]!.querySelectorAll<HTMLElement>('.seg')].map((s) => s.dataset.part)
     expect(parts(9)).toEqual(['within'])
     expect(parts(14)).toEqual(['within', 'over'])
-    expect(bars()[14]!.querySelector('.tick')).not.toBeNull()
-    expect(bars()[14]!.querySelector('.tick-label')?.textContent).toBe('30 min')
-    expect(bars()[9]!.querySelector('.tick')).toBeNull()
+    expect(document.querySelector('#bars .tick, #bars .tick-label')).toBeNull()
     const panel = $('site-panel')
     expect(panel.textContent).toContain('Daily limit for reddit.com')
     expect(panel.querySelector('[aria-checked="true"]')?.textContent).toBe('30m')

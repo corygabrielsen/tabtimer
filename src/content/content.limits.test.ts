@@ -58,7 +58,7 @@ describe('time limits end to end', () => {
     expect(isBlocked()).toBe(false)
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break')
+    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break.')
   })
 
   it('includes time other tabs already spent on the site today', async () => {
@@ -103,7 +103,7 @@ describe('time limits end to end', () => {
     await run(minutes(1))
     expect(isBlocked()).toBe(true)
     await run(minutes(10))
-    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break')
+    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break.')
     expect(storedToday()).toBe(minutes(1))
   })
 
@@ -117,7 +117,7 @@ describe('time limits end to end', () => {
     await run(seconds(15))
     expect(isBlocked()).toBe(true)
     // The all-sites limit: no split of this site's hours.
-    expect(blockScreen().querySelector('.tick')).toBeNull()
+    expect(blockScreen().querySelector('.seg.over')).toBeNull()
   })
 
   it('applies a limit set from the options page within a second', async () => {
@@ -185,7 +185,7 @@ describe('per-tab cost', () => {
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
     // The all-sites limit: no split of this site's hours.
-    expect(blockScreen().querySelector('.tick')).toBeNull()
+    expect(blockScreen().querySelector('.seg.over')).toBeNull()
     // ...and so does this site's own limit.
     seedToday({ 'reddit.com': minutes(5) })
     seedLimits({ global: null, perSite: { 'reddit.com': 5 } })

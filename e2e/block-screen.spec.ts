@@ -164,11 +164,11 @@ test('shows the worker’s numbers, as the popup does, and marks the current hou
   // (the blocked tab isn't counting, so the time holds still).
   expect(await shadowText(page, BLOCK_ID, '.readout .time')).toBe('01:10:00')
   await expect(popup.locator('#today')).toHaveText('01:10:00')
-  expect(await shadowText(page, BLOCK_ID, '.readout .of')).toBe(await popup.locator('#readout-of').innerText())
+  expect(await shadowText(page, BLOCK_ID, '.readout .limit')).toBe('/ 01:00:00')
+  await expect(popup.locator('#readout-of')).toHaveText('/ 01:00:00')
   expect(await shadowAttribute(page, BLOCK_ID, '.meter', 'aria-valuetext')).toBe(
     await popup.locator('#meter').getAttribute('aria-valuetext')
   )
-  expect(await shadowText(page, BLOCK_ID, '.meter-label')).toBe(await popup.locator('#meter-label').innerText())
   // Grey to the limit's mark, then one accent piece over, on both.
   await expect(popup.locator('#meter > *')).toHaveCount(3)
   expect(await shadowAttribute(page, BLOCK_ID, '.meter > .over', 'class')).toBe('over')
@@ -177,9 +177,10 @@ test('shows the worker’s numbers, as the popup does, and marks the current hou
   const hour = String(await page.evaluate(() => new Date().getHours()))
   expect(await shadowAttribute(page, BLOCK_ID, '[data-now]', 'data-hour')).toBe(hour)
   expect(await shadowText(page, BLOCK_ID, '.axis .now')).toBe('Now')
-  // This hour went past the limit: its overage capped, the limit named.
+  // This hour went past the daily limit: its overage capped. No limit mark
+  // on an hour bar; the meter names the limit.
   expect(await shadowAttribute(page, BLOCK_ID, '[data-now] .seg.over', 'data-part')).toBe('over')
-  expect(await shadowText(page, BLOCK_ID, '[data-now] .tick-label')).toBe('1 h')
+  expect(await shadowAttribute(page, BLOCK_ID, '.chart .tick', 'class')).toBeNull()
 })
 
 test('restores focus to the page control that had it', async ({ context, serviceWorker, site }) => {
@@ -234,7 +235,7 @@ test('keeps the page out of reach of clicks and assistive tech', async ({ contex
   const exposed = nodes.filter((n) => !n.ignored)
   expect(exposed.some((n) => n.name?.value === 'page button')).toBe(false)
   expect(
-    exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === `Take a break: ${SITE_A} limit reached`)
+    exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === `Take a break. ${SITE_A} limit reached.`)
   ).toBe(true)
 })
 

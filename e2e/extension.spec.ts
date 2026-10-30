@@ -9,6 +9,7 @@ import {
   openInterval,
   checkpoint,
   shadowText,
+  shadowAttribute,
   snoozeBlock,
   LIMITS_KEY,
   OVERLAY_ID,
@@ -180,10 +181,10 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
 
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   const text = await shadowText(page, BLOCK_ID)
-  expect(text).toContain('Take a break')
+  expect(text).toContain('Take a break.')
   expect(text).toContain(SITE_A)
-  // Split at its own limit, named at the tick, and the second over it.
-  expect(await shadowText(page, BLOCK_ID, '[data-now] .tick-label')).toBe('10 min')
+  // The readout states its own limit.
+  expect(await shadowText(page, BLOCK_ID, '.readout .limit')).toBe('/ 00:10:00')
 })
 
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
@@ -196,9 +197,8 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
     const page = await context.newPage()
     await page.goto(site(host))
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-    // The all-sites limit: this site's hours aren't split, nor named over.
-    expect(await shadowText(page, BLOCK_ID, '.tick-label')).toBe('')
-    expect(await shadowText(page, BLOCK_ID, '.val.over')).toBe('')
+    // The all-sites limit: this site's hours aren't split.
+    expect(await shadowAttribute(page, BLOCK_ID, '.chart .seg.over', 'data-part')).toBeNull()
   }
 })
 
@@ -293,6 +293,6 @@ test('a limit exactly equal to today’s time blocks', async ({ context, service
   await page.waitForTimeout(500)
   await expect(block).toBeHidden()
   await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 3 } } })
-  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain('Take a break')
+  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain('Take a break.')
   await expect(block).toBeVisible()
 })

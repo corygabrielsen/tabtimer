@@ -61,11 +61,12 @@ const classes = (n: Node) => (attr(n, 'class') ?? '').split(/\s+/)
 // The graphics that carry meaning, by tag and class.
 const GRAPHICS: Array<[string, (node: Node) => boolean]> = [
   ['hour bar', (n) => classes(n).includes('seg') && attr(n, 'data-part') !== null],
-  ['limit tick', (n) => classes(n).includes('tick')],
   ['meter piece', (n) => n.nodeName === 'SPAN' && /^(in|over)$/.test(attr(n, 'class') ?? '')],
   ['meter mark', (n) => classes(n).includes('lim')],
   ['switch', (n) => classes(n).includes('switch')],
   ['chosen chip', (n) => classes(n).includes('limit-chip') && attr(n, 'aria-checked') === 'true'],
+  // The hold button's fill, against its track (the surface behind it).
+  ['hold fill', (n) => classes(n).includes('fill')],
   // An icon button: its glyph is drawn in its text colour.
   ['gear', (n) => classes(n).includes('gear')],
 ]
@@ -213,6 +214,10 @@ async function tokenPairs(page: Page): Promise<Finding[]> {
     ['--field-line', '--sheet', 3],
     ['--bar', '--sunk', 3],
     ['--accent', '--sunk', 3],
+    // The hold button: its fill on its track, the label on each.
+    ['--accent', '--bg', 3],
+    ['--accent-ink', '--bg', 4.5],
+    ['--on-accent', '--accent', 4.5],
     ['--thumb-on', '--accent', 3],
     ['--series-other', '--sunk', 3],
   ]
@@ -309,12 +314,12 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(usage.locator('#report')).toBeVisible()
       findings.push(...(await audit(usage)))
       await usage.locator(`[data-site="${SITE_A}"]`).click()
-      await expect(usage.locator('#bars .tick')).toHaveCount(1)
+      await expect(usage.locator('#bars .seg[data-part="over"]')).not.toHaveCount(0)
       findings.push(...(await audit(usage)))
       await usage.getByRole('radio', { name: 'Week' }).check()
       await expect(usage.locator('.ref-limit')).toBeVisible()
       findings.push(...(await audit(usage)))
-      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'switch', 'chosen chip'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
     })
 
     test('the block screen and the timer, under and over', async ({ context, serviceWorker, site }) => {
@@ -335,7 +340,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'meter piece', 'meter mark', 'gear'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'meter piece', 'meter mark', 'hold fill', 'gear'])).toEqual([])
     })
   })
 }

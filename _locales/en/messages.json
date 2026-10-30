@@ -17,12 +17,12 @@
   "overlayHide": { "message": "Hide Tab Timer on this page" },
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
   "overlayLarger": { "message": "Make Tab Timer larger" },
-  "blockTitle": { "message": "Take a break" },
+  "blockTitle": { "message": "Take a break." },
   "blockAriaSite": {
-    "message": "Take a break: $site$ limit reached",
+    "message": "Take a break. $site$ limit reached.",
     "placeholders": { "site": { "content": "$1" } }
   },
-  "blockAriaAllSites": { "message": "Take a break: all-sites limit reached" },
+  "blockAriaAllSites": { "message": "Take a break. All-sites limit reached." },
   "blockClose": { "message": "Close tab" },
   "blockHoldToContinue": { "message": "Hold to continue" },
   "blockHolding": { "message": "Keep holding" },
@@ -70,7 +70,6 @@
   "popupOverSite": { "message": "$over$ over", "placeholders": { "over": { "content": "$1" } } },
   "popupOverGlobal": { "message": "$over$ over (all sites)", "placeholders": { "over": { "content": "$1" } } },
   "popupSnoozeLeft": { "message": "$time$ left", "placeholders": { "time": { "content": "$1" } } },
-  "popupOf": { "message": "of $limit$", "placeholders": { "limit": { "content": "$1" } } },
   "popupGlobalLine": {
     "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }

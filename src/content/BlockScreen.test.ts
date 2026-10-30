@@ -101,8 +101,8 @@ describe('deciding to block', () => {
     logged('reddit.com', minutes(30))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('h1'))).toBe('Take a break')
-    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break: reddit.com limit reached')
+    expect(normText(screen().querySelector('h1'))).toBe('Take a break.')
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
     expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
     // Right at the limit: nothing over to name.
     expect(screen().querySelector('.val.over')).toBeNull()
@@ -136,8 +136,8 @@ describe('deciding to block', () => {
     expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
     // One site's hours can't be split at the all-sites limit: no cap, no
     // label for it.
-    expect(screen().querySelectorAll('.tick, .seg.over, .val.over')).toHaveLength(0)
-    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break: all-sites limit reached')
+    expect(screen().querySelectorAll('.seg.over')).toHaveLength(0)
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. All-sites limit reached.')
   })
 
   it('does not count earlier days toward the global cap', async () => {
@@ -154,9 +154,7 @@ describe('deciding to block', () => {
     logged('x.com', minutes(10))
     await mount()
     expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
-    // The site's own limit, named at its tick, and the minute past it.
-    expect(normText(screen().querySelector('.tick-label'))).toBe('15 min')
-    expect(normText(screen().querySelector('.readout'))).toBe('Today00:16:00of 15 min')
+    expect(normText(screen().querySelector('.readout'))).toBe('Today00:16:00/ 00:15:00')
     expect(screen().querySelector('.meter')?.getAttribute('aria-label')).toBe(
       'Time used of the daily limit for reddit.com'
     )
@@ -219,7 +217,7 @@ describe('snooze', () => {
 
   it('offers two more minutes, then blocks again', async () => {
     const blocker = await mount()
-    expect(normText(holdButton())).toBe('2 more minutes')
+    expect(normText(holdButton()?.querySelector('.lbl'))).toBe('2 more minutes')
     await snooze()
     expect(isBlocked()).toBe(false)
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: Date.now() + SNOOZE_MS })
@@ -260,7 +258,7 @@ describe('block screen', () => {
     const dialog = screen().querySelector('.screen')!
     expect(dialog.getAttribute('role')).toBe('alertdialog')
     expect(dialog.getAttribute('aria-modal')).toBe('true')
-    expect(dialog.getAttribute('aria-label')).toBe('Take a break: reddit.com limit reached')
+    expect(dialog.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
   })
 
   it('opens Settings', async () => {
@@ -416,7 +414,7 @@ describe('block screen', () => {
 
   it('takes the snooze length from SNOOZE_MS', async () => {
     await mount()
-    expect(normText(holdButton())).toBe(`${SNOOZE_MS / 60_000} more minutes`)
+    expect(normText(holdButton()?.querySelector('.lbl'))).toBe(`${SNOOZE_MS / 60_000} more minutes`)
   })
 })
 
@@ -431,11 +429,14 @@ describe('what it shows', () => {
 
   it('reads out today and meters it as the popup does: grey to the limit, one accent piece over', async () => {
     await mount()
-    expect(normText(screen().querySelector('.readout'))).toBe('Today01:10:00of 1 h')
-    expect(normText(screen().querySelector('.readout .time small'))).toBe(':00')
+    expect(normText(screen().querySelector('.readout'))).toBe('Today01:10:00/ 01:00:00')
+    // One notation, one size: the limit in HH:MM:SS too, no "of 1 h".
+    expect(screen().querySelector('.readout small')).toBeNull()
+    expect(normText(screen().querySelector('.readout .limit'))).toBe('/ 01:00:00')
     const meter = screen().querySelector('.meter')!
     expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over'])
-    expect(normText(screen().querySelector('.meter-label'))).toBe('1 h')
+    // The readout states the limit: the meter's mark is unlabelled.
+    expect(screen().querySelector('.meter-label')).toBeNull()
     expect(meter.getAttribute('aria-valuetext')).toBe('1 h 10 min of 1 h')
   })
 
@@ -451,8 +452,8 @@ describe('what it shows', () => {
     // Hour 10 within the limit; noon crosses it.
     expect([...col(10).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['within'])
     expect([...col(12).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['within', 'over'])
-    expect(normText(col(12).querySelector('.tick-label'))).toBe('1 h')
-    expect(chart.querySelectorAll('.tick')).toHaveLength(1)
+    // The daily limit is on the meter, not an hour bar.
+    expect(chart.querySelectorAll('.tick, .tick-label')).toHaveLength(0)
     expect([...chart.querySelectorAll('.val')].map(normText)).toEqual(['30m', '40m'])
     const axis = [...chart.querySelectorAll('.axis span')].map(normText)
     expect(axis.at(-1)).toBe('Now')

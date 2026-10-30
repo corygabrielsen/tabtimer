@@ -15,7 +15,7 @@ const sources = import.meta.glob<string>(['./**/*.ts', '!./**/*.test.ts', '!./te
 
 describe('t', () => {
   it('returns the localized message', () => {
-    expect(t('blockTitle')).toBe('Take a break')
+    expect(t('blockTitle')).toBe('Take a break.')
   })
 
   it('fills placeholders from substitutions', () => {
