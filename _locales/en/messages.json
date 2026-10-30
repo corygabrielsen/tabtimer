@@ -17,11 +17,14 @@
   "overlayHide": { "message": "Hide Tab Timer on this page" },
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
   "overlayLarger": { "message": "Make Tab Timer larger" },
-  "blockTitle": { "message": "Time's up" },
-  "blockToday": { "message": "today" },
-  "blockTodayAllSites": { "message": "today on all sites" },
+  "blockTitle": { "message": "Take a break" },
+  "blockAriaSite": {
+    "message": "Take a break: $site$ limit reached",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "blockAriaAllSites": { "message": "Take a break: all-sites limit reached" },
   "blockClose": { "message": "Close tab" },
-  "blockHold": { "message": "Hold for $minutes$ more minutes", "placeholders": { "minutes": { "content": "$1" } } },
+  "blockHoldToContinue": { "message": "Hold to continue" },
   "blockHolding": { "message": "Keep holding" },
   "blockHoldHint": { "message": "Press and hold for 2 seconds" },
   "blockSnooze": { "message": "$minutes$ more minutes", "placeholders": { "minutes": { "content": "$1" } } },

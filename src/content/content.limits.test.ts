@@ -58,7 +58,7 @@ describe('time limits end to end', () => {
     expect(isBlocked()).toBe(false)
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.used')?.textContent).toBe('1 min today')
+    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break')
   })
 
   it('includes time other tabs already spent on the site today', async () => {
@@ -103,7 +103,7 @@ describe('time limits end to end', () => {
     await run(minutes(1))
     expect(isBlocked()).toBe(true)
     await run(minutes(10))
-    expect(blockScreen().querySelector('.used')?.textContent).toBe('1 min today')
+    expect(blockScreen().querySelector('h1')?.textContent).toBe('Take a break')
     expect(storedToday()).toBe(minutes(1))
   })
 
@@ -116,7 +116,8 @@ describe('time limits end to end', () => {
     // The global total reads persisted time, reported every ~10s.
     await run(seconds(15))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/ today on all sites$/)
+    // The all-sites limit: no split of this site's hours.
+    expect(blockScreen().querySelector('.tick')).toBeNull()
   })
 
   it('applies a limit set from the options page within a second', async () => {
@@ -183,13 +184,15 @@ describe('per-tab cost', () => {
     seedLimits({ global: 30, perSite: {} })
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/ today on all sites$/)
+    // The all-sites limit: no split of this site's hours.
+    expect(blockScreen().querySelector('.tick')).toBeNull()
     // ...and so does this site's own limit.
     seedToday({ 'reddit.com': minutes(5) })
     seedLimits({ global: null, perSite: { 'reddit.com': 5 } })
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/^\d+ min today$/)
+    // Right at its limit: nothing over yet to cap.
+    expect(blockScreen().querySelector('[data-now] .seg.over')).toBeNull()
     expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
   })
 })

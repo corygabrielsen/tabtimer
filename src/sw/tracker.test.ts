@@ -71,6 +71,7 @@ describe('presence', () => {
       running: true,
       blockAt: null,
       limit: null,
+      siteLimit: null,
       hours: emptyBuckets(),
       prefs: { hidden: false, scale: 1 },
     })
@@ -170,6 +171,7 @@ describe('tabState (an extension page asks)', () => {
       running: true,
       blockAt: NOON + MIN,
       limit: { scope: 'site', ms: MIN },
+      siteLimit: MIN,
     })
     expect(sent).toEqual([])
     expect(open()).toMatchObject({ tabId: 1, since: NOON })
@@ -439,6 +441,7 @@ describe('limits', () => {
       running: true,
       blockAt: NOON + MIN,
       limit: { scope: 'site', ms: MIN },
+      siteLimit: MIN,
     })
     // The page didn't block (it was frozen): the checkpoint does.
     now += MIN + 30 * S

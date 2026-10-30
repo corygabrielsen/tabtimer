@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { DONE_MS, HOLD_MS, HoldButton } from './hold'
+import { DONE_MS, HOLD_MS, NUDGE_MS, HoldButton } from './hold'
 
 const LABELS = {
-  rest: 'Hold for 2 more minutes',
+  rest: '2 more minutes',
   holding: 'Keep holding',
   done: '2 more minutes',
+  early: 'Hold to continue',
   hint: 'Press and hold',
 }
 
@@ -86,13 +87,39 @@ describe('press and hold', () => {
     expect(done).not.toHaveBeenCalled()
   })
 
+  it('says to hold after a short press, then goes back to its label', () => {
+    pointer('pointerdown')
+    vi.advanceTimersByTime(150)
+    pointer('pointerup')
+    expect(text()).toBe(LABELS.early)
+    vi.advanceTimersByTime(NUDGE_MS - 10)
+    expect(text()).toBe(LABELS.early)
+    vi.advanceTimersByTime(10)
+    expect(text()).toBe(LABELS.rest)
+    expect(done).not.toHaveBeenCalled()
+  })
+
+  it('drops the nudge when held again, or reset', () => {
+    pointer('pointerdown')
+    pointer('pointerup')
+    pointer('pointerdown')
+    expect(text()).toBe(LABELS.holding)
+    vi.advanceTimersByTime(NUDGE_MS)
+    expect(text()).toBe(LABELS.holding)
+    pointer('pointerup')
+    hold.reset()
+    vi.advanceTimersByTime(NUDGE_MS)
+    expect(text()).toBe(LABELS.rest)
+    expect(done).not.toHaveBeenCalled()
+  })
+
   it('drains back when let go early, then can be held again', () => {
     pointer('pointerdown')
     vi.advanceTimersByTime(HOLD_MS * 0.75)
     pointer('pointerleave')
     expect(progress()).toBe(0)
     expect(hold.el.classList.contains('released')).toBe(true)
-    expect(text()).toBe(LABELS.rest)
+    expect(text()).toBe(LABELS.early)
     vi.advanceTimersByTime(400)
     expect(hold.el.className).toBe('btn hold')
     // The time held before doesn't count toward the next hold.

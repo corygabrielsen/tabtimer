@@ -335,7 +335,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'gear'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'meter piece', 'meter mark', 'gear'])).toEqual([])
     })
   })
 }

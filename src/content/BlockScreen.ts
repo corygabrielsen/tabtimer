@@ -3,10 +3,10 @@ import BASE from '../styles/base.css?raw'
 import { bus as chromeBus } from '../chrome/bus'
 import { hourOf } from '../core/day'
 import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
-import { hoursAt, type TabState } from '../core/messages'
+import { hoursAt, totalsAt, type TabState } from '../core/messages'
 import { hourLabel, splitAtLimit } from '../core/usage'
 import type { Bus } from '../ports'
-import { drawBar, HOUR_FLOOR_MS } from '../bars'
+import { drawBar, drawLimitMeter, drawReadout, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
 import { formatDuration, h, svg, uiLocale } from '../ui'
 import { HoldButton } from './hold'
@@ -94,15 +94,9 @@ const STYLES = `${BASE}
     letter-spacing: -0.022em;
     font-weight: 680;
   }
-  .used {
-    margin: 0;
-    color: var(--muted);
-    font-size: 16px;
-    line-height: 24px;
-    font-variant-numeric: tabular-nums;
-  }
-  .used b { color: var(--text); font-weight: 600; }
-  .chart { margin: var(--s-8) 0 var(--s-6); }
+  .column .readout { margin: var(--s-3) 0 var(--s-4); }
+  .column .meter-label { margin-bottom: 0; }
+  .chart { margin: var(--s-5) 0 var(--s-6); }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
     position: relative;
@@ -218,6 +212,7 @@ const STYLES = `${BASE}
   @media (max-height: 680px) {
     dialog.screen { padding: var(--s-4); }
     h1 { margin: var(--s-3) 0 var(--s-1); font-size: 30px; }
+    .column .readout { margin: var(--s-2) 0 var(--s-3); }
     .chart { margin: var(--s-5) 0 var(--s-4); }
     .plot { height: 84px; padding-top: 16px; }
     .close { min-height: 48px; }
@@ -230,7 +225,9 @@ const STYLES = `${BASE}
     dialog.screen { padding: var(--s-3) var(--s-4); }
     h1 { margin: var(--s-2) 0 var(--s-1); font-size: 26px; }
     .chart { display: none; }
-    .used { margin-bottom: var(--s-4); }
+    .column .meter-label { margin-bottom: var(--s-4); }
+    .readout .time { font-size: 36px; }
+    .readout .time small { font-size: 22px; }
     .close { min-height: 44px; }
     .btn.hold { min-height: 40px; }
   }
@@ -266,7 +263,10 @@ export default class BlockScreen {
   private dialog: HTMLDialogElement
   private fav: HTMLSpanElement
   private siteName: HTMLSpanElement
-  private summary: HTMLParagraphElement
+  private time: HTMLSpanElement
+  private of: HTMLSpanElement
+  private meter: HTMLDivElement
+  private meterLabel: HTMLDivElement
   private chart: HTMLDivElement
   private closeButton: HTMLButtonElement
   private holdButton: HoldButton
@@ -317,9 +317,10 @@ export default class BlockScreen {
     const minutes = String(msToMinutes(SNOOZE_MS))
     this.holdButton = new HoldButton(
       {
-        rest: t('blockHold', minutes),
+        rest: t('blockSnooze', minutes),
         holding: t('blockHolding'),
         done: t('blockSnooze', minutes),
+        early: t('blockHoldToContinue'),
         hint: t('blockHoldHint'),
       },
       () => {
@@ -348,7 +349,10 @@ export default class BlockScreen {
     this.settingsButton.title = t('popupSettings')
     this.fav = h('span', { class: 'fav', 'aria-hidden': 'true' })
     this.siteName = h('span', { class: 'name' })
-    this.summary = h('p', { class: 'used', id: 'used' })
+    this.time = h('span', { class: 'time' })
+    this.of = h('span', { class: 'of' })
+    this.meter = h('div', { class: 'meter', role: 'meter', 'aria-valuemin': '0' })
+    this.meterLabel = h('div', { class: 'meter-label', 'aria-hidden': 'true' })
     this.chart = h('div', { class: 'chart', role: 'img' })
 
     const hold = this.holdButton
@@ -358,15 +362,22 @@ export default class BlockScreen {
         class: 'screen',
         role: 'alertdialog',
         'aria-modal': 'true',
-        'aria-labelledby': 'title',
-        'aria-describedby': 'used',
+        'aria-label': t('blockTitle'),
       },
       h(
         'div',
         { class: 'column' },
         h('div', { class: 'site' }, this.fav, this.siteName),
         h('h1', { id: 'title' }, t('blockTitle')),
-        this.summary,
+        h(
+          'p',
+          { class: 'readout', title: t('tooltipToday') },
+          h('span', { class: 'sr' }, t('labelToday')),
+          this.time,
+          this.of
+        ),
+        this.meter,
+        this.meterLabel,
         this.chart,
         this.closeButton,
         hold.el,
@@ -426,7 +437,17 @@ export default class BlockScreen {
     const now = Date.now()
     const hours = hoursAt(state, now)
     const { scope, limit, elapsed } = reason
-    const shown = [state.site, scope, limit, toMinutes(elapsed), hours.map(toMinutes), hourOf(now)]
+    const { siteToday } = totalsAt(state, now)
+    const shown = [
+      state.site,
+      scope,
+      limit,
+      state.siteLimit,
+      Math.floor(siteToday / 1000),
+      elapsed,
+      hours.map(toMinutes),
+      hourOf(now),
+    ]
     const key = JSON.stringify(shown)
     if (key === this.drawn) {
       return
@@ -434,7 +455,12 @@ export default class BlockScreen {
     this.drawn = key
     this.fav.textContent = state.site.charAt(0)
     this.siteName.textContent = state.site
-    this.summary.replaceChildren(...summaryOf(reason))
+    this.dialog.setAttribute('aria-label', scope === 'site' ? t('blockAriaSite', state.site) : t('blockAriaAllSites'))
+    // The popup's readout and meter, from the same state: this site's time
+    // "of" its own limit, and the meter against the limit that blocked.
+    drawReadout(this.time, siteToday)
+    this.of.textContent = state.siteLimit !== null ? t('popupOf', formatDuration(state.siteLimit)) : ''
+    drawLimitMeter(this.meter, this.meterLabel, elapsed, limit, scope, state.site)
     // The site's hours split where its own limit fell; against the
     // all-sites limit, the hours of one site can't be.
     drawChart(this.chart, hours, scope === 'site' ? limit : null, hourOf(now), state.site)
@@ -765,19 +791,6 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
 }
 
 const toMinutes = (ms: number) => Math.round(ms / 60_000)
-
-// "1 h 10 min today · 10 min over": the time against the limit that
-// blocked, then the time past it in the accent (the chart's overage), when
-// there is any.
-function summaryOf(reason: BlockReason): Array<Node | string> {
-  const today = reason.scope === 'site' ? t('blockToday') : t('blockTodayAllSites')
-  const parts: Array<Node | string> = [h('b', {}, formatDuration(reason.elapsed)), ` ${today}`]
-  const over = reason.elapsed - reason.limit
-  if (toMinutes(over) >= 1) {
-    parts.push(' · ', h('span', { class: 'over-ink' }, t('popupOverSite', formatDuration(over))))
-  }
-  return parts
-}
 
 // Today on `site` by hour: grey within `limit` (null: none to split at), an
 // accent cap past it, the limit's tick named where it fell, a value over the

@@ -38,6 +38,7 @@ const STATE: TabState = {
   running: false,
   blockAt: null,
   limit: null,
+  siteLimit: null,
   hours: Array<number>(24).fill(0),
   prefs: { hidden: false, scale: 1 },
 }
@@ -394,6 +395,7 @@ describe('reporting to the service worker', () => {
       running: false,
       blockAt: null,
       limit: null,
+      siteLimit: null,
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
     }
@@ -644,6 +646,7 @@ describe('P1: after a gap the page can see (sleep, the back/forward cache)', () 
     running: true,
     blockAt: NOON.getTime() + minutes(10),
     limit: { scope: 'site', ms: minutes(10) },
+    siteLimit: minutes(10),
   }
 
   // The worker answers the first report with RUNNING, then never again (its

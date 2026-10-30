@@ -1,8 +1,38 @@
 // The time graphics every surface shares, drawn the one Calm way (styles in
 // src/styles/base.css): grey is time within the limit, a dark mark is
 // where the limit fell, the accent is time after it.
+import { msToMinutes, type BlockScope } from './core/limits'
 import type { LimitSplit } from './core/usage'
-import { h } from './ui'
+import { formatTime } from './format'
+import { t } from './i18n'
+import { formatDuration, h } from './ui'
+
+// Today's time as the readout shows it: "01:10" then ":04", the seconds set
+// smaller (styles: base.css .readout).
+export function drawReadout(el: HTMLElement, ms: number): void {
+  const time = formatTime(ms)
+  const cut = time.lastIndexOf(':')
+  el.replaceChildren(time.slice(0, cut), h('small', {}, time.slice(cut)))
+}
+
+// The meter against the limit that applies (`scope`, on `site`): grey up to
+// its labelled mark, then one accent piece for any time over; named for
+// assistive tech.
+export function drawLimitMeter(
+  meter: HTMLElement,
+  labelEl: HTMLElement | null,
+  used: number,
+  limit: number,
+  scope: BlockScope,
+  site: string
+): void {
+  const over = used > limit ? [used - limit] : []
+  drawMeter(meter, labelEl, used, limit, over, formatDuration(limit))
+  meter.setAttribute('aria-valuemax', String(msToMinutes(limit)))
+  meter.setAttribute('aria-valuenow', String(Math.min(msToMinutes(used), msToMinutes(limit))))
+  meter.setAttribute('aria-label', scope === 'site' ? t('popupMeterSiteAria', site) : t('popupMeterGlobalAria'))
+  meter.setAttribute('aria-valuetext', t('popupUsedOf', [formatDuration(used), formatDuration(limit)]))
+}
 
 // An hour chart's full height: the busiest hour, or this much if less, so
 // a few minutes don't fill it.

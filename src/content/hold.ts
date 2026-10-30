@@ -1,7 +1,7 @@
-// Press and hold: a button (its fill shows the progress) that acts only after HOLD_MS held down, by
-// pointer or by Space/Enter while focused. Letting go early drains the
-// progress back. The block screen's snooze, a deliberate act (styles in
-// BlockScreen.ts).
+// Press and hold: a button (its fill shows the progress) that acts only
+// after HOLD_MS held down, by pointer or by Space/Enter while focused.
+// Letting go early drains the progress back and says, briefly, to hold. The
+// block screen's snooze, a deliberate act (styles in BlockScreen.ts).
 import { h, svg } from '../ui'
 
 export const HOLD_MS = 2000
@@ -12,8 +12,12 @@ export const HOLD_STEPS = 4
 export const DONE_MS = 600
 // The drain back after an early release (its CSS transition).
 const DRAIN_MS = 320
+// How long "Hold to continue" shows after an early release.
+export const NUDGE_MS = 1500
 
-export type HoldLabels = { rest: string; holding: string; done: string; hint: string }
+// rest, holding and done: the label in each state; early: after letting go
+// too soon; hint: the description for assistive tech.
+export type HoldLabels = { rest: string; holding: string; done: string; early: string; hint: string }
 
 type State = 'rest' | 'holding' | 'done'
 
@@ -33,6 +37,7 @@ export class HoldButton {
   private frame = 0
   private steps = 0
   private timer: ReturnType<typeof setTimeout> | null = null
+  private nudge: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private labels: HoldLabels,
@@ -85,6 +90,7 @@ export class HoldButton {
   reset(): void {
     cancelAnimationFrame(this.frame)
     this.clearTimer()
+    this.clearNudge()
     this.state = 'rest'
     this.el.classList.remove('holding', 'released', 'done')
     this.setProgress(0)
@@ -97,6 +103,7 @@ export class HoldButton {
       return
     }
     this.clearTimer()
+    this.clearNudge()
     this.state = 'holding'
     this.start = performance.now()
     this.steps = 0
@@ -131,11 +138,15 @@ export class HoldButton {
     this.el.classList.remove('holding')
     this.el.classList.add('released')
     this.setProgress(0)
-    this.show(null, this.labels.rest)
+    this.show(null, this.labels.early)
     this.timer = setTimeout(() => {
       this.timer = null
       this.el.classList.remove('released')
     }, DRAIN_MS)
+    this.nudge = setTimeout(() => {
+      this.nudge = null
+      this.show(null, this.labels.rest)
+    }, NUDGE_MS)
   }
 
   private finish() {
@@ -159,6 +170,13 @@ export class HoldButton {
 
   private show(icon: SVGSVGElement | null, text: string) {
     this.label.replaceChildren(...(icon ? [icon] : []), h('span', { class: 'txt' }, text))
+  }
+
+  private clearNudge() {
+    if (this.nudge !== null) {
+      clearTimeout(this.nudge)
+      this.nudge = null
+    }
   }
 
   private clearTimer() {

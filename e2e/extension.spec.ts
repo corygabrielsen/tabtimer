@@ -180,9 +180,10 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
 
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   const text = await shadowText(page, BLOCK_ID)
-  expect(text).toContain("Time's up")
+  expect(text).toContain('Take a break')
   expect(text).toContain(SITE_A)
-  expect(await shadowText(page, BLOCK_ID, '.used')).toBe('10 min today')
+  // Split at its own limit, named at the tick, and the second over it.
+  expect(await shadowText(page, BLOCK_ID, '[data-now] .tick-label')).toBe('10 min')
 })
 
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
@@ -195,7 +196,9 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
     const page = await context.newPage()
     await page.goto(site(host))
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-    expect(await shadowText(page, BLOCK_ID, '.used')).toBe('11 min today on all sites · 1 min over')
+    // The all-sites limit: this site's hours aren't split, nor named over.
+    expect(await shadowText(page, BLOCK_ID, '.tick-label')).toBe('')
+    expect(await shadowText(page, BLOCK_ID, '.val.over')).toBe('')
   }
 })
 
@@ -290,6 +293,6 @@ test('a limit exactly equal to today’s time blocks', async ({ context, service
   await page.waitForTimeout(500)
   await expect(block).toBeHidden()
   await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 3 } } })
-  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
+  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain('Take a break')
   await expect(block).toBeVisible()
 })

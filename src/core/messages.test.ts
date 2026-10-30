@@ -39,6 +39,7 @@ describe('a state read at a later moment', () => {
     running: true,
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
+    siteLimit: 60_000,
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
@@ -154,6 +155,7 @@ describe('every site’s time today, read at a later moment', () => {
       running: true,
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
+      siteLimit: 60_000,
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
     }
@@ -192,6 +194,7 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
+    siteLimit: 60_000,
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
@@ -227,6 +230,8 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } }, probe: false },
     { type: 'state', state: { ...state, limit: 5 }, probe: false },
     { type: 'state', state: { ...state, hours: undefined }, probe: false },
+    { type: 'state', state: { ...state, siteLimit: '1' }, probe: false },
+    { type: 'state', state: { ...state, siteLimit: undefined }, probe: false },
     { type: 'state', state: { ...state, hours: [1, 2] }, probe: false },
     { type: 'state', state: { ...state, hours: Array(24).fill('1') }, probe: false },
     { type: 'state', state: { ...state, prefs: undefined }, probe: false },

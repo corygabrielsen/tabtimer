@@ -1,16 +1,15 @@
 import { chromeStore, loadThenPatch } from './chrome/store'
 import { bus } from './chrome/bus'
 import type { StoreChanges } from './ports'
-import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
 import { hourLabel, splitAtLimit, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
-import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
+import { limitsFor, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
-import { drawBar, drawMeter, HOUR_FLOOR_MS } from './bars'
+import { drawBar, drawLimitMeter, drawReadout, HOUR_FLOOR_MS } from './bars'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; url: string }
@@ -109,12 +108,6 @@ function faceFor(base: string, s: Snapshot) {
 type Face = ReturnType<typeof faceFor>
 
 // "01:10" then ":04", the seconds set smaller.
-function renderReadout(el: HTMLElement, ms: number) {
-  const time = formatTime(ms)
-  const cut = time.lastIndexOf(':')
-  el.replaceChildren(time.slice(0, cut), h('small', {}, time.slice(cut)))
-}
-
 function renderFace(base: string, s: Snapshot) {
   const face = faceFor(base, s)
   const hero = byId('hero')
@@ -128,7 +121,7 @@ function renderFace(base: string, s: Snapshot) {
 
   hero?.setAttribute('data-state', face.state)
   if (today) {
-    renderReadout(today, face.siteToday)
+    drawReadout(today, face.siteToday)
   }
   if (status) {
     status.textContent = {
@@ -153,15 +146,7 @@ function renderFace(base: string, s: Snapshot) {
     meterWrap.hidden = meterLimit === null
     meter.hidden = meterLimit === null
     if (meterLimit !== null) {
-      const over = meterValue > meterLimit ? [meterValue - meterLimit] : []
-      drawMeter(meter, byId('meter-label'), meterValue, meterLimit, over, formatDuration(meterLimit))
-      meter.setAttribute('aria-valuemax', String(msToMinutes(meterLimit)))
-      meter.setAttribute('aria-valuenow', String(Math.min(msToMinutes(meterValue), msToMinutes(meterLimit))))
-      meter.setAttribute(
-        'aria-label',
-        face.scope === 'site' ? t('popupMeterSiteAria', base) : t('popupMeterGlobalAria')
-      )
-      meter.setAttribute('aria-valuetext', t('popupUsedOf', [formatDuration(meterValue), formatDuration(meterLimit)]))
+      drawLimitMeter(meter, byId('meter-label'), meterValue, meterLimit, face.scope, base)
     }
   }
 

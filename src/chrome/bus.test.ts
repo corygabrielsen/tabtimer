@@ -65,6 +65,7 @@ describe('state pushes', () => {
     running: false,
     blockAt: null,
     limit: null,
+    siteLimit: null,
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }

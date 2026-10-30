@@ -90,8 +90,14 @@ test('holding 2 more minutes for 2 s snoozes; a short press or a click does not'
   const page = await blockedPage(context, site(SITE_A))
   const block = page.locator(`#${BLOCK_ID}`)
 
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('2 more minutes')
+  // A click: the label says to hold, then goes back; nothing snoozes.
   await clickInShadow(page, BLOCK_ID, 'button.hold')
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
+  await expect.poll(() => shadowText(page, BLOCK_ID, 'button.hold .txt'), { timeout: 3000 }).toBe('2 more minutes')
+  // A press let go too soon: the same.
   await holdInShadow(page, BLOCK_ID, 'button.hold', 800)
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
   await page.waitForTimeout(500)
   await expect(block).toBeVisible()
   expect(await snoozeUntil(serviceWorker)).toBe(0)
@@ -152,9 +158,21 @@ test('shows the worker’s numbers, as the popup does, and marks the current hou
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60 } },
   })
   const page = await blockedPage(context, site(SITE_A))
-  expect(await shadowText(page, BLOCK_ID, '.used')).toBe('1 h 10 min today · 10 min over')
   const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
   await expect(popup.locator('#summary')).toHaveText('10 min over')
+  // The block screen's readout and meter are the popup's, at the same moment
+  // (the blocked tab isn't counting, so the time holds still).
+  expect(await shadowText(page, BLOCK_ID, '.readout .time')).toBe('01:10:00')
+  await expect(popup.locator('#today')).toHaveText('01:10:00')
+  expect(await shadowText(page, BLOCK_ID, '.readout .of')).toBe(await popup.locator('#readout-of').innerText())
+  expect(await shadowAttribute(page, BLOCK_ID, '.meter', 'aria-valuetext')).toBe(
+    await popup.locator('#meter').getAttribute('aria-valuetext')
+  )
+  expect(await shadowText(page, BLOCK_ID, '.meter-label')).toBe(await popup.locator('#meter-label').innerText())
+  // Grey to the limit's mark, then one accent piece over, on both.
+  await expect(popup.locator('#meter > *')).toHaveCount(3)
+  expect(await shadowAttribute(page, BLOCK_ID, '.meter > .over', 'class')).toBe('over')
+  expect(await shadowAttribute(page, BLOCK_ID, '.meter > .over + *', 'class')).toBeNull()
 
   const hour = String(await page.evaluate(() => new Date().getHours()))
   expect(await shadowAttribute(page, BLOCK_ID, '[data-now]', 'data-hour')).toBe(hour)
@@ -215,7 +233,9 @@ test('keeps the page out of reach of clicks and assistive tech', async ({ contex
   await cdp.detach()
   const exposed = nodes.filter((n) => !n.ignored)
   expect(exposed.some((n) => n.name?.value === 'page button')).toBe(false)
-  expect(exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === "Time's up")).toBe(true)
+  expect(
+    exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === `Take a break: ${SITE_A} limit reached`)
+  ).toBe(true)
 })
 
 test('Escape does not dismiss it', async ({ context, serviceWorker, site }) => {

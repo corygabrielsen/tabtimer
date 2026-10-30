@@ -455,6 +455,35 @@ a:hover {
   transform: translateX(13px);
 }
 
+/* --- Readout: today's time, the seconds smaller and lighter so the minutes
+   read first, then "of 1 h". */
+
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.readout .time {
+  font-size: var(--t-xl);
+  font-weight: 620;
+  letter-spacing: -0.03em;
+}
+
+.readout .time small {
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
+.readout .of {
+  color: var(--muted);
+  font-size: 14px;
+}
+
 /* --- Meter: grey up to the limit's mark, then one accent piece for the time over.
    Under the limit the rest of the way is an empty track. */
 
