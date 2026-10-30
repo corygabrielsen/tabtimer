@@ -9,6 +9,7 @@ const PRESENT = { visible: true, focused: true, media: false, blocked: false }
 describe('parseRequest', () => {
   it.each([
     [{ type: 'snooze' }, { type: 'snooze' }],
+    [{ type: 'closeTab' }, { type: 'closeTab' }],
     [
       { type: 'open', page: 'options' },
       { type: 'open', page: 'options' },

@@ -315,9 +315,15 @@ async function shadowRootOf(page: Page, hostId: string) {
   return { cdp, shadow: find(root)?.shadowRoots?.[0] }
 }
 
-// Visible text inside a host element's closed shadow root ('' if absent).
-export async function shadowText(page: Page, hostId: string): Promise<string> {
+// Visible text inside a host element's closed shadow root, or in the
+// element `selector` picks there ('' if absent).
+export async function shadowText(page: Page, hostId: string, selector?: string): Promise<string> {
   const { cdp, shadow } = await shadowRootOf(page, hostId)
+  let top: CdpNode | undefined = shadow
+  if (shadow && selector) {
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: shadow.nodeId, selector })
+    top = nodeId ? ((await cdp.send('DOM.describeNode', { nodeId, depth: -1 })).node as CdpNode) : undefined
+  }
   await cdp.detach()
   const parts: string[] = []
   const walk = (node: CdpNode) => {
@@ -331,14 +337,14 @@ export async function shadowText(page: Page, hostId: string): Promise<string> {
       }
     }
   }
-  if (shadow) {
-    walk(shadow)
+  if (top) {
+    walk(top)
   }
-  return parts.join(' ')
+  return parts.join(selector ? '' : ' ')
 }
 
-// Real mouse click on an element inside a host's closed shadow root.
-export async function clickInShadow(page: Page, hostId: string, selector: string): Promise<void> {
+// The centre of an element inside a host's closed shadow root.
+async function centreInShadow(page: Page, hostId: string, selector: string): Promise<{ x: number; y: number }> {
   const { cdp, shadow } = await shadowRootOf(page, hostId)
   if (!shadow) {
     throw new Error(`no shadow root on #${hostId}`)
@@ -350,7 +356,30 @@ export async function clickInShadow(page: Page, hostId: string, selector: string
   const { model } = await cdp.send('DOM.getBoxModel', { nodeId })
   await cdp.detach()
   const [x1, y1, , , x3, y3] = model.content
-  await page.mouse.click((x1! + x3!) / 2, (y1! + y3!) / 2)
+  return { x: (x1! + x3!) / 2, y: (y1! + y3!) / 2 }
+}
+
+// Real mouse click on an element inside a host's closed shadow root.
+export async function clickInShadow(page: Page, hostId: string, selector: string): Promise<void> {
+  const { x, y } = await centreInShadow(page, hostId, selector)
+  await page.mouse.click(x, y)
+}
+
+// Real mouse press held `ms` on an element inside a host's closed shadow
+// root, then let go.
+export async function holdInShadow(page: Page, hostId: string, selector: string, ms: number): Promise<void> {
+  const { x, y } = await centreInShadow(page, hostId, selector)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.waitForTimeout(ms)
+  await page.mouse.up()
+}
+
+// Hold the block screen's "5 more minutes" through (2 s), and wait for it to
+// lift.
+export async function snoozeBlock(page: Page): Promise<void> {
+  await holdInShadow(page, BLOCK_ID, 'button.hold', 2400)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
 }
 
 // An attribute of an element inside a host's closed shadow root (null if the

@@ -153,5 +153,6 @@ serveRouter(
         await focusWindow(tab.windowId)
       }
     },
+    closeTab: (tabId) => chrome.tabs.remove(tabId),
   })
 )

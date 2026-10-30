@@ -7,8 +7,9 @@
 // single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SNOOZE_MS } from '../core/limits'
+import { DONE_MS, HOLD_MS } from './hold'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
-import { click, flush, setPageState, trackShadowRoots } from '../test/dom'
+import { flush, setPageState, trackShadowRoots } from '../test/dom'
 import {
   isBlocked,
   minutes,
@@ -57,7 +58,7 @@ describe('time limits end to end', () => {
     expect(isBlocked()).toBe(false)
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
+    expect(blockScreen().querySelector('.used')?.textContent).toBe('1 min today')
   })
 
   it('includes time other tabs already spent on the site today', async () => {
@@ -102,7 +103,7 @@ describe('time limits end to end', () => {
     await run(minutes(1))
     expect(isBlocked()).toBe(true)
     await run(minutes(10))
-    expect(blockScreen().querySelector('.detail')?.textContent).toBe('00:01:00 today · 00:01:00 limit')
+    expect(blockScreen().querySelector('.used')?.textContent).toBe('1 min today')
     expect(storedToday()).toBe(minutes(1))
   })
 
@@ -115,7 +116,7 @@ describe('time limits end to end', () => {
     // The global total reads persisted time, reported every ~10s.
     await run(seconds(15))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
+    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/ today on all sites$/)
   })
 
   it('applies a limit set from the options page within a second', async () => {
@@ -133,7 +134,10 @@ describe('time limits end to end', () => {
     await run(minutes(1))
     expect(isBlocked()).toBe(true)
 
-    click(blockScreen().querySelector('.snooze'))
+    // Held for the snooze, not clicked.
+    const hold = blockScreen().querySelector('.hold')!
+    hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
+    await run(HOLD_MS + DONE_MS + 50)
     await flush()
     expect(isBlocked()).toBe(false)
     await run(SNOOZE_MS - seconds(2))
@@ -179,13 +183,13 @@ describe('per-tab cost', () => {
     seedLimits({ global: 30, perSite: {} })
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.host')?.textContent).toBe('all tracked sites')
+    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/ today on all sites$/)
     // ...and so does this site's own limit.
     seedToday({ 'reddit.com': minutes(5) })
     seedLimits({ global: null, perSite: { 'reddit.com': 5 } })
     await run(seconds(1))
     expect(isBlocked()).toBe(true)
-    expect(blockScreen().querySelector('.host')?.textContent).toBe('reddit.com')
+    expect(blockScreen().querySelector('.used')?.textContent).toMatch(/^\d+ min today$/)
     expect(get.mock.calls.filter(([keys]) => keys === null)).toHaveLength(0)
   })
 })

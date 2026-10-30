@@ -12,7 +12,7 @@
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
-import { addDays, dayOf, isDayStamp, type DayStamp } from './day'
+import { addDays, dayOf, hourOf, isDayStamp, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
 
 export const SCHEMA = 4
@@ -147,6 +147,16 @@ export function settleClock(mark: ClockMark, now: number): ClockMark {
 
 export function emptyBuckets(): HourBuckets {
   return new Array<number>(HOURS_PER_DAY).fill(0)
+}
+
+// `buckets` (none: empty) with `ms` more in the hour of `at`: where time not
+// yet stored is shown, the one rule for every surface.
+export function withTimeAt(buckets: readonly number[] | undefined, at: number, ms: number): HourBuckets {
+  const out = buckets ? [...buckets] : emptyBuckets()
+  if (ms > 0) {
+    out[hourOf(at)]! += ms
+  }
+  return out
 }
 
 function normalizeBuckets(value: unknown): HourBuckets | null {

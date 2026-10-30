@@ -1,17 +1,25 @@
 import type FocusTracker from './FocusTracker'
+import BASE from '../styles/base.css?raw'
 import { bus as chromeBus } from '../chrome/bus'
+import { hourOf } from '../core/day'
 import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
+import { hoursAt, type TabState } from '../core/messages'
+import { hourLabel, splitAtLimit } from '../core/usage'
 import type { Bus } from '../ports'
-import { formatTime } from '../format'
+import { drawBar, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
-import { h } from '../ui'
+import { formatDuration, h, snoozedText, svg, uiLocale } from '../ui'
+import { HoldButton } from './hold'
 import { mountShadowHost, shadowRootOf } from './shadowHost'
 
 const HOST_ID = 'tabtimer-block'
 
-const STYLES = `
+// The hours the chart's axis names besides Now: midnight, 6, noon and 18.
+const AXIS_MARKS = [0, 6, 12, 18]
+
+// The shared components (base.css), then the block screen's own.
+const STYLES = `${BASE}
   :host { all: initial; }
-  * { box-sizing: border-box; }
   /* The top-layer scroll container every wheel, touch and key scroll
      targets; contain keeps them from chaining to the page behind. */
   dialog.screen {
@@ -20,102 +28,193 @@ const STYLES = `
     max-width: none;
     max-height: none;
     margin: 0;
-    padding: 0;
+    padding: var(--s-4);
     border: 0;
     overflow: auto;
     overscroll-behavior: contain;
   }
   .screen:not([open]) { display: none; }
-  .screen,
-  .screen::backdrop {
-    background: var(--bg);
-  }
+  /* Opaque: nothing of the page shows through. */
+  .screen::backdrop { background: var(--bg); }
   .screen {
     position: fixed;
     inset: 0;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    background: var(--bg);
     color: var(--text);
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-variant-numeric: tabular-nums;
+    font-family: var(--font);
+    font-size: var(--t-md);
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
     -webkit-user-select: none;
     user-select: none;
   }
-  .box {
-    text-align: center;
-    padding: 24px;
-    max-width: 440px;
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
-  .title {
-    font-size: 12px;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin-bottom: 20px;
+  .sheet {
+    width: 100%;
+    max-width: 560px;
+    margin: auto;
+    padding: var(--s-10) var(--s-10) var(--s-8);
+    border-radius: var(--r-2xl);
+    background: var(--sheet);
+    box-shadow: var(--shadow);
+    animation: sheet-in 0.48s var(--ease) both;
   }
-  .host {
-    font-size: 22px;
-    margin-bottom: 10px;
-    word-break: break-all;
-  }
-  .detail {
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 28px;
-  }
-  .row {
+  @keyframes sheet-in { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+  .site {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 16px;
-  }
-  .activity {
-    border: 0;
-    padding: 8px 4px;
-    background: transparent;
+    gap: var(--s-2);
+    min-width: 0;
     color: var(--muted);
-    font: inherit;
-    font-size: 12px;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    cursor: pointer;
+    font-size: var(--t-md);
+    overflow-wrap: anywhere;
   }
-  .activity:hover {
-    color: var(--text);
+  .site .fav { width: 24px; height: 24px; border-radius: var(--r-sm); font-size: var(--t-xs); }
+  h1 {
+    margin: var(--s-4) 0 var(--s-2);
+    font-size: 36px;
+    line-height: 1.1;
+    letter-spacing: -0.022em;
+    font-weight: 680;
   }
-  .snooze {
+  .used {
+    margin: 0;
+    color: var(--muted);
+    font-size: 16px;
+    line-height: 24px;
+    font-variant-numeric: tabular-nums;
+  }
+  .used b { color: var(--text); font-weight: 600; }
+  .panel {
+    margin: var(--s-6) 0;
+    padding: var(--s-4) var(--s-5) var(--s-3);
+    border-radius: var(--r-lg);
+    background: var(--sunk);
+  }
+  /* 24 hour columns; the top 20 px holds the values over the bars. */
+  .plot {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(24, 1fr);
+    column-gap: 6px;
+    height: 104px;
+    padding-top: 20px;
+  }
+  .plot::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: var(--line);
+  }
+  .val {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--v) * 100% + 6px);
+    transform: translateX(-50%);
+    color: var(--muted);
+    font-size: var(--t-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .hbar[data-now] .val { color: var(--accent-ink); }
+  .axis {
+    position: relative;
+    height: 16px;
+    margin-top: var(--s-2);
+    color: var(--muted);
+    font-size: var(--t-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+  .axis span {
+    position: absolute;
+    left: calc(var(--h) * (100% + 6px) / 24 + (100% + 6px) / 48 - 3px);
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+  .axis span.first { left: 0; transform: none; }
+  .axis span.now { color: var(--accent-ink); font-weight: 650; }
+  .btn svg { width: 18px; height: 18px; flex: none; margin-left: -2px; }
+  .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .close {
+    width: 100%;
+    min-height: 56px;
+    font-size: 17px;
+  }
+  .close svg { width: 20px; height: 20px; }
+  /* Hold to snooze: one cue, the ring's arc closing over a soft fill whose
+     leading edge shows how far. --p: 0..1. */
+  .btn.hold {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    width: 100%;
+    min-height: 48px;
+    margin-top: var(--s-3);
     border: 1px solid var(--bar);
-    border-radius: 2px;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 12px;
-    padding: 8px 16px;
-    cursor: pointer;
-  }
-  .snooze:hover {
+    background: var(--sheet);
+    box-shadow: none;
     color: var(--text);
-    border-color: var(--text);
+    font-size: var(--t-md);
+    font-weight: 500;
+    touch-action: none;
   }
-  .manage {
-    display: block;
-    margin: 16px auto 0;
-    border: 0;
-    background: transparent;
-    color: var(--muted);
-    font: inherit;
-    font-size: 11px;
-    cursor: pointer;
+  .btn.hold:hover { background: var(--hover); border-color: var(--muted); }
+  .btn.hold:active { transform: none; }
+  .btn.hold.holding,
+  .btn.hold.released {
+    border-color: var(--accent-ink);
+    background: var(--sheet);
+    color: var(--accent-ink);
   }
-  .manage:hover {
-    color: var(--text);
+  .btn.hold.holding { transform: scale(0.985); }
+  .btn.hold.done { border-color: var(--accent-ink); background: var(--accent-soft); color: var(--accent-ink); }
+  .hold .fill {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-right: 2px solid var(--accent);
+    background: var(--accent-soft);
+    transform: translateX(calc((var(--p, 0) - 1) * 100%));
   }
-  .snooze:focus-visible,
-  .activity:focus-visible,
-  .manage:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
+  .hold.done .fill { border-right-color: transparent; }
+  .hold.released .fill { transition: transform 0.32s var(--ease); }
+  .hold .lbl { display: inline-flex; align-items: center; gap: var(--s-2); }
+  .hold.done .lbl { animation: settle 0.36s var(--ease); }
+  @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
+  .ring { transform: rotate(-90deg); }
+  .ring circle { fill: none; }
+  .ring .trk { stroke: var(--bar); stroke-width: 1.75; }
+  .ring .prg {
+    stroke: var(--accent-ink);
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-dasharray: calc(var(--p, 0) * 100) 100;
+    opacity: clamp(0, calc(var(--p, 0) * 1000), 1);
+  }
+  .hold.released .ring .prg { transition: stroke-dasharray 0.32s var(--ease); }
+  .check { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .subrow { display: flex; justify-content: center; gap: var(--s-2); margin-top: var(--s-4); }
+  .subrow .btn { padding: 0 var(--s-4); font-size: var(--t-md); }
+  @media (max-width: 480px) {
+    .sheet { padding: var(--s-6) var(--s-5) var(--s-5); border-radius: var(--r-xl); }
+    h1 { font-size: 30px; }
+    .plot { column-gap: 3px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .btn.hold.holding { transform: none; }
   }
 `
 
@@ -125,6 +224,8 @@ type SavedStyle = { value: string; priority: string }
 type ScrollPosition = { left: number; top: number }
 type Scope = Document | ShadowRoot
 
+type Tracker = Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'tabState' | 'onState'>
+
 // The block screen is a modal <dialog> inside a closed shadow root. While it
 // is open (showModal), the browser puts it in the top layer and makes the rest
 // of the page inert: no clicks, no Tab stops, hidden from assistive tech. The
@@ -133,16 +234,25 @@ type Scope = Document | ShadowRoot
 // above it), media that keeps playing behind it, focus leaving it (Tab past
 // the last button, or browsers without a modal top layer), and the page
 // taking the host or <body> away.
+//
+// What it shows is a pause, not a lock: the site, today's time and snoozes
+// as the worker counts them, today's hours, and leaving (Close tab) first.
+// Five more minutes takes a deliberate press and hold.
 export default class BlockScreen {
   private host: HTMLDivElement
   private shadow: ShadowRoot
   private attach: () => boolean
   private dialog: HTMLDialogElement
-  private hostLine: HTMLDivElement
-  private detailLine: HTMLDivElement
-  private snoozeButton: HTMLButtonElement
+  private fav: HTMLSpanElement
+  private siteName: HTMLSpanElement
+  private summary: HTMLParagraphElement
+  private chart: HTMLDivElement
+  private closeButton: HTMLButtonElement
+  private holdButton: HoldButton
+  private settingsButton: HTMLButtonElement
   private activityButton: HTMLButtonElement
-  private manageButton: HTMLButtonElement
+  // What the content was last drawn from, so a tick redraws only on change.
+  private drawn = ''
   private blocked = false
   private unsubscribeState: () => void
   // Where focus was before blocking, restored on dismissal.
@@ -159,7 +269,7 @@ export default class BlockScreen {
   private playScopes = new Set<Scope>()
 
   constructor(
-    private tracker: Pick<FocusTracker, 'blockReason' | 'setBlocked' | 'snooze' | 'site' | 'onState'>,
+    private tracker: Tracker,
     private bus: Bus = chromeBus
   ) {
     const { host, shadow, attach } = mountShadowHost(HOST_ID, STYLES)
@@ -172,36 +282,70 @@ export default class BlockScreen {
     // Opaque even before (or without) the modal dialog painting over it.
     s.setProperty('background', 'var(--bg)', 'important')
 
-    const button = (cls: string, text: string, onClick: () => void) => {
-      const el = h('button', { type: 'button', class: cls }, text)
+    const button = (cls: string, onClick: () => void, ...children: Array<Node | string>) => {
+      const el = h('button', { type: 'button', class: cls }, ...children)
       el.addEventListener('click', onClick)
       return el
     }
-    this.snoozeButton = button('snooze', t('blockSnooze', String(msToMinutes(SNOOZE_MS))), () => {
-      this.unblock()
-      void this.tracker.snooze()
-    })
-    // Opens in a new tab, through the service worker; this page stays blocked.
-    this.activityButton = button('activity', t('blockSeeActivity'), () => {
-      void this.bus.send('open', { page: 'activity' })
-    })
-    this.manageButton = button('manage', t('blockManage'), () => {
-      void this.bus.send('open', { page: 'options' })
-    })
-    this.hostLine = h('div', { class: 'host' })
-    this.detailLine = h('div', { class: 'detail' })
+    // Leaving is the primary action: the worker closes this tab.
+    this.closeButton = button(
+      'btn btn-primary close',
+      () => void this.bus.send('closeTab', {}),
+      svg('0 0 20 20', 'icon', ['path', { d: 'M5.75 5.75l8.5 8.5m0-8.5l-8.5 8.5' }]),
+      t('blockClose')
+    )
+    const minutes = String(msToMinutes(SNOOZE_MS))
+    this.holdButton = new HoldButton(
+      {
+        rest: t('blockHold', minutes),
+        holding: t('blockHolding'),
+        done: t('blockSnooze', minutes),
+        hint: t('blockHoldHint'),
+      },
+      () => {
+        this.unblock()
+        void this.tracker.snooze()
+      }
+    )
+    // Each opens in a tab of its own, through the service worker; this page
+    // stays blocked.
+    this.settingsButton = button(
+      'btn btn-quiet settings',
+      () => void this.bus.send('open', { page: 'options' }),
+      t('popupSettings')
+    )
+    this.activityButton = button(
+      'btn btn-quiet activity',
+      () => void this.bus.send('open', { page: 'activity' }),
+      t('blockSeeActivity')
+    )
+    this.fav = h('span', { class: 'fav', 'aria-hidden': 'true' })
+    this.siteName = h('span', { class: 'name' })
+    this.summary = h('p', { class: 'used', id: 'used' })
+    this.chart = h('div', { class: 'chart', role: 'img' })
 
+    const hold = this.holdButton
     this.dialog = h(
       'dialog',
-      { class: 'screen', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': t('blockTitle') },
+      {
+        class: 'screen',
+        role: 'alertdialog',
+        'aria-modal': 'true',
+        'aria-labelledby': 'title',
+        'aria-describedby': 'used',
+      },
       h(
         'div',
-        { class: 'box' },
-        h('div', { class: 'title' }, t('blockTitle')),
-        this.hostLine,
-        this.detailLine,
-        h('div', { class: 'row' }, this.snoozeButton, this.activityButton),
-        this.manageButton
+        { class: 'sheet' },
+        h('div', { class: 'site' }, this.fav, this.siteName),
+        h('h1', { id: 'title' }, t('blockTitle')),
+        this.summary,
+        h('div', { class: 'panel' }, this.chart),
+        this.closeButton,
+        hold.el,
+        hold.hint,
+        hold.status,
+        h('div', { class: 'subrow' }, this.settingsButton, this.activityButton)
       )
     )
     this.dialog.addEventListener('cancel', this.handleCancel)
@@ -227,13 +371,16 @@ export default class BlockScreen {
   }
 
   private block(reason: BlockReason) {
-    this.hostLine.textContent = reason.scope === 'site' ? (this.tracker.site ?? '') : t('blockAllSites')
-    this.detailLine.textContent = t('blockDetail', [formatTime(reason.elapsed), formatTime(reason.limit)])
+    const state = this.tracker.tabState
+    if (state) {
+      this.draw(state, reason)
+    }
     if (this.blocked) {
       this.hold()
       return
     }
     this.blocked = true
+    this.holdButton.reset()
     this.tracker.setBlocked(true)
     this.previousFocus = document.activeElement
     this.savedWindow = { left: window.scrollX, top: window.scrollY }
@@ -244,6 +391,34 @@ export default class BlockScreen {
     this.raise()
     this.pauseMedia(reachableScopes(this.host))
     this.listen(true)
+  }
+
+  // The site, the summary line and the chart, from the worker's state at
+  // now: redrawn only when what they show changed.
+  private draw(state: TabState, reason: BlockReason) {
+    const now = Date.now()
+    const hours = hoursAt(state, now)
+    const { scope, limit, elapsed } = reason
+    const shown = [
+      state.site,
+      state.snoozes.length,
+      scope,
+      limit,
+      toMinutes(elapsed),
+      hours.map(toMinutes),
+      hourOf(now),
+    ]
+    const key = JSON.stringify(shown)
+    if (key === this.drawn) {
+      return
+    }
+    this.drawn = key
+    this.fav.textContent = state.site.charAt(0)
+    this.siteName.textContent = state.site
+    this.summary.replaceChildren(...summaryOf(reason, state.snoozes.length))
+    // The site's hours split where its own limit fell; against the
+    // all-sites limit, the hours of one site can't be.
+    drawChart(this.chart, hours, scope === 'site' ? limit : null, hourOf(now), state.site)
   }
 
   // Each tick while blocked, take back what the page changed since the last:
@@ -263,6 +438,7 @@ export default class BlockScreen {
     if (!this.release()) {
       return
     }
+    this.holdButton.reset()
     this.dialog.close()
     this.host.style.setProperty('display', 'none', 'important')
     this.restoreScroll()
@@ -322,7 +498,25 @@ export default class BlockScreen {
         this.dialog.setAttribute('open', '')
       }
     }
-    this.snoozeButton.focus({ preventScroll: true })
+    this.focusClose()
+  }
+
+  // Focus Close tab with its ring showing: a browser that withholds
+  // :focus-visible from script focus gets the ring by class, until focus
+  // moves or a pointer is used.
+  private focusClose() {
+    const button = this.closeButton
+    button.focus({ preventScroll: true, focusVisible: true } as FocusOptions)
+    if (!button.matches(':focus-visible')) {
+      button.classList.add('is-focus')
+      const drop = () => {
+        button.classList.remove('is-focus')
+        button.removeEventListener('blur', drop)
+        this.dialog.removeEventListener('pointerdown', drop)
+      }
+      button.addEventListener('blur', drop)
+      this.dialog.addEventListener('pointerdown', drop)
+    }
   }
 
   // Show the dialog again, now the newest entry in the top layer: above, and
@@ -445,7 +639,7 @@ export default class BlockScreen {
     }
     // Focus in the closed shadow root reads as the host.
     const refocus = () => {
-      this.snoozeButton.focus({ preventScroll: true })
+      this.closeButton.focus({ preventScroll: true })
       return document.activeElement === this.host
     }
     if (!refocus()) {
@@ -481,10 +675,10 @@ export default class BlockScreen {
       return
     }
     e.preventDefault()
-    const order = [this.snoozeButton, this.activityButton, this.manageButton]
+    const order = [this.closeButton, this.holdButton.el, this.settingsButton, this.activityButton]
     const current = order.indexOf(this.shadow.activeElement as HTMLButtonElement)
     const step = e.shiftKey ? order.length - 1 : 1
-    const next = current === -1 ? this.snoozeButton : order[(current + step) % order.length]!
+    const next = current === -1 ? this.closeButton : order[(current + step) % order.length]!
     next.focus({ preventScroll: true })
   }
 }
@@ -549,4 +743,76 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
       style.setProperty(p, value, priority)
     }
   }
+}
+
+const toMinutes = (ms: number) => Math.round(ms / 60_000)
+
+// "1 h 10 min today · snoozed twice, 10 min over": the time against the
+// limit that blocked, the snoozes it took, and the time past it in the
+// accent (the chart's overage). Snoozes and overage only when there are any.
+function summaryOf(reason: BlockReason, snoozes: number): Array<Node | string> {
+  const today = reason.scope === 'site' ? t('blockToday') : t('blockTodayAllSites')
+  const parts: Array<Node | string> = [h('b', {}, formatDuration(reason.elapsed)), ` ${today}`]
+  const over = reason.elapsed - reason.limit
+  const snoozed = snoozedText(snoozes)
+  const showOver = toMinutes(over) >= 1
+  if (!snoozed && !showOver) {
+    return parts
+  }
+  parts.push(' · ')
+  if (snoozed) {
+    // Mid-sentence: "snoozed twice".
+    parts.push(snoozed.charAt(0).toLocaleLowerCase(uiLocale()) + snoozed.slice(1))
+  }
+  if (showOver) {
+    parts.push(snoozed ? ', ' : '', h('span', { class: 'over-ink' }, t('popupOverSite', formatDuration(over))))
+  }
+  return parts
+}
+
+// Today on `site` by hour: grey within `limit` (null: none to split at), an
+// accent cap past it, the limit's tick named where it fell, a value over the
+// busiest bars that have room, and the current hour marked Now.
+function drawChart(el: HTMLElement, hours: number[], limit: number | null, now: number, site: string): void {
+  const top = Math.max(HOUR_FLOOR_MS, ...hours)
+  const parts = splitAtLimit(hours, limit, true)
+  // Values over bars with no labelled neighbour: Now first, then the
+  // busiest.
+  const labelled = new Set<number>()
+  const order = [now, ...hours.map((_, i) => i).sort((a, b) => hours[b]! - hours[a]!)]
+  for (const i of order) {
+    if (toMinutes(hours[i]!) >= 1 && !labelled.has(i - 1) && !labelled.has(i + 1)) {
+      labelled.add(i)
+    }
+  }
+  const empty = (i: number) => i < 0 || i >= hours.length || hours[i]! === 0
+  const cols = parts.map((part, i) => {
+    const col = h('div', { 'data-hour': String(i), 'data-now': i === now })
+    // The limit's name on the side with room: left unless that neighbour has
+    // a bar and the right one doesn't (or there is no room left).
+    const side = i >= 2 && (empty(i - 1) || !empty(i + 1)) ? 'left' : 'right'
+    drawBar(col, part, top, limit === null ? null : { text: formatDuration(limit), side })
+    if (labelled.has(i)) {
+      col.append(h('span', { class: 'val' }, t('limitChipMinutes', String(toMinutes(hours[i]!)))))
+    }
+    return col
+  })
+  const locale = uiLocale()
+  // Axis names that would crowd Now give way to it.
+  const marks = AXIS_MARKS.filter((hour) => Math.abs(hour - now) >= 3)
+  const axisLabel = (hour: number, text: string, cls?: string) => {
+    const span = h('span', { class: cls }, text)
+    span.style.setProperty('--h', String(hour))
+    return span
+  }
+  el.setAttribute('aria-label', t('popupStripAria', site))
+  el.replaceChildren(
+    h('div', { class: 'plot' }, ...cols),
+    h(
+      'div',
+      { class: 'axis', 'aria-hidden': 'true' },
+      ...marks.map((hour) => axisLabel(hour, hourLabel(hour, locale), hour === 0 ? 'first' : undefined)),
+      axisLabel(now, t('blockNow'), now === 0 ? 'now first' : 'now')
+    )
+  )
 }

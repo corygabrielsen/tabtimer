@@ -68,7 +68,6 @@
   --shadow-btn:
     0 1px 0 rgba(255, 255, 255, 0.2) inset, 0 1px 2px rgba(8, 60, 55, 0.28), 0 8px 20px -8px rgba(11, 114, 104, 0.5);
   --shadow-press: 0 1px 2px rgba(8, 60, 55, 0.35) inset;
-  --glow: rgba(11, 114, 104, 0.06);
 
   /* Type: system fonts only */
   --font:
@@ -143,6 +142,5 @@
     --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04) inset, 0 6px 16px -6px rgba(0, 0, 0, 0.6);
     --shadow-btn: 0 1px 0 rgba(255, 255, 255, 0.28) inset, 0 8px 24px -10px rgba(67, 196, 181, 0.45);
     --shadow-press: 0 1px 3px rgba(0, 0, 0, 0.35) inset;
-    --glow: rgba(67, 196, 181, 0.05);
   }
 }

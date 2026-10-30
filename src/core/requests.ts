@@ -49,6 +49,8 @@ export function parseRequest(raw: unknown): Request | null {
   switch (raw.type) {
     case 'snooze':
       return { type: 'snooze' }
+    case 'closeTab':
+      return { type: 'closeTab' }
     case 'todayTotals':
       return { type: 'todayTotals' }
     case 'open':

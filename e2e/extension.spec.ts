@@ -11,7 +11,7 @@ import {
   openInterval,
   checkpoint,
   shadowText,
-  clickInShadow,
+  snoozeBlock,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -184,8 +184,7 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
   const text = await shadowText(page, BLOCK_ID)
   expect(text).toContain("Time's up")
   expect(text).toContain(SITE_A)
-  expect(text).not.toContain('all tracked sites')
-  expect(text).toContain('00:10:00 limit')
+  expect(await shadowText(page, BLOCK_ID, '.used')).toBe('10 min today')
 })
 
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
@@ -198,9 +197,7 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
     const page = await context.newPage()
     await page.goto(site(host))
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-    const text = await shadowText(page, BLOCK_ID)
-    expect(text).toContain('all tracked sites')
-    expect(text).toContain('00:10:00 limit')
+    expect(await shadowText(page, BLOCK_ID, '.used')).toBe('11 min today on all sites · 1 min over')
   }
 })
 
@@ -214,9 +211,9 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
   const block = page.locator(`#${BLOCK_ID}`)
   await expect(block).toBeVisible()
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(block).toBeHidden()
-  // The page lifts the block at the click; the worker stores the snooze after.
+  // The page lifts the block once held; the worker stores the snooze after.
   await expect
     .poll(async () => ((await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil)
     .toBeGreaterThan(Date.now() + 4 * MINUTE)
@@ -241,7 +238,7 @@ test('a snooze is recorded for the day, and the popup counts it', async ({
   const page = await context.newPage()
   await page.goto(site(SITE_A))
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   const key = (await todayKey(serviceWorker)).replace('day:', 'snoozes:')
   await expect
     .poll(() => read(serviceWorker, key))

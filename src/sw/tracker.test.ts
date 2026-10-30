@@ -71,6 +71,7 @@ describe('presence', () => {
       blockAt: null,
       limit: null,
       snoozes: [],
+      hours: emptyBuckets(),
       prefs: { hidden: false, scale: 1 },
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
@@ -90,14 +91,20 @@ describe('presence', () => {
   })
 
   it('counts the open interval’s uncredited time in the state it gives', async () => {
-    browser.storage.local.seed({ 'day:2026-06-10': { 'b.com': emptyBuckets().fill(1000) } })
+    const stored = emptyBuckets()
+    stored[9] = 5 * S
+    browser.storage.local.seed({ 'day:2026-06-10': { 'b.com': emptyBuckets().fill(1000), 'a.com': stored } })
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     now += 20 * S
+    const hours = [...stored]
+    hours[12] = 20 * S
     await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
-      today: 20 * S,
-      globalToday: 24 * S + 20 * S,
+      today: 25 * S,
+      globalToday: 24 * S + 25 * S,
       running: true,
+      // By hour too: the uncredited part in the current hour.
+      hours,
     })
   })
 

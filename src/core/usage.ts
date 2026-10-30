@@ -3,11 +3,11 @@
 //
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
-import { addDays, dayOf, daysBetween, hourOf, utcOf, type DayStamp } from './day'
+import { addDays, dayOf, daysBetween, utcOf, type DayStamp } from './day'
 import { siteTodayAt, type TodayTotals } from './messages'
 import {
   dayOfKey,
-  emptyBuckets,
+  withTimeAt,
   isKept,
   normalizeDay,
   oldestKept,
@@ -72,9 +72,7 @@ export function withUncredited(history: History, totals: TodayTotals, now: numbe
   for (const site of Object.keys(totals.sites)) {
     const ms = siteTodayAt(totals, site, now) - siteTotal(stored, site)
     if (ms > 0) {
-      const buckets = [...(stored[site] ?? emptyBuckets())]
-      buckets[hourOf(now)]! += ms
-      usage[site] = buckets
+      usage[site] = withTimeAt(stored[site], now, ms)
       added = true
     }
   }

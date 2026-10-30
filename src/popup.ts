@@ -11,7 +11,7 @@ import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, t
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, h, setDocumentLang, snoozedText, uiLocale } from './ui'
-import { drawBar, drawMeter } from './bars'
+import { drawBar, drawMeter, HOUR_FLOOR_MS } from './bars'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; url: string }
@@ -44,10 +44,6 @@ function activeTab(): Promise<ActiveTab | null> {
 // answers), read at `now`, against the limits as set.
 type Snapshot = { tab: TabState | null; limits: Limits; now: number }
 
-// The strip's full height: the day's busiest hour, or this much if less, so a
-// few minutes don't fill it.
-const STRIP_FLOOR_MS = 10 * 60_000
-
 // The hours the timeline names: midnight, 6, noon and 18.
 const STRIP_MARKS = [0, 6, 12, 18]
 
@@ -70,7 +66,7 @@ function renderStrip(base: string, hours: number[], limit: number | null) {
   if (!strip || !axis) {
     return
   }
-  const top = Math.max(STRIP_FLOOR_MS, ...hours)
+  const top = Math.max(HOUR_FLOOR_MS, ...hours)
   strip.setAttribute('aria-label', t('popupStripAria', base))
   const placed = <E extends HTMLElement>(el: E, hour: number) => {
     el.style.left = at(hour)

@@ -6,7 +6,7 @@ import {
   today,
   todayKey,
   openPopup,
-  clickInShadow,
+  snoozeBlock,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -341,15 +341,14 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
       const findings = await audit(page)
 
-      await clickInShadow(page, BLOCK_ID, '.snooze')
-      await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+      await snoozeBlock(page)
       await expect(page.locator(`#${OVERLAY_ID}`)).toBeVisible()
       findings.push(...(await audit(page)))
       await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 120 } } })
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'limit tick'])).toEqual([])
     })
   })
 }

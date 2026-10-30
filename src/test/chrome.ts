@@ -404,6 +404,7 @@ export class FakeChrome {
       this.sendToTab(tabId, message)
     ),
     create: vi.fn((props: { url?: string }) => Promise.resolve({ id: 99, windowId: 1, ...props })),
+    remove: vi.fn(() => Promise.resolve()),
     // Each tab's mute, as tabs.get reports it; an unknown tab is unmuted.
     get: vi.fn((tabId: number) =>
       Promise.resolve({ id: tabId, mutedInfo: this.mutedInfo.get(tabId) ?? { muted: false } })

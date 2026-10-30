@@ -4,6 +4,10 @@
 import type { LimitSplit } from './core/usage'
 import { h } from './ui'
 
+// An hour chart's full height: the busiest hour, or this much if less, so
+// a few minutes don't fill it.
+export const HOUR_FLOOR_MS = 10 * 60_000
+
 // The gap either side of a limit tick, taken out of the bar so its height
 // stays honest.
 const TICK_GAP_PX = 2

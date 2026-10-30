@@ -9,7 +9,7 @@
 import { dayOf, startOfDay } from '../core/day'
 import { blockAt, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
-import { dayTotal, siteTotal, type DayUsage, type Prefs } from '../core/schema'
+import { dayTotal, siteTotal, withTimeAt, type DayUsage, type Prefs } from '../core/schema'
 import { trackedSite, type Site } from '../core/site'
 import { snoozeCounts, snoozeMarks, type Snooze } from '../core/snooze'
 import { creditEnd, step, type Attest, type Open, type TrackerEvent, type TrackerState } from '../core/tracker'
@@ -79,6 +79,7 @@ export function createTracker(deps: TrackerDeps) {
         blockAt: block?.at ?? null,
         limit: block ? { scope: block.scope, ms: block.limit } : null,
         snoozes: snoozeMarks(snoozes, attest.site, block?.scope ?? 'site'),
+        hours: withTimeAt(usage[attest.site], tx.now, extra),
         prefs,
       }
     }
