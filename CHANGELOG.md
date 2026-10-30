@@ -8,8 +8,8 @@ All notable changes to Tab Timer. The format follows
 
 ### Added
 
-- The block screen shows today's time on the site, hour by hour, and how far
-  past the limit you went.
+- The block screen shows today's time on the site against your limit, and
+  hour by hour.
 
 ### Changed
 
@@ -18,7 +18,8 @@ All notable changes to Tab Timer. The format follows
 - The block screen leads with Close tab. 2 more minutes now takes holding the
   button for two seconds.
 - A snooze lasts 2 minutes (was 5).
-- The popup's meter marks your limit, and shows time past it in the accent.
+- The popup reads today's time against your limit as 01:10:00 / 01:00:00, in
+  place of the meter.
 
 ### Removed
 
