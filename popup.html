@@ -19,18 +19,14 @@
       <section id="tracked" hidden aria-labelledby="site">
         <div id="hero" class="hero card" data-state="open">
           <div class="hero-top">
-            <h1 class="host"><span id="site-fav" class="fav" aria-hidden="true"></span><span id="site"></span></h1>
+            <h1 class="host"><span id="site"></span></h1>
             <span id="status" class="badge"></span>
           </div>
           <p class="readout figure" data-i18n-attr="title=tooltipToday">
             <span class="visually-hidden" data-i18n="labelToday">Today</span>
-            <span id="today">0:00:00</span>
-            <span id="readout-of" class="of"></span>
+            <span id="today" class="time">0:00:00</span>
+            <span id="readout-of" class="limit"></span>
           </p>
-          <div id="meter-wrap" hidden>
-            <div id="meter" class="meter" role="meter" aria-valuemin="0"></div>
-            <div id="meter-label" class="meter-label" aria-hidden="true"></div>
-          </div>
           <div class="timeline">
             <div id="strip" class="strip" role="img"></div>
             <div id="strip-axis" class="strip-axis" aria-hidden="true"></div>
@@ -74,7 +70,7 @@
         <div class="hero card" data-state="idle">
           <div class="hero-top">
             <h1 class="host">
-              <span id="enable-fav" class="fav" aria-hidden="true"></span><span id="enable-site"></span>
+              <span id="enable-site"></span>
             </h1>
             <span class="badge" data-i18n="popupNotTrackedTitle">Not tracked</span>
           </div>

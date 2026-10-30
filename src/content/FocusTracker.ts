@@ -343,6 +343,11 @@ export default class FocusTracker {
     return this.state?.site ?? null
   }
 
+  // The worker's last state for this tab (null: none yet).
+  get tabState(): TabState | null {
+    return this.state
+  }
+
   // The overlay preferences, once the worker has said.
   get prefs(): Prefs | null {
     return this.state?.prefs ?? null

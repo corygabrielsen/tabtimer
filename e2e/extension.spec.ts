@@ -5,13 +5,12 @@ import {
   read,
   today,
   readToday,
-  todayKey,
-  openPopup,
   setPageFocus,
   openInterval,
   checkpoint,
   shadowText,
-  clickInShadow,
+  shadowAttribute,
+  snoozeBlock,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -182,10 +181,10 @@ test('per-site limit blocks and names the site', async ({ context, serviceWorker
 
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   const text = await shadowText(page, BLOCK_ID)
-  expect(text).toContain("Time's up")
+  expect(text).toContain('Take a break.')
   expect(text).toContain(SITE_A)
-  expect(text).not.toContain('all tracked sites')
-  expect(text).toContain('00:10:00 limit')
+  // The readout states its own limit.
+  expect(await shadowText(page, BLOCK_ID, '.readout .limit')).toBe('/ 00:10:00')
 })
 
 test('global cap across two tracked sites blocks', async ({ context, serviceWorker, site }) => {
@@ -198,13 +197,12 @@ test('global cap across two tracked sites blocks', async ({ context, serviceWork
     const page = await context.newPage()
     await page.goto(site(host))
     await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-    const text = await shadowText(page, BLOCK_ID)
-    expect(text).toContain('all tracked sites')
-    expect(text).toContain('00:10:00 limit')
+    // The all-sites limit: this site's hours aren't split.
+    expect(await shadowAttribute(page, BLOCK_ID, '.chart .seg.over', 'data-part')).toBeNull()
   }
 })
 
-test('"5 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
+test('"2 more minutes" lifts the block until the snooze expires', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
     ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
@@ -214,43 +212,18 @@ test('"5 more minutes" lifts the block until the snooze expires', async ({ conte
   const block = page.locator(`#${BLOCK_ID}`)
   await expect(block).toBeVisible()
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(block).toBeHidden()
-  // The page lifts the block at the click; the worker stores the snooze after.
+  // The page lifts the block once held; the worker stores the snooze after.
   await expect
     .poll(async () => ((await read(serviceWorker, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil)
-    .toBeGreaterThan(Date.now() + 4 * MINUTE)
+    .toBeGreaterThan(Date.now() + MINUTE)
 
-  // Fast-forward: expire the snooze in storage instead of waiting 5 minutes.
+  // Fast-forward: expire the snooze in storage instead of waiting 2 minutes.
   await seed(serviceWorker, {
     [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 }, snoozeUntil: Date.now() - 1_000 },
   })
   await expect(block).toBeVisible()
-})
-
-test('a snooze is recorded for the day, and the popup counts it', async ({
-  context,
-  serviceWorker,
-  extensionId,
-  site,
-}) => {
-  await seed(serviceWorker, {
-    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 1 } },
-    ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
-  })
-  const page = await context.newPage()
-  await page.goto(site(SITE_A))
-  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
-  const key = (await todayKey(serviceWorker)).replace('day:', 'snoozes:')
-  await expect
-    .poll(() => read(serviceWorker, key))
-    .toEqual([expect.objectContaining({ site: SITE_A, ms: 5 * MINUTE, siteMs: 2 * MINUTE })])
-
-  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
-  await expect(popup.locator('#summary')).toHaveText(/^Snoozed once, 1 min over · [45] min left$/)
-  // The minute over before the block, then the time since the snooze.
-  await expect(popup.locator('#meter .over')).toHaveCount(2)
 })
 
 test('changing the limit lifts or restores the block live', async ({ context, serviceWorker, site }) => {
@@ -320,6 +293,6 @@ test('a limit exactly equal to today’s time blocks', async ({ context, service
   await page.waitForTimeout(500)
   await expect(block).toBeHidden()
   await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 3 } } })
-  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain("Time's up")
+  await expect.poll(() => shadowText(page, BLOCK_ID)).toContain('Take a break.')
   await expect(block).toBeVisible()
 })

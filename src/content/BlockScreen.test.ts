@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://old.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import BlockScreen from './BlockScreen'
+import BlockScreen, { KEY_GUARD_MS } from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import { SNOOZE_MS } from '../core/limits'
+import { DONE_MS, HOLD_MS } from './hold'
 import { LIMITS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
+import { bucketsOf } from '../test/data'
 import { click, flush, normText, trackShadowRoots } from '../test/dom'
 import {
   disposeTrackers,
@@ -40,7 +42,20 @@ async function mount(): Promise<BlockScreen> {
 
 const host = () => document.getElementById('tabtimer-block')!
 const screen = () => shadowOf('tabtimer-block')
-const snoozeButton = () => screen().querySelector<HTMLButtonElement>('.snooze')
+const closeButton = () => screen().querySelector<HTMLButtonElement>('.close')
+const holdButton = () => screen().querySelector<HTMLButtonElement>('.hold')
+const dialog = () => screen().querySelector<HTMLDialogElement>('dialog')!
+
+// Hold "2 more minutes" down to the end, as a pointer would, and let the
+// done state run out.
+async function snooze(): Promise<void> {
+  const hold = holdButton()!
+  hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
+  vi.advanceTimersByTime(HOLD_MS + 50)
+  hold.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+  vi.advanceTimersByTime(DONE_MS)
+  await flush()
+}
 
 // An element of the host page, removed after the test.
 const pageElements: Element[] = []
@@ -87,9 +102,11 @@ describe('deciding to block', () => {
     logged('reddit.com', minutes(30))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.title'))).toBe("Time's up")
-    expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
-    expect(normText(screen().querySelector('.detail'))).toBe('00:30:00 today · 00:30:00 limit')
+    expect(normText(screen().querySelector('h1'))).toBe('Take a break.')
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
+    expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
+    // Right at the limit: nothing over to name.
+    expect(screen().querySelector('.val.over')).toBeNull()
   })
 
   it('counts this tab’s not-yet-reported time toward the limit', async () => {
@@ -117,8 +134,14 @@ describe('deciding to block', () => {
     logged('youtube.com', minutes(20))
     await mount()
     expect(isBlocked()).toBe(true)
-    expect(normText(screen().querySelector('.host'))).toBe('all tracked sites')
-    expect(normText(screen().querySelector('.detail'))).toBe('01:00:00 today · 01:00:00 limit')
+    // The all-sites label in the site's slot, and every tracked site's time
+    // against the all-sites limit.
+    expect(normText(screen().querySelector('.site'))).toBe('All tracked sites')
+    expect(normText(screen().querySelector('.readout'))).toBe('Today01:00:00/ 01:00:00')
+    // One site's hours can't be split at the all-sites limit: no cap, no
+    // label for it.
+    expect(screen().querySelectorAll('.seg.over')).toHaveLength(0)
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. All-sites limit reached.')
   })
 
   it('does not count earlier days toward the global cap', async () => {
@@ -134,8 +157,9 @@ describe('deciding to block', () => {
     logged('reddit.com', minutes(16))
     logged('x.com', minutes(10))
     await mount()
-    expect(normText(screen().querySelector('.host'))).toBe('reddit.com')
-    expect(normText(screen().querySelector('.detail'))).toBe('00:16:00 today · 00:15:00 limit')
+    expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
+    expect(normText(screen().querySelector('.readout'))).toBe('Today00:16:00/ 00:15:00')
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
   })
 
   it('fails open when limits cannot be read', async () => {
@@ -193,12 +217,11 @@ describe('snooze', () => {
     logged('reddit.com', minutes(30))
   })
 
-  it('offers five more minutes, then blocks again', async () => {
+  it('offers two more minutes, then blocks again', async () => {
     const blocker = await mount()
-    expect(normText(screen().querySelector('.snooze'))).toBe('5 more minutes')
-    click(snoozeButton())
+    expect(normText(holdButton()?.querySelector('.lbl'))).toBe('2 more minutes')
+    await snooze()
     expect(isBlocked()).toBe(false)
-    await flush()
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: Date.now() + SNOOZE_MS })
 
     await vi.advanceTimersByTimeAsync(SNOOZE_MS - 1000)
@@ -236,26 +259,21 @@ describe('block screen', () => {
     expect(host().shadowRoot).toBeNull()
     const dialog = screen().querySelector('.screen')!
     expect(dialog.getAttribute('role')).toBe('alertdialog')
-    expect(dialog.getAttribute('aria-label')).toBe("Time's up")
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
   })
 
-  it('opens the options page from the Limits link', async () => {
+  it('opens Settings', async () => {
     await mount()
-    const manage = screen().querySelector('.manage')
-    expect(manage?.textContent).toBe('Limits…')
-    click(manage)
+    const settings = screen().querySelector('.settings')
+    // An icon, named for assistive tech and in a tooltip.
+    expect(settings?.textContent).toBe('')
+    expect(settings?.querySelector('svg')).not.toBeNull()
+    expect(settings?.getAttribute('aria-label')).toBe('Settings')
+    expect(settings?.getAttribute('title')).toBe('Settings')
+    click(settings)
     await flush()
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
-  })
-
-  it('opens the activity page in a new tab and stays blocked', async () => {
-    await mount()
-    const activity = screen().querySelector('.activity')
-    expect(activity?.textContent).toBe('See activity')
-    click(activity)
-    await flush()
-    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
-    expect(isBlocked()).toBe(true)
   })
 
   it('replaces a stale block screen instead of stacking a second one', async () => {
@@ -285,11 +303,36 @@ describe('block screen', () => {
     expect(dialog.open).toBe(true)
   })
 
-  it('moves focus to the snooze button when it appears', async () => {
+  it('focuses the dialog itself when it appears, no button', async () => {
     await mount()
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
+    expect(dialog().getAttribute('tabindex')).toBe('-1')
     // Focus inside a closed shadow root retargets to its host.
     expect(document.activeElement).toBe(host())
+  })
+
+  it('swallows every key for its first moments, then only Escape', async () => {
+    await mount()
+    for (const key of ['Enter', ' ', 'a']) {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      dialog().dispatchEvent(e)
+      expect(e.defaultPrevented).toBe(true)
+    }
+    vi.advanceTimersByTime(KEY_GUARD_MS)
+    const later = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+    dialog().dispatchEvent(later)
+    expect(later.defaultPrevented).toBe(false)
+    expect(isBlocked()).toBe(true)
+    expect(browser.tabs.remove).not.toHaveBeenCalled()
+  })
+
+  it('closes the tab through the worker from Close tab', async () => {
+    await mount()
+    expect(normText(closeButton())).toBe('Close tab')
+    click(closeButton())
+    await flush()
+    expect(browser.tabs.remove).toHaveBeenCalledOnce()
+    expect(isBlocked()).toBe(true)
   })
 
   it('pulls focus back when something on the page takes it', async () => {
@@ -298,36 +341,42 @@ describe('block screen', () => {
     await mount()
     pageLink.focus()
     expect(document.activeElement).toBe(host())
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
-  it('cycles Tab and Shift+Tab through its buttons', async () => {
+  it('cycles Tab and Shift+Tab through its buttons, from the dialog', async () => {
     await mount()
-    const manage = screen().querySelector<HTMLButtonElement>('.manage')!
-    const activity = screen().querySelector<HTMLButtonElement>('.activity')!
+    vi.advanceTimersByTime(KEY_GUARD_MS)
+    const settings = screen().querySelector<HTMLButtonElement>('.settings')!
     const seen: (Element | null)[] = []
-    for (const shiftKey of [false, false, false, true, true]) {
+    for (const shiftKey of [false, false, false, false, true, true]) {
       const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
       screen().activeElement!.dispatchEvent(tab)
       expect(tab.defaultPrevented).toBe(true)
       seen.push(screen().activeElement)
     }
-    expect(seen).toEqual([activity, manage, snoozeButton(), manage, activity])
+    expect(seen).toEqual([closeButton(), holdButton(), settings, closeButton(), settings, holdButton()])
+    // Shift+Tab from the dialog itself: the last button.
+    dialog().focus()
+    dialog().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+    )
+    expect(screen().activeElement).toBe(settings)
   })
 
-  it('leaves other keys alone', async () => {
+  it('leaves other keys alone once settled', async () => {
     await mount()
+    vi.advanceTimersByTime(KEY_GUARD_MS)
     const key = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
-    snoozeButton()!.dispatchEvent(key)
+    closeButton()!.dispatchEvent(key)
     expect(key.defaultPrevented).toBe(false)
-    expect(screen().activeElement).toBe(snoozeButton())
   })
 
   it('cannot be dismissed with Escape', async () => {
     await mount()
     const dialog = screen().querySelector<HTMLDialogElement>('dialog')!
     const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-    snoozeButton()!.dispatchEvent(esc)
+    closeButton()!.dispatchEvent(esc)
     expect(esc.defaultPrevented).toBe(true)
     const cancel = new Event('cancel', { cancelable: true })
     dialog.dispatchEvent(cancel)
@@ -337,12 +386,11 @@ describe('block screen', () => {
 
   it('reopens if the browser closes it while still blocked', async () => {
     await mount()
-    const dialog = screen().querySelector<HTMLDialogElement>('dialog')!
-    dialog.close()
+    dialog().close()
     await flush()
-    expect(dialog.open).toBe(true)
+    expect(dialog().open).toBe(true)
     expect(isBlocked()).toBe(true)
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
   it('still shows if showModal is refused', async () => {
@@ -353,7 +401,7 @@ describe('block screen', () => {
     await mount()
     expect(isBlocked()).toBe(true)
     expect(screen().querySelector('dialog')!.hasAttribute('open')).toBe(true)
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
   it('gives focus back to the page when dismissed', async () => {
@@ -361,7 +409,7 @@ describe('block screen', () => {
     pageButton.focus()
     await mount()
     expect(document.activeElement).toBe(host())
-    click(snoozeButton())
+    await snooze()
     expect(document.activeElement).toBe(pageButton)
     expect(screen().querySelector<HTMLDialogElement>('dialog')!.open).toBe(false)
   })
@@ -377,13 +425,85 @@ describe('block screen', () => {
     gone.focus()
     await mount()
     gone.remove()
-    click(snoozeButton())
+    await snooze()
     expect(document.activeElement).not.toBe(gone)
   })
 
   it('takes the snooze length from SNOOZE_MS', async () => {
     await mount()
-    expect(normText(screen().querySelector('.snooze'))).toBe(`${SNOOZE_MS / 60_000} more minutes`)
+    expect(normText(holdButton()?.querySelector('.lbl'))).toBe(`${SNOOZE_MS / 60_000} more minutes`)
+  })
+})
+
+describe('what it shows', () => {
+  // Half an hour at 10, 40 min in this hour (noon) against a 1 h limit.
+  beforeEach(() => {
+    browser.storage.local.seed({
+      'day:2026-06-10': { 'reddit.com': bucketsOf({ 10: minutes(30), 12: minutes(40) }), 'x.com': bucketsOf({ 9: 1 }) },
+    })
+    seedLimits({ perSite: { 'reddit.com': 60 } })
+  })
+
+  it('orders the title, then the site and its time as one block', async () => {
+    await mount()
+    const column = screen().querySelector('.column')!
+    expect([...column.children].slice(0, 3).map((el) => el.className || el.localName)).toEqual([
+      'h1',
+      'site',
+      'readout readout-secondary',
+    ])
+  })
+
+  it('reads out today against the limit as the popup does, with no meter', async () => {
+    await mount()
+    expect(normText(screen().querySelector('.readout'))).toBe('Today01:10:00/ 01:00:00')
+    // One notation, one size: the limit in HH:MM:SS too, no "of 1 h".
+    expect(screen().querySelector('.readout small')).toBeNull()
+    expect(normText(screen().querySelector('.readout .limit'))).toBe('/ 01:00:00')
+    expect(screen().querySelector('.readout')?.classList.contains('readout-secondary')).toBe(true)
+    expect(screen().querySelector('.meter')).toBeNull()
+  })
+
+  it('charts today by hour, one tone, now marked', async () => {
+    await mount()
+    const chart = screen().querySelector('.chart')!
+    expect(chart.getAttribute('role')).toBe('img')
+    expect(chart.getAttribute('aria-label')).toBe('Today on reddit.com, by hour')
+    const col = (hour: number) => chart.querySelector(`[data-hour="${hour}"]`)!
+    expect(chart.querySelectorAll('[data-hour]')).toHaveLength(24)
+    expect(chart.querySelectorAll('[data-now]')).toEqual(expect.objectContaining({ length: 1 }))
+    expect(col(12).hasAttribute('data-now')).toBe(true)
+    // Usage only: noon went past the limit, but its bar is one piece, as
+    // is every other. The readout states the limit.
+    expect([...col(10).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['usage'])
+    expect([...col(12).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['usage'])
+    expect(chart.querySelectorAll('.tick, .tick-label, .seg.over')).toHaveLength(0)
+    expect([...chart.querySelectorAll('.val')].map(normText)).toEqual(['30m', '40m'])
+    const axis = [...chart.querySelectorAll('.axis span')].map(normText)
+    expect(axis.at(-1)).toBe('Now')
+    // Noon gives way to Now beside it.
+    expect(axis).toHaveLength(4)
+    expect(chart.querySelector('.axis .now')?.getAttribute('style')).toContain('--h: 12')
+  })
+
+  it('counts the time a snooze took when it blocks again', async () => {
+    const blocker = await mount()
+    await snooze()
+    expect(isBlocked()).toBe(false)
+    await vi.advanceTimersByTimeAsync(SNOOZE_MS)
+    blocker.tick()
+    await flush()
+    expect(isBlocked()).toBe(true)
+    expect(normText(screen().querySelector('.readout .time'))).toBe('01:12:00')
+    // Back at rest.
+    expect(holdButton()!.className).toBe('btn hold')
+  })
+
+  it('redraws only when what it shows changes', async () => {
+    const blocker = await mount()
+    const plot = screen().querySelector('.plot')
+    blocker.tick()
+    expect(screen().querySelector('.plot')).toBe(plot)
   })
 })
 
@@ -420,7 +540,7 @@ describe('media behind the block screen', () => {
     video.dispatchEvent(new Event('play'))
     expect(video.pause).toHaveBeenCalledTimes(2)
 
-    click(snoozeButton())
+    await snooze()
     expect(video.paused).toBe(true)
     // Once dismissed, the page may play again.
     video.dispatchEvent(new Event('play'))
@@ -447,7 +567,7 @@ describe('media behind the block screen', () => {
     blocker.tick()
     expect(late.pause).toHaveBeenCalledOnce()
 
-    click(snoozeButton())
+    await snooze()
     video.dispatchEvent(new Event('play'))
     expect(video.pause).toHaveBeenCalledTimes(2)
   })
@@ -489,7 +609,7 @@ describe('staying on the page', () => {
     blocker.tick()
     expect(document.getElementById('tabtimer-block')?.parentNode).toBe(document.documentElement)
     expect(showModal).toHaveBeenCalledTimes(2)
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
     // Nothing else changed: no further raise.
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
@@ -503,7 +623,7 @@ describe('staying on the page', () => {
     blocker.tick()
     expect(fresh.style.getPropertyValue('overflow-y')).toBe('hidden')
     expect(fresh.style.getPropertyPriority('overflow-y')).toBe('important')
-    click(snoozeButton())
+    await snooze()
     expect(fresh.style.getPropertyValue('overflow')).toBe('auto')
     expect(fresh.style.getPropertyPriority('overflow')).toBe('')
   })
@@ -537,7 +657,7 @@ describe('staying on top', () => {
     topLayer.push(page('dialog'))
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
-    expect(screen().activeElement).toBe(snoozeButton())
+    expect(screen().activeElement).toBe(dialog())
     // Now below the block screen: left alone.
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
@@ -570,7 +690,7 @@ describe('staying on top', () => {
     await mount()
     const dialogButton = page('button')
     // The page's modal dialog makes the block screen inert.
-    const focus = vi.spyOn(snoozeButton()!, 'focus').mockImplementation(() => undefined)
+    const focus = vi.spyOn(dialog(), 'focus').mockImplementation(() => undefined)
     dialogButton.focus()
     // Raised once the page's script is done.
     expect(showModal).toHaveBeenCalledTimes(1)
@@ -634,7 +754,7 @@ describe('fullscreen', () => {
 
   it('lets the page go fullscreen once dismissed', async () => {
     await mount()
-    click(snoozeButton())
+    await snooze()
     fullscreenElement = page('div')
     document.dispatchEvent(new Event('fullscreenchange'))
     expect(exitFullscreen).not.toHaveBeenCalled()
@@ -658,7 +778,7 @@ describe('page scroll lock', () => {
     style().setProperty('overflow', 'scroll', 'important')
     await mount()
     expect(style().getPropertyValue('overflow-y')).toBe('hidden')
-    click(snoozeButton())
+    await snooze()
     expect(style().getPropertyValue('overflow')).toBe('scroll')
     expect(style().getPropertyPriority('overflow')).toBe('important')
   })
@@ -674,7 +794,7 @@ describe('page scroll lock', () => {
   it('restores per-axis overflow', async () => {
     style().setProperty('overflow-y', 'scroll', 'important')
     await mount()
-    click(snoozeButton())
+    await snooze()
     expect(style().getPropertyValue('overflow-y')).toBe('scroll')
     expect(style().getPropertyPriority('overflow-y')).toBe('important')
     expect(style().getPropertyValue('overflow-x')).toBe('')
@@ -693,7 +813,7 @@ describe('page scroll lock', () => {
 
   it('does not restore twice', async () => {
     const blocker = await mount()
-    click(snoozeButton())
+    await snooze()
     style().setProperty('overflow', 'scroll')
     blocker.destroy()
     expect(style().getPropertyValue('overflow')).toBe('scroll')
@@ -704,7 +824,7 @@ describe('page scroll lock', () => {
     await mount()
     expect(body.getPropertyValue('overflow-y')).toBe('hidden')
     expect(body.getPropertyPriority('overflow-y')).toBe('important')
-    click(snoozeButton())
+    await snooze()
     expect(body.getPropertyValue('overflow-y')).toBe('auto')
     expect(body.getPropertyPriority('overflow-y')).toBe('important')
     expect(body.getPropertyValue('overflow-x')).toBe('')
@@ -720,7 +840,7 @@ describe('page scroll lock', () => {
     style().setProperty('overflow', 'auto')
     await mount()
     document.body.style.setProperty('overflow', 'clip')
-    click(snoozeButton())
+    await snooze()
     expect(style().getPropertyValue('overflow')).toBe('auto')
     expect(document.body.style.getPropertyValue('overflow')).toBe('clip')
   })
@@ -728,7 +848,7 @@ describe('page scroll lock', () => {
   it('P3: restores the axis the page left alone when it changed the other while blocked', async () => {
     await mount()
     style().overflowX = 'auto'
-    click(snoozeButton())
+    await snooze()
     expect(style().getPropertyValue('overflow-x')).toBe('auto')
     expect(style().getPropertyValue('overflow-y')).toBe('')
   })
@@ -739,7 +859,7 @@ describe('page scroll lock', () => {
     // Hiding overflow clamped the window's offset while blocked.
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
     try {
-      click(snoozeButton())
+      await snooze()
       expect(scrollTo).toHaveBeenCalledWith({ left: 0, top: 0, behavior: 'instant' })
     } finally {
       delete (window as { scrollY?: number }).scrollY

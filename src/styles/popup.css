@@ -76,31 +76,8 @@ body {
   gap: var(--s-3);
 }
 
-.readout {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s-2);
+.hero .readout {
   margin: var(--s-4) 0 var(--s-3);
-  line-height: 1;
-}
-
-#today {
-  font-size: var(--t-xl);
-  font-weight: 620;
-  letter-spacing: -0.03em;
-}
-
-/* Seconds: smaller and lighter, so the minutes read first. */
-#today small {
-  font-size: 26px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--muted);
-}
-
-.of {
-  color: var(--muted);
-  font-size: 14px;
 }
 
 .summary {

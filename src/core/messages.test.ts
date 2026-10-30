@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { BlockReason } from './limits'
 import {
+  hoursAt,
   latestTotals,
   overAt,
   parsePresence,
@@ -38,7 +39,7 @@ describe('a state read at a later moment', () => {
     running: true,
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
-    snoozes: [],
+    hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
 
@@ -68,6 +69,22 @@ describe('a state read at a later moment', () => {
     expect(overAt(state, NOON + 3_600_000, 'ignored')).toBeNull()
     // A state not running projects nothing: its blockAt still holds.
     expect(overAt({ ...state, running: false }, NOON + 3_600_000, 'holds')).not.toBeNull()
+  })
+
+  it('grows the current hour of the hours by what the totals grew by', () => {
+    const hours = Array<number>(24).fill(0)
+    hours[9] = 20_000
+    hours[12] = 30_000
+    const at = { ...state, hours }
+    const grown = hoursAt(at, NOON + 4000)
+    expect(grown[12]).toBe(34_000)
+    expect(grown[9]).toBe(20_000)
+    expect(grown.reduce((a, b) => a + b, 0)).toBe(totalsAt(at, NOON + 4000).siteToday)
+    expect(hoursAt({ ...at, running: false }, NOON + 4000)).toEqual(hours)
+    // Past midnight: only the time since, in the new day's first hour.
+    const late = hoursAt({ ...at, asOf: MIDNIGHT - 1000 }, MIDNIGHT + 3000)
+    expect(late[0]).toBe(3000)
+    expect(late.reduce((a, b) => a + b, 0)).toBe(3000)
   })
 
   it('matches the worker’s suspension gap', () => {
@@ -105,7 +122,6 @@ describe('every site’s time today, read at a later moment', () => {
     seq: 1,
     running: 'a.com',
     sites: { 'a.com': 50_000, 'b.com': 20_000 },
-    snoozes: {},
   }
 
   it('runs on for the running site only, and starts again at midnight', () => {
@@ -138,7 +154,7 @@ describe('every site’s time today, read at a later moment', () => {
       running: true,
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
-      snoozes: [],
+      hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
     }
     for (const at of [NOON, NOON + 9999, NOON + 10_000, NOON + 60_000, NOON + PROJECT_MS + 1]) {
@@ -154,7 +170,6 @@ describe('latestTotals', () => {
     seq,
     running: null,
     sites: {},
-    snoozes: {},
   })
 
   it('keeps the later transaction’s answer, and none when the worker fails', () => {
@@ -177,7 +192,7 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
-    snoozes: [60_000],
+    hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
   }
 
@@ -211,8 +226,9 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, limit: { scope: 'week', ms: 1 } }, probe: false },
     { type: 'state', state: { ...state, limit: { scope: 'site', ms: '1' } }, probe: false },
     { type: 'state', state: { ...state, limit: 5 }, probe: false },
-    { type: 'state', state: { ...state, snoozes: undefined }, probe: false },
-    { type: 'state', state: { ...state, snoozes: ['1'] }, probe: false },
+    { type: 'state', state: { ...state, hours: undefined }, probe: false },
+    { type: 'state', state: { ...state, hours: [1, 2] }, probe: false },
+    { type: 'state', state: { ...state, hours: Array(24).fill('1') }, probe: false },
     { type: 'state', state: { ...state, prefs: undefined }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: 'no', scale: 1 } }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: false, scale: '1' } }, probe: false },
@@ -231,5 +247,6 @@ describe('SENDERS', () => {
   it('lets only content scripts snooze and open pages', () => {
     expect(SENDERS.snooze).toEqual(['content'])
     expect(SENDERS.open).toEqual(['content'])
+    expect(SENDERS.closeTab).toEqual(['content'])
   })
 })

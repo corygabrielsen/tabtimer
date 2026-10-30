@@ -24,6 +24,8 @@ export type RouterDeps = {
   // chrome.runtime.getURL(''): the prefix of every extension page URL.
   extensionUrl: string
   open: (page: Page) => Promise<void>
+  // Close a tab (a block screen's Close tab).
+  closeTab: (tabId: number) => Promise<void>
 }
 
 // Where a request came from, and for a content script the site it runs on
@@ -91,8 +93,12 @@ export function createRouter(deps: RouterDeps): Handler {
       await ledger.setLimit(edit)
       return null
     },
-    snooze: async (_req, ctx) => {
-      await tracker.snooze(ctx.site!)
+    snooze: async () => {
+      await tracker.snooze()
+      return null
+    },
+    closeTab: async (_req, ctx) => {
+      await deps.closeTab(ctx.tab!.id)
       return null
     },
     setPrefs: async (change) => {

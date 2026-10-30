@@ -18,7 +18,7 @@ export const DEFAULT_LIMITS: Limits = { global: null, perSite: {}, snoozeUntil: 
 export const MIN_LIMIT_MINUTES = 1
 export const MAX_LIMIT_MINUTES = 1440
 
-export const SNOOZE_MS = 5 * 60 * 1000
+export const SNOOZE_MS = 2 * 60 * 1000
 
 // The snooze's end as of `now` (0: none). One ending more than SNOOZE_MS
 // after `now` was set before the clock went back: it is void.

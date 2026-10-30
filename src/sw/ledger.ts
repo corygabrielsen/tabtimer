@@ -26,7 +26,6 @@ import {
   normalizeClock,
   normalizePrefs,
   settleClock,
-  snoozeKey,
   CLOCK_KEY,
   LIMITS_KEY,
   PREFS_KEY,
@@ -38,7 +37,6 @@ import {
 } from '../core/schema'
 import { isFiniteNumber } from '../core/guards'
 import { serial } from '../core/serial'
-import { normalizeSnoozes, type Snooze } from '../core/snooze'
 import { normalizeTracker, type Accrual, type TrackerState } from '../core/tracker'
 import type { Site } from '../core/site'
 import type { Clock, Store } from '../ports'
@@ -70,11 +68,8 @@ export type Tx = {
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
   prefs(): Promise<Prefs>
-  // Today's snoozes, oldest first.
-  snoozes(): Promise<Snooze[]>
-  // Suppress all blocking for SNOOZE_MS from now, and record the snooze
-  // (`taken`: who took it, and the times when it began).
-  snooze(taken: Pick<Snooze, 'site' | 'siteMs' | 'globalMs'>): Promise<void>
+  // Suppress all blocking for SNOOZE_MS from now.
+  snooze(): Promise<void>
 }
 
 export type Ledger = ReturnType<typeof createLedger>
@@ -120,11 +115,6 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     const changed = new Set<string>()
     // The limits to write back: a void snooze cleared, or a new one.
     let newLimits: Limits | null = null
-    // Today's snoozes as read, and whether they changed.
-    let snoozed: Snooze[] | null = null
-    let snoozedChanged = false
-    const todaySnoozes = async (): Promise<Snooze[]> =>
-      (snoozed ??= normalizeSnoozes(await local.get(snoozeKey(today))))
 
     async function day(key: string): Promise<DayUsage> {
       let usage = days.get(key)
@@ -183,11 +173,8 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         }
         return limits
       },
-      snoozes: todaySnoozes,
-      snooze: async (taken) => {
+      snooze: async () => {
         newLimits = { ...(await tx.limits()), snoozeUntil: now + SNOOZE_MS }
-        snoozed = [...(await todaySnoozes()), { ...taken, at: now, ms: SNOOZE_MS }]
-        snoozedChanged = true
       },
       prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
     }
@@ -196,9 +183,6 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     const writes: Record<string, unknown> = Object.fromEntries([...changed].map((key) => [key, days.get(key)]))
     if (newLimits) {
       writes[LIMITS_KEY] = newLimits
-    }
-    if (snoozedChanged) {
-      writes[snoozeKey(today)] = snoozed
     }
     if (clockCheck && clockCheck.next !== clockCheck.mark) {
       writes[CLOCK_KEY] = clockCheck.next

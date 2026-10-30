@@ -11,8 +11,8 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     setupFiles: ['src/test/setup.ts'],
-    // The tokens the content script's shadow roots import as text.
-    css: { include: [/tokens\.css/] },
+    // The tokens and shared components the content script's shadow roots import as text.
+    css: { include: [/(tokens|base)\.css/] },
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],

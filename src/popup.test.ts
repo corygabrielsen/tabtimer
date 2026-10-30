@@ -4,7 +4,7 @@ import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
-import { dayEntry, dayKeyOf, seedToday, startBackground, storedToday } from './test/content'
+import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
 import { bus } from './chrome/bus'
 
 let browser: FakeChrome
@@ -208,16 +208,17 @@ describe('popup on a tracked site', () => {
   })
 
   describe('state', () => {
-    it('with no limit: tracking, no meter, invites setting one', async () => {
+    it('with no limit: tracking, the time alone, invites setting one', async () => {
       await openReddit()
       expect(face()).toBe('open')
       expect(text('status')).toBe('Tracking')
-      expect($('meter').hidden).toBe(true)
+      expect(text('readout-of')).toBe('')
+      expect(document.getElementById('meter')).toBeNull()
       expect(text('summary')).toBe('No limit')
       expect($('global-line').hidden).toBe(true)
     })
 
-    it('under the site limit: meter and time left', async () => {
+    it('under the site limit: time against it, and time left', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } },
         ...dayEntry({ 'reddit.com': 23 * MIN }),
@@ -225,13 +226,8 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('ok')
       expect(text('status')).toBe('Tracking')
-      const meter = $('meter')
-      expect(meter.hidden).toBe(false)
-      expect(meter.getAttribute('role')).toBe('meter')
-      expect(meter.getAttribute('aria-valuenow')).toBe('23')
-      expect(meter.getAttribute('aria-valuemax')).toBe('60')
-      expect(meter.getAttribute('aria-valuetext')).toBe('23 min of 1 h')
-      expect(meter.getAttribute('aria-label')).toBe('Time used of the daily limit for reddit.com')
+      expect(text('today')).toBe('00:23:00')
+      expect(text('readout-of')).toBe('/ 01:00:00')
       expect(text('summary')).toBe('37 min left')
     })
 
@@ -244,7 +240,6 @@ describe('popup on a tracked site', () => {
       expect(face()).toBe('over')
       expect(text('status')).toBe('Limit reached')
       expect(text('summary')).toBe('3 min over')
-      expect($('meter').getAttribute('aria-valuenow')).toBe('45') // clamped to the max
     })
 
     // x.com tracked too: its time counts toward the all-sites total.
@@ -271,10 +266,11 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('over')
       expect(text('summary')).toBe('5 min over (all sites)')
-      expect($('meter').getAttribute('aria-label')).toBe('Time used of the daily limit for all tracked sites')
+      // The readout is this site's: no limit of its own to show.
+      expect(text('readout-of')).toBe('')
     })
 
-    it('with only an all-sites cap: the meter follows the cap', async () => {
+    it('with only an all-sites cap: the summary follows the cap', async () => {
       trackX()
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: 180, perSite: {} },
@@ -299,42 +295,35 @@ describe('popup on a tracked site', () => {
 
     it('snoozed: still over, says when blocking resumes', async () => {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 2 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
       expect(face()).toBe('snoozed')
       expect(text('status')).toBe('Snoozed')
-      expect(text('summary')).toBe('3 min over · 4 min left')
+      expect(text('summary')).toBe('3 min over · 2 min left')
     })
 
-    it('snoozed twice: counts them, and splits the time over at each', async () => {
-      const day = dayKeyOf()
-      const taken = (siteMs: number) => ({ site: 'reddit.com', at: 0, ms: 5 * MIN, siteMs, globalMs: siteMs })
+    it('over: the time against the limit, one notation, and by how much', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 }, snoozeUntil: Date.now() + 2 * MIN },
-        [`snoozes:${day.slice(4)}`]: [taken(60 * MIN), taken(65 * MIN)],
         ...dayEntry({ 'reddit.com': 70 * MIN }),
       })
       await openReddit()
       expect($('today').textContent).toBe('01:10:00')
-      expect($('today').querySelector('small')?.textContent).toBe(':00')
-      expect(text('readout-of')).toBe('of 1 h')
-      expect(text('summary')).toBe('Snoozed twice, 10 min over · 2 min left')
+      expect($('today').querySelector('small')).toBeNull()
+      expect(text('readout-of')).toBe('/ 01:00:00')
+      expect(text('summary')).toBe('10 min over · 2 min left')
       expect($('summary').querySelector('.over-ink')?.textContent).toBe('10 min over')
-      const meter = $('meter')
-      expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over', 'over'])
-      expect(text('meter-label')).toBe('1 h')
       expect($('status').getAttribute('data-tone')).toBe('accent')
     })
 
-    it('under the limit: the meter runs to an empty track and the limit’s mark', async () => {
+    it('under the limit: no accent', async () => {
       browser.storage.local.seed({
         [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } },
         ...dayEntry({ 'reddit.com': 20 * MIN }),
       })
       await openReddit()
-      expect([...$('meter').children].map((c) => c.className)).toEqual(['in', 'rest', 'lim'])
       expect($('status').hasAttribute('data-tone')).toBe(false)
     })
 
@@ -465,15 +454,15 @@ describe('popup on a tracked site', () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'Date'] })
     try {
       browser.storage.local.seed({
-        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 4 * MIN },
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 45 }, snoozeUntil: Date.now() + 2 * MIN },
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
-      expect(text('summary')).toContain('· 4 min left')
-      vi.advanceTimersByTime(2 * MIN)
       expect(text('summary')).toContain('· 2 min left')
+      vi.advanceTimersByTime(MIN)
+      expect(text('summary')).toContain('· 1 min left')
       // Once the snooze lapses the face goes back to blocking.
-      vi.advanceTimersByTime(3 * MIN)
+      vi.advanceTimersByTime(2 * MIN)
       expect(face()).toBe('over')
     } finally {
       vi.useRealTimers()

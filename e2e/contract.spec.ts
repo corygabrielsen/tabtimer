@@ -154,7 +154,7 @@ test('stored data from an older schema is cleared when the upgraded extension st
     const sw = await extensionWorker(after)
     expect(await sw.evaluate(() => chrome.runtime.getManifest().version)).toBe(`${manifest.version}.1`)
     expect(await sw.evaluate(() => chrome.storage.sync.get('marker'))).toEqual({ marker: 1 })
-    await expect.poll(() => sw.evaluate(() => chrome.storage.local.get(null))).toEqual({ schema: 4 })
+    await expect.poll(() => sw.evaluate(() => chrome.storage.local.get(null))).toEqual({ schema: 3 })
   } finally {
     await after.close()
   }

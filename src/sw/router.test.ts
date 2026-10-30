@@ -20,6 +20,7 @@ let browser: FakeChrome
 let NOW = NOON
 let handle: Handler
 let open: ReturnType<typeof vi.fn<(page: Page) => Promise<void>>>
+let closeTab: ReturnType<typeof vi.fn<(tabId: number) => Promise<void>>>
 
 const content = (url = 'https://old.reddit.com/r/all', extra: Partial<Sender> = {}): Sender => ({
   id: ID,
@@ -47,6 +48,7 @@ async function visit(sender = content(), extra: Record<string, unknown> = {}) {
 beforeEach(() => {
   browser = fakeChrome()
   open = vi.fn(() => Promise.resolve())
+  closeTab = vi.fn(() => Promise.resolve())
   NOW = NOON
   const clock = { now: () => NOW }
   const ledger = createLedger(chromeStore('local'), chromeStore('session'), clock)
@@ -58,7 +60,7 @@ beforeEach(() => {
     granted,
     mute: () => Promise.resolve(),
   })
-  handle = createRouter({ ledger, tracker, granted, extensionId: ID, extensionUrl: EXT, open })
+  handle = createRouter({ ledger, tracker, granted, extensionId: ID, extensionUrl: EXT, open, closeTab })
   browser.grant(['*://*/*'])
 })
 
@@ -201,7 +203,12 @@ describe('the current grants', () => {
   it('X1/W1: refuses a page no grant covers, and records nothing for it', async () => {
     await only(originsForSite('x.com'))
     await expect(handle(presence, content())).resolves.toEqual({ ok: false, error: 'untracked' })
-    for (const raw of [{ type: 'snooze' }, { type: 'setPrefs', hidden: true }, { type: 'open', page: 'options' }]) {
+    for (const raw of [
+      { type: 'snooze' },
+      { type: 'closeTab' },
+      { type: 'setPrefs', hidden: true },
+      { type: 'open', page: 'options' },
+    ]) {
       await expect(handle(raw, content())).resolves.toEqual({ ok: false, error: 'untracked' })
     }
     NOW += 3 * MIN
@@ -209,6 +216,7 @@ describe('the current grants', () => {
     expect(today()).toBeUndefined()
     expect(browser.storage.local.data[LIMITS_KEY]).toBeUndefined()
     expect(open).not.toHaveBeenCalled()
+    expect(closeTab).not.toHaveBeenCalled()
   })
 
   it('X1/W1: a revoke ends the page’s interval, though its last report is refused', async () => {
@@ -337,14 +345,24 @@ describe('handlers', () => {
     await expect(handle({ ...presence, media: 'yes' }, content())).resolves.toEqual({ ok: false, error: 'bad_request' })
   })
 
-  it('open the options or the activity page, from a tab only', async () => {
+  it('open the options page, from a tab only', async () => {
     await expect(handle({ type: 'open', page: 'options' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({ ok: true, value: null })
-    await expect(handle({ type: 'open', page: 'activity' }, page('usage.html'))).resolves.toEqual({
+    await expect(handle({ type: 'open', page: 'options' }, page('usage.html'))).resolves.toEqual({
       ok: false,
       error: 'forbidden',
     })
-    expect(open.mock.calls).toEqual([['options'], ['activity']])
+    // The activity page is opened from the extension's own pages only.
+    await expect(handle({ type: 'open', page: 'activity' }, content())).resolves.toEqual({
+      ok: false,
+      error: 'bad_request',
+    })
+    expect(open.mock.calls).toEqual([['options']])
+  })
+
+  it('closeTab closes the sending tab, from a tab only', async () => {
+    await expect(handle({ type: 'closeTab' }, page())).resolves.toEqual({ ok: false, error: 'forbidden' })
+    await expect(handle({ type: 'closeTab', tabId: 99 }, content())).resolves.toEqual({ ok: true, value: null })
+    expect(closeTab.mock.calls).toEqual([[7]])
   })
 
   it('answer internal when a handler fails', async () => {

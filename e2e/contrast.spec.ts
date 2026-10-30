@@ -1,21 +1,9 @@
 import type { CDPSession, Page } from '@playwright/test'
-import {
-  test,
-  expect,
-  seed,
-  today,
-  todayKey,
-  openPopup,
-  clickInShadow,
-  LIMITS_KEY,
-  OVERLAY_ID,
-  BLOCK_ID,
-  MINUTE,
-} from './fixtures'
+import { test, expect, seed, today, openPopup, snoozeBlock, LIMITS_KEY, OVERLAY_ID, BLOCK_ID, MINUTE } from './fixtures'
 
 // WCAG AA on the real built pages, light and dark: every visible text
 // against what is behind it (4.5:1, 3:1 when large), and the graphics that
-// carry meaning (the meter, the hour bars, the limit's mark, the switch, a
+// carry meaning (the hour bars, the switch, a
 // chosen chip, field edges) against theirs (3:1). The page script's shadow
 // roots are read through DevTools, which sees into closed roots. States the
 // pages don't show at rest (hover, pressed, focus) are checked as the token
@@ -72,12 +60,14 @@ const classes = (n: Node) => (attr(n, 'class') ?? '').split(/\s+/)
 
 // The graphics that carry meaning, by tag and class.
 const GRAPHICS: Array<[string, (node: Node) => boolean]> = [
-  ['hour bar', (n) => classes(n).includes('seg') && attr(n, 'data-part') !== null],
-  ['limit tick', (n) => classes(n).includes('tick')],
-  ['meter piece', (n) => n.nodeName === 'SPAN' && /^(in|over)$/.test(attr(n, 'class') ?? '')],
-  ['meter mark', (n) => classes(n).includes('lim')],
+  [
+    'hour bar',
+    (n) => classes(n).includes('seg') && (attr(n, 'data-part') !== null || attr(n, 'data-series') === 'site'),
+  ],
   ['switch', (n) => classes(n).includes('switch')],
   ['chosen chip', (n) => classes(n).includes('limit-chip') && attr(n, 'aria-checked') === 'true'],
+  // An icon button: its glyph is drawn in its text colour.
+  ['gear', (n) => classes(n).includes('gear')],
 ]
 
 type Finding = { what: string; ratio: number; need: number }
@@ -194,7 +184,7 @@ async function audit(page: Page): Promise<Finding[]> {
       continue
     }
     const s = await style(el)
-    const fill = parse(s['background-color'])!
+    const fill = parse(kind === 'gear' ? s.color : s['background-color'])!
     const { bg } = await behind(el, false)
     findings.push({ what: `${kind} (${s['background-color']} on ${bg})`, ratio: ratio(over(fill, bg), bg), need: 3 })
   }
@@ -223,6 +213,11 @@ async function tokenPairs(page: Page): Promise<Finding[]> {
     ['--field-line', '--sheet', 3],
     ['--bar', '--sunk', 3],
     ['--accent', '--sunk', 3],
+    // The hold button: its fill's edge line on the tint and on the track,
+    // the label on each.
+    ['--accent', '--accent-soft', 3],
+    ['--accent', '--bg', 3],
+    ['--accent-ink', '--bg', 4.5],
     ['--thumb-on', '--accent', 3],
     ['--series-other', '--sunk', 3],
   ]
@@ -270,18 +265,15 @@ for (const scheme of ['light', 'dark'] as const) {
       site,
     }) => {
       const now = await serviceWorker.evaluate(() => Date.now())
-      const day = (await todayKey(serviceWorker)).slice(4)
-      const snooze = (siteMs: number) => ({ site: SITE_A, at: now, ms: 5 * MINUTE, siteMs, globalMs: siteMs })
       await seed(serviceWorker, {
         ...(await today(serviceWorker, { [SITE_A]: 70 * MINUTE, 'site-b.test': 20 * MINUTE })),
-        [`snoozes:${day}`]: [snooze(60 * MINUTE), snooze(65 * MINUTE)],
-        [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60, 'site-b.test': 30 }, snoozeUntil: now + 4 * MINUTE },
+        [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60, 'site-b.test': 30 }, snoozeUntil: now + MINUTE },
       })
       const tab = await context.newPage()
       await tab.goto(site(SITE_A))
       const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
       await popup.emulateMedia({ colorScheme: scheme })
-      await expect(popup.locator('#summary')).toContainText('Snoozed twice')
+      await expect(popup.locator('#summary')).toContainText('10 min over')
       const findings = [...(await audit(popup)), ...(await tokenPairs(popup))]
 
       const tabB = await context.newPage()
@@ -302,7 +294,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await off.emulateMedia({ colorScheme: scheme })
       await expect(off.locator('#enable')).toBeVisible()
       findings.push(...(await audit(off)))
-      expect(misses(findings, ['text', 'meter piece', 'meter mark', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
     })
 
     test('Settings and Activity', async ({ context, serviceWorker, extensionId }) => {
@@ -322,12 +314,12 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(usage.locator('#report')).toBeVisible()
       findings.push(...(await audit(usage)))
       await usage.locator(`[data-site="${SITE_A}"]`).click()
-      await expect(usage.locator('#bars .tick')).toHaveCount(1)
+      await expect(usage.locator('#bars .seg[data-series="site"]')).not.toHaveCount(0)
       findings.push(...(await audit(usage)))
       await usage.getByRole('radio', { name: 'Week' }).check()
       await expect(usage.locator('.ref-limit')).toBeVisible()
       findings.push(...(await audit(usage)))
-      expect(misses(findings, ['text', 'hour bar', 'limit tick', 'switch', 'chosen chip'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
     })
 
     test('the block screen and the timer, under and over', async ({ context, serviceWorker, site }) => {
@@ -341,15 +333,14 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
       const findings = await audit(page)
 
-      await clickInShadow(page, BLOCK_ID, '.snooze')
-      await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+      await snoozeBlock(page)
       await expect(page.locator(`#${OVERLAY_ID}`)).toBeVisible()
       findings.push(...(await audit(page)))
       await seed(serviceWorker, { [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 120 } } })
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'gear'])).toEqual([])
     })
   })
 }

@@ -85,8 +85,6 @@ describe('messages', () => {
     })
     await expect(bus.send('open', { page: 'options' })).resolves.toEqual({ ok: true, value: null })
     expect(browser.runtime.openOptionsPage).toHaveBeenCalledOnce()
-    await expect(bus.send('open', { page: 'activity' })).resolves.toEqual({ ok: true, value: null })
-    expect(browser.tabs.create).toHaveBeenCalledWith({ url: 'chrome-extension://tabtimer-test/usage.html' })
   })
 
   // W5: the page opened in a window that stayed behind, so the button
@@ -99,8 +97,6 @@ describe('messages', () => {
       frameId: 0,
       documentLifecycle: 'active',
     }
-    await bus.send('open', { page: 'activity' })
-    expect(browser.windows.update).toHaveBeenLastCalledWith(1, { focused: true })
     // The options page already open in another window: that window.
     browser.runtime.getContexts.mockResolvedValueOnce([{ windowId: 2, tabId: 8 }])
     await bus.send('open', { page: 'options' })

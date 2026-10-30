@@ -8,14 +8,14 @@
 import { dayOf, isDayStamp, startOfDay, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
 import type { BlockReason, BlockScope, LimitEdit } from './limits'
-import type { Prefs } from './schema'
+import { withTimeAt, HOURS_PER_DAY, type Prefs } from './schema'
 import type { Site } from './site'
 import type { Presence } from './tracker'
 
 type Empty = Record<never, never>
 
 // The extension pages a content script may open.
-export type Page = 'options' | 'activity'
+export type Page = 'options'
 
 // What a tracked page shows and enforces, as the service worker sees it at
 // `asOf`. The page keeps the display ticking from there: while `running`
@@ -36,10 +36,9 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
-  // The snoozes today that count against that limit (this site's own, when
-  // none applies): the time each began at, in the limit's measure, oldest
-  // first (core/snooze.ts snoozeMarks).
-  snoozes: number[]
+  // This site's time today per local hour (index 0 = 00:00), the open
+  // interval's uncredited part in the hour of `asOf`: `today`, by hour.
+  hours: number[]
   // The overlay preferences (the worker is their only writer).
   prefs: Prefs
 }
@@ -72,6 +71,14 @@ export function totalsAt(s: TabState, now: number): { siteToday: number; globalT
   return { siteToday: grownAt(s.today, s, now), globalToday: grownAt(s.globalToday, s, now) }
 }
 
+// A state's site's time today by hour at `now`: what the state grew by
+// since `asOf` goes into the current hour. Past midnight, only that.
+export function hoursAt(s: TabState, now: number): number[] {
+  const { siteToday } = totalsAt(s, now)
+  const sameDay = dayOf(now) === s.day
+  return withTimeAt(sameDay ? s.hours : undefined, now, siteToday - (sameDay ? s.today : 0))
+}
+
 // Every site's time today as the service worker sees it at `asOf`: what
 // storage holds plus the open interval's uncredited part, which is the
 // `running` site's (null: none open).
@@ -81,8 +88,6 @@ export type TodayTotals = {
   seq: number
   running: Site | null
   sites: Record<Site, number>
-  // How many snoozes each site's block screen took today.
-  snoozes: Record<Site, number>
 }
 
 // One site's time today at `now`.
@@ -138,8 +143,9 @@ export type Contract = {
   snooze: { req: Empty; res: null }
   // content, extension pages: change overlay preferences.
   setPrefs: { req: Partial<Prefs>; res: null }
-  // content: open the options page, or the activity page in a new tab (the
-  // block stays up).
+  // content: close the sending page's tab (the block screen's way out).
+  closeTab: { req: Empty; res: null }
+  // content: open the options page (the block stays up).
   open: { req: { page: Page }; res: null }
 }
 
@@ -174,6 +180,7 @@ export const SENDERS: { [K in MessageType]: readonly Origin[] } = {
   todayTotals: ['extension'],
   setLimit: ['extension'],
   snooze: ['content'],
+  closeTab: ['content'],
   setPrefs: ['content', 'extension'],
   open: ['content'],
 }
@@ -218,7 +225,8 @@ export function parseStatePush(raw: unknown): StatePush | null {
     }
     limit = { scope: l.scope, ms: l.ms }
   }
-  if (!Array.isArray(s.snoozes) || !(s.snoozes as unknown[]).every(isFiniteNumber)) {
+  const hours = s.hours
+  if (!Array.isArray(hours) || hours.length !== HOURS_PER_DAY || !(hours as unknown[]).every(isFiniteNumber)) {
     return null
   }
   const p = s.prefs
@@ -235,7 +243,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
-    snoozes: [...(s.snoozes as number[])],
+    hours: [...(hours as number[])],
     prefs: { hidden: p.hidden, scale: p.scale },
   }
   return { type: 'state', state, probe: raw.probe }

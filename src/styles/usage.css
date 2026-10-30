@@ -403,7 +403,7 @@ fieldset.segmented {
 
 .site-btn {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--s-2) var(--s-4);
   min-height: 56px;
@@ -430,12 +430,6 @@ fieldset.segmented {
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.site-snoozes {
-  color: var(--muted);
-  font-size: var(--t-xs);
   white-space: nowrap;
 }
 

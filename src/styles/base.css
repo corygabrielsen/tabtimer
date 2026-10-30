@@ -83,23 +83,6 @@ a:hover {
   box-shadow: var(--shadow-sm);
 }
 
-/* A site's monogram. */
-.fav {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--sunk);
-  box-shadow: 0 0 0 1px var(--line) inset;
-  color: var(--text);
-  font-size: var(--t-2xs);
-  font-weight: 700;
-  line-height: 1;
-  text-transform: lowercase;
-}
-
 /* A short state word. */
 .badge {
   display: inline-flex;
@@ -455,78 +438,48 @@ a:hover {
   transform: translateX(13px);
 }
 
-/* --- Meter: grey up to the limit's mark, then one accent piece per snooze.
-   Under the limit the rest of the way is an empty track. */
+/* --- Readout: today's time, then " / " and the limit, muted: one size,
+   one notation (HH:MM:SS). */
 
-.meter {
-  position: relative;
+.readout {
   display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
-}
-
-.meter > span {
-  height: 8px;
-  min-width: 2px;
-  border-radius: var(--r-xs);
-  background: var(--accent);
-}
-
-.meter > span:first-of-type {
-  border-radius: var(--r-pill) var(--r-xs) var(--r-xs) var(--r-pill);
-}
-
-.meter > span:last-of-type {
-  border-radius: var(--r-xs) var(--r-pill) var(--r-pill) var(--r-xs);
-}
-
-.meter > span:only-of-type {
-  border-radius: var(--r-pill);
-}
-
-.meter > .in {
-  background: var(--bar);
-}
-
-.meter > .rest {
-  background: var(--sunk);
-  box-shadow: 0 0 0 1px var(--line) inset;
-}
-
-.meter > .lim {
-  flex: none;
-  width: 2px;
-  height: 16px;
-  margin: 0 2px;
-  border-radius: 1px;
-  background: var(--mark);
-}
-
-/* The limit's name, under its mark. */
-.meter-label {
-  position: relative;
-  height: 16px;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: var(--t-2xs);
-  font-weight: 600;
+  align-items: baseline;
+  gap: var(--s-2);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-.meter-label span {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  white-space: nowrap;
+.readout {
+  font-size: 26px;
+  letter-spacing: -0.02em;
 }
 
-.meter-label span[data-edge='end'] {
-  transform: translateX(-100%);
+.readout .time {
+  font-weight: 620;
 }
 
-/* --- Hour bars: grey within the limit, an accent cap over it, and a dark
-   tick where the limit fell, named beside it. Gaps come out of the bar. */
+.readout .limit {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* A readout under a title: secondary in size, so the title stays the one
+   title. */
+.readout-secondary {
+  gap: var(--s-1);
+  font-size: 20px;
+  letter-spacing: 0;
+}
+
+.readout-secondary .time {
+  font-weight: 600;
+}
+
+.readout-secondary .limit {
+  font-weight: 400;
+}
+
+/* --- Hour bars: one tone, usage only. The readout states the limit. */
 
 .hbar {
   position: relative;
@@ -537,46 +490,8 @@ a:hover {
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: var(--r-xs);
+  border-radius: 4px 4px 0 0;
   background: var(--bar);
-}
-
-.hbar > .seg.top {
-  border-radius: 4px 4px var(--r-xs) var(--r-xs);
-}
-
-.hbar > .seg.base {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.hbar > .seg.over {
-  background: var(--accent);
-}
-
-.hbar > .tick {
-  position: absolute;
-  left: -4px;
-  right: -4px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--mark);
-}
-
-.hbar > .tick-label {
-  position: absolute;
-  right: calc(100% + 6px);
-  transform: translateY(50%);
-  color: var(--text);
-  font-size: var(--t-2xs);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.hbar > .tick-label[data-side='right'] {
-  right: auto;
-  left: calc(100% + 6px);
 }
 
 @media (prefers-reduced-motion: reduce) {

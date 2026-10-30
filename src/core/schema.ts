@@ -1,34 +1,28 @@
-// The chrome.storage.local layout (schema 4). Pure: no chrome, no DOM.
+// The chrome.storage.local layout (schema 3). Pure: no chrome, no DOM.
 //
 // The service worker is the only writer. Every reader goes through the
 // normalize* functions below, so a malformed value reads as its default.
 //
-//   schema           4
-//   limits           Limits (core/limits.ts), the snooze included
-//   prefs            Prefs
-//   day:<date>       DayUsage for one local calendar day (yyyy-mm-dd)
-//   snoozes:<date>   Snooze[] (core/snooze.ts) taken that day
-//   clock            ClockMark: the date pruning last trusted
+//   schema       3
+//   limits       Limits (core/limits.ts), the snooze included
+//   prefs        Prefs
+//   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
+//   clock        ClockMark: the date pruning last trusted
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
-import { addDays, dayOf, isDayStamp, type DayStamp } from './day'
+import { addDays, dayOf, hourOf, isDayStamp, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
 
-export const SCHEMA = 4
+export const SCHEMA = 3
 
 export const SCHEMA_KEY = 'schema'
 export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
 export const CLOCK_KEY = 'clock'
 export const DAY_KEY_PREFIX = 'day:'
-export const SNOOZE_KEY_PREFIX = 'snoozes:'
 
-// The keys kept per day, pruned together.
-const DATED_PREFIXES = [DAY_KEY_PREFIX, SNOOZE_KEY_PREFIX]
-
-// Days of usage kept, today included: older day:* and snoozes:* keys are
-// pruned.
+// Days of usage kept, today included: older day:* keys are pruned.
 export const RETENTION_DAYS = 30
 
 export const HOURS_PER_DAY = 24
@@ -64,10 +58,6 @@ export function dayKey(day: DayStamp): DayKey {
   return `${DAY_KEY_PREFIX}${day}`
 }
 
-export function snoozeKey(day: DayStamp): `${typeof SNOOZE_KEY_PREFIX}${DayStamp}` {
-  return `${SNOOZE_KEY_PREFIX}${day}`
-}
-
 // The day a day:* key is for, or null if `key` isn't one.
 export function dayOfKey(key: string): DayStamp | null {
   const day = key.startsWith(DAY_KEY_PREFIX) ? key.slice(DAY_KEY_PREFIX.length) : null
@@ -85,9 +75,8 @@ export function isKept(day: DayStamp, today: DayStamp): boolean {
   return day >= oldestKept(today) && day <= today
 }
 
-// The dated keys (day:*, snoozes:*) among `keys` that fall outside the
-// retention window ending on the day containing `now` (malformed ones go
-// too). `last`: a later
+// The day:* keys among `keys` that fall outside the retention window ending
+// on the day containing `now` (malformed day:* keys go too). `last`: a later
 // day the clock showed before it went back; the days after tomorrow up to it
 // were written while the clock was ahead, and go too, as far as a window
 // ahead. Tomorrow is kept: a time zone change moves the date by at most a
@@ -99,12 +88,10 @@ export function expiredDayKeys(keys: string[], now: number, last: DayStamp | nul
   const tomorrow = addDays(today, 1)
   const ahead = addDays(today, RETENTION_DAYS)
   return keys.filter((key) => {
-    const prefix = DATED_PREFIXES.find((p) => key.startsWith(p))
-    if (prefix === undefined) {
+    if (!key.startsWith(DAY_KEY_PREFIX)) {
       return false
     }
-    const stamp = key.slice(prefix.length)
-    const day = isDayStamp(stamp) ? stamp : null
+    const day = dayOfKey(key)
     return day === null || day < oldest || (last !== null && day > tomorrow && day <= last && day <= ahead)
   })
 }
@@ -147,6 +134,16 @@ export function settleClock(mark: ClockMark, now: number): ClockMark {
 
 export function emptyBuckets(): HourBuckets {
   return new Array<number>(HOURS_PER_DAY).fill(0)
+}
+
+// `buckets` (none: empty) with `ms` more in the hour of `at`: where time not
+// yet stored is shown, the one rule for every surface.
+export function withTimeAt(buckets: readonly number[] | undefined, at: number, ms: number): HourBuckets {
+  const out = buckets ? [...buckets] : emptyBuckets()
+  if (ms > 0) {
+    out[hourOf(at)]! += ms
+  }
+  return out
 }
 
 function normalizeBuckets(value: unknown): HourBuckets | null {

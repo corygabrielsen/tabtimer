@@ -24,8 +24,7 @@ const addElapsed = (site: string, spans: Span[], media = false, on: Ledger = led
     return siteTotal(await tx.today(), site)
   })
 const setIdleState = (state: IdleState, on: Ledger = ledger) => on.transaction((tx) => tx.observeIdle(state))
-const snooze = (site = 'a.com', siteMs = HOUR, globalMs = HOUR) =>
-  ledger.transaction((tx) => tx.snooze({ site, siteMs, globalMs }))
+const snooze = () => ledger.transaction((tx) => tx.snooze())
 
 beforeEach(() => {
   browser = fakeChrome()
@@ -279,33 +278,14 @@ describe('snooze and prefs', () => {
     await expect(ledger.transaction((tx) => tx.limits())).resolves.toMatchObject({ snoozeUntil: 0 })
   })
 
-  it('records each snooze under the day it was taken, oldest first', async () => {
-    await snooze('a.com', HOUR, HOUR)
-    now = NOON + SNOOZE_MS
-    await snooze('b.com', 10 * MIN, HOUR + 5 * MIN)
-    expect(data()['snoozes:2026-06-10']).toEqual([
-      { site: 'a.com', at: NOON, ms: SNOOZE_MS, siteMs: HOUR, globalMs: HOUR },
-      { site: 'b.com', at: NOON + SNOOZE_MS, ms: SNOOZE_MS, siteMs: 10 * MIN, globalMs: HOUR + 5 * MIN },
-    ])
-    await expect(ledger.transaction((tx) => tx.snoozes())).resolves.toHaveLength(2)
-    // The snooze is seen by the rest of its own transaction.
+  it('sees its own snooze in the rest of the transaction, and stores nothing else', async () => {
     await expect(
       ledger.transaction(async (tx) => {
-        await tx.snooze({ site: 'a.com', siteMs: 0, globalMs: 0 })
-        return [(await tx.limits()).snoozeUntil, (await tx.snoozes()).length]
+        await tx.snooze()
+        return (await tx.limits()).snoozeUntil
       })
-    ).resolves.toEqual([now + SNOOZE_MS, 3])
-  })
-
-  it('prunes snoozes with the days they were taken on', async () => {
-    browser.storage.local.seed({
-      [CLOCK_KEY]: { day: '2026-06-10', pending: null },
-      'snoozes:2026-05-01': [],
-      'snoozes:2026-06-09': [],
-      'day:2026-05-01': {},
-    })
-    await ledger.prune()
-    expect(Object.keys(data()).sort()).toEqual(['clock', 'snoozes:2026-06-09'])
+    ).resolves.toBe(NOON + SNOOZE_MS)
+    expect(Object.keys(data())).toEqual([LIMITS_KEY])
   })
 
   it('merges a prefs change into the stored prefs', async () => {

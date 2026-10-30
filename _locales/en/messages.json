@@ -17,14 +17,19 @@
   "overlayHide": { "message": "Hide Tab Timer on this page" },
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
   "overlayLarger": { "message": "Make Tab Timer larger" },
-  "blockTitle": { "message": "Time's up" },
-  "blockAllSites": { "message": "all tracked sites" },
-  "blockDetail": {
-    "message": "$elapsed$ today · $limit$ limit",
-    "placeholders": { "elapsed": { "content": "$1" }, "limit": { "content": "$2" } }
+  "blockTitle": { "message": "Take a break." },
+  "blockAriaSite": {
+    "message": "Take a break. $site$ limit reached.",
+    "placeholders": { "site": { "content": "$1" } }
   },
+  "blockAllSites": { "message": "All tracked sites" },
+  "blockAriaAllSites": { "message": "Take a break. All-sites limit reached." },
+  "blockClose": { "message": "Close tab" },
+  "blockHoldToContinue": { "message": "Hold to continue" },
+  "blockHolding": { "message": "Keep holding" },
+  "blockHoldHint": { "message": "Press and hold for 2 seconds" },
   "blockSnooze": { "message": "$minutes$ more minutes", "placeholders": { "minutes": { "content": "$1" } } },
-  "blockManage": { "message": "Limits…" },
+  "blockNow": { "message": "Now" },
   "durMinutes": { "message": "$n$ min", "placeholders": { "n": { "content": "$1" } } },
   "durHours": { "message": "$h$ h", "placeholders": { "h": { "content": "$1" } } },
   "durHoursMinutes": {
@@ -66,23 +71,10 @@
   "popupOverSite": { "message": "$over$ over", "placeholders": { "over": { "content": "$1" } } },
   "popupOverGlobal": { "message": "$over$ over (all sites)", "placeholders": { "over": { "content": "$1" } } },
   "popupSnoozeLeft": { "message": "$time$ left", "placeholders": { "time": { "content": "$1" } } },
-  "popupOf": { "message": "of $limit$", "placeholders": { "limit": { "content": "$1" } } },
-  "snoozedOnce": { "message": "Snoozed once" },
-  "snoozedTwice": { "message": "Snoozed twice" },
-  "snoozedTimes": { "message": "Snoozed $n$ times", "placeholders": { "n": { "content": "$1" } } },
   "popupGlobalLine": {
     "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "popupUsedOf": {
-    "message": "$used$ of $limit$",
-    "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
-  },
-  "popupMeterSiteAria": {
-    "message": "Time used of the daily limit for $host$",
-    "placeholders": { "host": { "content": "$1" } }
-  },
-  "popupMeterGlobalAria": { "message": "Time used of the daily limit for all tracked sites" },
   "popupLimit": { "message": "Daily limit" },
   "popupLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupNotTrackedTitle": { "message": "Not tracked" },
@@ -204,6 +196,5 @@
   "usageNoneWeek": { "message": "No activity." },
   "usageSeeAll": { "message": "See all activity" },
   "popupStripAria": { "message": "Today on $host$, by hour", "placeholders": { "host": { "content": "$1" } } },
-  "blockSeeActivity": { "message": "See activity" },
   "optionsWeekHeading": { "message": "This week" }
 }

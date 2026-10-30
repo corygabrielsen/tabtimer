@@ -15,11 +15,11 @@ const sources = import.meta.glob<string>(['./**/*.ts', '!./**/*.test.ts', '!./te
 
 describe('t', () => {
   it('returns the localized message', () => {
-    expect(t('blockTitle')).toBe("Time's up")
+    expect(t('blockTitle')).toBe('Take a break.')
   })
 
   it('fills placeholders from substitutions', () => {
-    expect(t('blockDetail', ['00:10:00', '00:30:00'])).toBe('00:10:00 today · 00:30:00 limit')
+    expect(t('blockSnooze', '2')).toBe('2 more minutes')
     expect(t('popupLimitAria', 'reddit.com')).toBe('Daily limit for reddit.com')
   })
 

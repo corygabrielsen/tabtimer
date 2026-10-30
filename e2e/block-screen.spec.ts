@@ -6,6 +6,12 @@ import {
   today,
   shadowAttribute,
   clickInShadow,
+  holdInShadow,
+  shadowBox,
+  openPopup,
+  read,
+  shadowText,
+  snoozeBlock,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -29,17 +35,188 @@ async function blockedPage(context: import('@playwright/test').BrowserContext, u
   return page
 }
 
-test('takes focus on the snooze button, and gives it back on dismissal', async ({ context, serviceWorker, site }) => {
+// What a block screen's buttons do.
+const snoozeUntil = async (sw: import('@playwright/test').Worker) =>
+  ((await read(sw, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil ?? 0
+
+test('typing on the page as it appears closes nothing and snoozes nothing', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/interactive'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  await page.evaluate(() => {
+    const field = document.body.insertBefore(document.createElement('textarea'), document.body.firstChild)
+    field.id = 'typing'
+    field.focus()
+  })
+  // Typing without a pause, Enter and Space included, while the limit is hit.
+  let typing = true
+  const typist = (async () => {
+    while (typing && !page.isClosed()) {
+      for (const key of ['h', 'Enter', 'Space', 'i', 'Enter']) {
+        await page.keyboard.press(key).catch(() => undefined)
+      }
+    }
+  })()
+  await page.waitForTimeout(300)
+  await seed(serviceWorker, BLOCKING)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  await page.waitForTimeout(2500)
+  typing = false
+  await typist
+  expect(page.isClosed()).toBe(false)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
+  // Focus is on the dialog, not a button.
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toBeNull()
+})
+
+test('Tab reaches Close tab deliberately, and Enter on it closes the tab', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
+  await page.waitForTimeout(600)
+  await page.keyboard.press('Tab')
+  expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toContain('close')
+  // The tab can close before the key comes back up.
+  await Promise.all([page.waitForEvent('close'), page.keyboard.press('Enter').catch(() => undefined)])
+})
+
+test('Close tab closes the tab', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
+  const closed = page.waitForEvent('close')
+  await clickInShadow(page, BLOCK_ID, 'button.close')
+  await closed
+  expect(
+    await serviceWorker.evaluate(async (host) => (await chrome.tabs.query({ url: `*://${host}/*` })).length, SITE_A)
+  ).toBe(0)
+})
+
+test('the gear opens Settings, and the block stays up', async ({ context, serviceWorker, extensionId, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
+  expect(await shadowAttribute(page, BLOCK_ID, 'button.settings', 'aria-label')).toBe('Settings')
+  // The install opened Settings already: close it, so the gear opens it anew.
+  for (const open of context.pages().filter((p) => p.url().endsWith('/options.html'))) {
+    await open.close()
+  }
+  const [options] = await Promise.all([context.waitForEvent('page'), clickInShadow(page, BLOCK_ID, 'button.settings')])
+  await options.waitForLoadState()
+  expect(options.url()).toBe(`chrome-extension://${extensionId}/options.html`)
+  await options.close()
+  await page.bringToFront()
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+})
+
+test('holding 2 more minutes for 2 s snoozes; a short press or a click does not', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
   const block = page.locator(`#${BLOCK_ID}`)
 
-  // Focus inside a closed shadow root retargets to its host.
-  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
-  // ...and it's the snooze button: Enter activates it.
-  await page.keyboard.press('Enter')
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('2 more minutes')
+  // A click: the label says to hold, then goes back; nothing snoozes.
+  await clickInShadow(page, BLOCK_ID, 'button.hold')
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
+  await expect.poll(() => shadowText(page, BLOCK_ID, 'button.hold .txt'), { timeout: 3000 }).toBe('2 more minutes')
+  // A press let go too soon: the same.
+  await holdInShadow(page, BLOCK_ID, 'button.hold', 800)
+  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
+  await page.waitForTimeout(500)
+  await expect(block).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
+
+  await holdInShadow(page, BLOCK_ID, 'button.hold', 2300)
   await expect(block).toBeHidden()
-  expect(await activeId(page)).not.toBe(BLOCK_ID)
+  await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
+})
+
+test('holding Space for 3 s snoozes nothing, on the dialog or on 2 more minutes', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  const holdSpace = async () => {
+    await page.keyboard.down('Space')
+    await page.waitForTimeout(3000)
+    await page.keyboard.up('Space')
+  }
+  await holdSpace()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Tab')
+  expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toContain('hold')
+  await holdSpace()
+  await page.waitForTimeout(800)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
+})
+
+// Short CSS viewports: a 1080p screen at 150% zoom, shorter windows, a 720p
+// window at 150%, and the shortest supported. The card adapts; its actions
+// stay in view with nothing to scroll.
+for (const [width, height] of [
+  [1280, 620],
+  [1280, 520],
+  [1000, 440],
+  [853, 400],
+  [640, 360],
+] as const) {
+  test(`fits ${width}x${height} without scrolling, its actions in view`, async ({ context, serviceWorker, site }) => {
+    await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+    const page = await context.newPage()
+    await page.setViewportSize({ width, height })
+    await page.goto(site(SITE_A))
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+    // The card's entrance settles first.
+    await page.waitForTimeout(600)
+    for (const selector of ['button.close', 'button.hold', 'button.settings']) {
+      const box = await shadowBox(page, BLOCK_ID, selector)
+      expect(box.top, selector).toBeGreaterThanOrEqual(0)
+      expect(box.left, selector).toBeGreaterThanOrEqual(0)
+      expect(box.bottom, selector).toBeLessThanOrEqual(height)
+      expect(box.right, selector).toBeLessThanOrEqual(width)
+    }
+    expect((await shadowBox(page, BLOCK_ID, 'dialog')).overflow).toBeLessThanOrEqual(0)
+  })
+}
+
+test('shows the worker’s numbers, as the popup does, and marks the current hour', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  await seed(serviceWorker, {
+    ...(await today(serviceWorker, { [SITE_A]: 70 * MINUTE })),
+    [LIMITS_KEY]: { global: null, perSite: { [SITE_A]: 60 } },
+  })
+  const page = await blockedPage(context, site(SITE_A))
+  const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
+  await expect(popup.locator('#summary')).toHaveText('10 min over')
+  // The block screen's readout is the popup's, at the same moment
+  // (the blocked tab isn't counting, so the time holds still).
+  expect(await shadowText(page, BLOCK_ID, '.readout .time')).toBe('01:10:00')
+  await expect(popup.locator('#today')).toHaveText('01:10:00')
+  expect(await shadowText(page, BLOCK_ID, '.readout .limit')).toBe('/ 01:00:00')
+  await expect(popup.locator('#readout-of')).toHaveText('/ 01:00:00')
+
+  const hour = String(await page.evaluate(() => new Date().getHours()))
+  expect(await shadowAttribute(page, BLOCK_ID, '[data-now]', 'data-hour')).toBe(hour)
+  expect(await shadowText(page, BLOCK_ID, '.axis .now')).toBe('Now')
+  // The hour bar is usage only, one tone; the readout states the limit.
+  expect(await shadowAttribute(page, BLOCK_ID, '[data-now] .seg', 'data-part')).toBe('usage')
+  expect(await shadowAttribute(page, BLOCK_ID, '.chart .seg.over', 'class')).toBeNull()
 })
 
 test('restores focus to the page control that had it', async ({ context, serviceWorker, site }) => {
@@ -52,7 +229,7 @@ test('restores focus to the page control that had it', async ({ context, service
   await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
   await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
   expect(await activeId(page)).toBe('page-button')
 })
@@ -93,7 +270,9 @@ test('keeps the page out of reach of clicks and assistive tech', async ({ contex
   await cdp.detach()
   const exposed = nodes.filter((n) => !n.ignored)
   expect(exposed.some((n) => n.name?.value === 'page button')).toBe(false)
-  expect(exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === "Time's up")).toBe(true)
+  expect(
+    exposed.some((n) => n.role?.value === 'alertdialog' && n.name?.value === `Take a break. ${SITE_A} limit reached.`)
+  ).toBe(true)
 })
 
 test('Escape does not dismiss it', async ({ context, serviceWorker, site }) => {
@@ -127,7 +306,7 @@ test('pauses playing media and keeps it paused', async ({ context, serviceWorker
   await expect.poll(paused).toBe(true)
 
   // Dismissing doesn't resume it either.
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
   await page.waitForTimeout(300)
   expect(await paused()).toBe(true)
@@ -151,7 +330,9 @@ test('leaves fullscreen when the limit is hit, and stays out of it', async ({ co
   // back into fullscreen while blocked. Whether Chromium grants that request
   // for a moment is timing-dependent, so assert the attempt happened and that
   // the page stays out of fullscreen with the block screen on top, not that
-  // the request succeeded.
+  // the request succeeded. (Past the first moments, when the block screen
+  // swallows every key.)
+  await page.waitForTimeout(600)
   await page.keyboard.press('f')
   await expect
     .poll(() => page.evaluate(() => (window as unknown as { fullscreenAttempts: number }).fullscreenAttempts))
@@ -243,7 +424,7 @@ for (const [layout, path] of [
     // Dismissed: the page's own overflow is back, it's where it was before
     // blocking (hiding overflow can clamp a body-sized viewport while
     // blocked), and it scrolls again.
-    await clickInShadow(page, BLOCK_ID, 'button.snooze')
+    await snoozeBlock(page)
     await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
     const dismissed = await scrollState(page)
     expect(dismissed.style).toEqual(initial.style)
@@ -265,7 +446,7 @@ test('lets the page scroll again when its script changed one overflow axis while
   await page.evaluate(() => {
     document.documentElement.style.overflowX = 'auto'
   })
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
   const html = () =>
     page.evaluate(() => {
@@ -307,7 +488,7 @@ test('mutes the tab while blocked, so media out of the page’s reach stops too'
   expect(await page.evaluate(() => (window as unknown as { detached: HTMLAudioElement }).detached.paused)).toBe(false)
 
   // Dismissed: the mute it set goes.
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
   await expect.poll(() => tabOf(serviceWorker, SITE_A)).toMatchObject({ muted: false })
 })
@@ -354,11 +535,12 @@ test('is fully opaque over a bright page, in light and dark', async ({ context, 
   expect(await ground()).toBe('rgb(231, 235, 239)')
 
   // Every pixel in a strip across the top of the viewport, clear of the
-  // block screen's text, is that ground: none of the bright page shows.
+  // centred column and of the Settings button in the top right corner, is
+  // that ground: none of the bright page shows.
   const decoder = await context.newPage()
   const colours = async () => {
     const { width } = page.viewportSize()!
-    const png = await page.screenshot({ clip: { x: 0, y: 0, width, height: 120 } })
+    const png = await page.screenshot({ clip: { x: 0, y: 0, width: width - 64, height: 40 } })
     return decoder.evaluate(async (b64) => {
       const img = new Image()
       img.src = `data:image/png;base64,${b64}`
@@ -402,7 +584,7 @@ test('survives the page replacing <body> or removing it', async ({ context, serv
   await expect.poll(() => topId(page)).toBe(BLOCK_ID)
   await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
 })
 
@@ -419,7 +601,7 @@ test('keeps a <body> the page swaps in from scrolling', async ({ context, servic
   await tryToScroll(page)
   expect((await scrollState(page)).body).toEqual(blocked.body)
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
   expect(await page.evaluate(() => document.body.getAttribute('style') ?? '')).toBe('')
 })
@@ -461,7 +643,10 @@ test('stays on top of a dialog or popover the page opens over it', async ({ cont
     await expect.poll(() => topId(page, width / 2, height - 5)).toBe(BLOCK_ID)
   }
 
-  await clickInShadow(page, BLOCK_ID, 'button.snooze')
+  // A raise moves focus to Close tab, which lets go of a hold: let the
+  // tick's look at the top layer settle first.
+  await page.waitForTimeout(1500)
+  await snoozeBlock(page)
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
 })
 

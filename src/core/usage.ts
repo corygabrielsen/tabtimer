@@ -3,11 +3,11 @@
 //
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
-import { addDays, dayOf, daysBetween, hourOf, utcOf, type DayStamp } from './day'
+import { addDays, dayOf, daysBetween, utcOf, type DayStamp } from './day'
 import { siteTodayAt, type TodayTotals } from './messages'
 import {
   dayOfKey,
-  emptyBuckets,
+  withTimeAt,
   isKept,
   normalizeDay,
   oldestKept,
@@ -72,9 +72,7 @@ export function withUncredited(history: History, totals: TodayTotals, now: numbe
   for (const site of Object.keys(totals.sites)) {
     const ms = siteTodayAt(totals, site, now) - siteTotal(stored, site)
     if (ms > 0) {
-      const buckets = [...(stored[site] ?? emptyBuckets())]
-      buckets[hourOf(now)]! += ms
-      usage[site] = buckets
+      usage[site] = withTimeAt(stored[site], now, ms)
       added = true
     }
   }
@@ -174,26 +172,6 @@ export function stack(bar: Bar, top: string[]): number[] {
 
 // The change from `previous` to `current` as a fraction (0.22 = 22% more), or
 // null when there is nothing to compare against.
-// A slot's time against a daily limit: the part within it, the part over
-// it, and whether this is the slot the limit fell in (the first over it).
-export type LimitSplit = { within: number; over: number; crosses: boolean }
-
-// Each slot's time split at `limit` (ms; null: none). `cumulative`: the
-// slots are one day's hours, and the limit is reached by their running
-// total; otherwise each slot is a day of its own against it.
-export function splitAtLimit(values: readonly number[], limit: number | null, cumulative: boolean): LimitSplit[] {
-  let before = 0
-  let fell = false
-  return values.map((ms) => {
-    const room = limit === null ? ms : Math.max(0, limit - (cumulative ? before : 0))
-    const within = Math.min(ms, room)
-    const crosses = cumulative && !fell && ms > within
-    fell ||= crosses
-    before += ms
-    return { within, over: ms - within, crosses }
-  })
-}
-
 export function change(current: number, previous: number): number | null {
   return previous > 0 ? (current - previous) / previous : null
 }

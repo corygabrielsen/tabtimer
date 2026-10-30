@@ -27,6 +27,25 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   return el
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+// A decorative icon: an <svg> of `viewBox` holding `shapes` ([tag, attrs]),
+// hidden from assistive tech.
+export function svg(viewBox: string, cls: string, ...shapes: Array<[string, Record<string, string>]>): SVGSVGElement {
+  const el = document.createElementNS(SVG_NS, 'svg')
+  el.setAttribute('viewBox', viewBox)
+  el.setAttribute('class', cls)
+  el.setAttribute('aria-hidden', 'true')
+  for (const [tag, attrs] of shapes) {
+    const shape = document.createElementNS(SVG_NS, tag)
+    for (const [name, value] of Object.entries(attrs)) {
+      shape.setAttribute(name, value)
+    }
+    el.append(shape)
+  }
+  return el
+}
+
 // Make `nodes` the children of `parent`, in order, without moving the child
 // that holds focus: a moved or removed node loses focus (and fires blur),
 // which would end an edit in progress there. Its siblings move around it.
@@ -90,14 +109,6 @@ export function formatDuration(ms: number): string {
     return t('durHours', String(hours))
   }
   return t('durHoursMinutes', [String(hours), String(minutes).padStart(2, '0')])
-}
-
-// How many snoozes were taken: "Snoozed twice" ('' for none).
-export function snoozedText(count: number): string {
-  if (count <= 0) {
-    return ''
-  }
-  return count === 1 ? t('snoozedOnce') : count === 2 ? t('snoozedTwice') : t('snoozedTimes', String(count))
 }
 
 // Read a minutes field: null when blank, else a whole number of minutes in

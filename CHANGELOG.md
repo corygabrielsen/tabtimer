@@ -4,6 +4,27 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-10-29
+
+### Added
+
+- The block screen shows today's time on the site against your limit, and
+  hour by hour.
+
+### Changed
+
+- A new, calmer look across the popup, Settings, Activity and the block
+  screen, in light and dark.
+- The block screen leads with Close tab. 2 more minutes now takes pressing and
+  holding the button for two seconds, and typing can't press either.
+- A snooze lasts 2 minutes (was 5).
+- The popup reads today's time against your limit as 01:10:00 / 01:00:00, in
+  place of the meter.
+
+### Removed
+
+- The popup's Reset today button.
+
 ## [1.6.4] - 2026-10-29
 
 ### Fixed
@@ -267,6 +288,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.7.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.2...v1.6.3
 [1.6.2]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.1...v1.6.2
