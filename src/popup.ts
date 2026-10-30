@@ -3,13 +3,13 @@ import { bus } from './chrome/bus'
 import type { StoreChanges } from './ports'
 import { dayOf } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
-import { hourLabel, splitAtLimit, withUncredited } from './core/usage'
+import { hourLabel, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
 import { limitsFor, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
 import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
-import { drawBar, drawLimitMeter, drawReadout, HOUR_FLOOR_MS } from './bars'
+import { drawBar, drawReadout, HOUR_FLOOR_MS } from './bars'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; url: string }
@@ -58,7 +58,7 @@ function moveNow() {
 // Today's time on this site as a timeline: 24 hour bars (split where its
 // own limit fell), faint marks every six hours with their names below, and
 // the now mark.
-function renderStrip(base: string, hours: number[], limit: number | null) {
+function renderStrip(base: string, hours: number[]) {
   const strip = byId('strip')
   const axis = byId('strip-axis')
   if (!strip || !axis) {
@@ -73,9 +73,9 @@ function renderStrip(base: string, hours: number[], limit: number | null) {
   moveNow()
   strip.replaceChildren(
     ...STRIP_MARKS.map((hour) => placed(h('i', { class: 'mark' }), hour)),
-    ...splitAtLimit(hours, limit, true).map((part) => {
-      const bar = h('span', { 'data-on': part.within + part.over > 0 })
-      drawBar(bar, part, top)
+    ...hours.map((ms) => {
+      const bar = h('span', { 'data-on': ms > 0 })
+      drawBar(bar, ms, top)
       return bar
     }),
     nowMark
@@ -97,25 +97,22 @@ function faceFor(base: string, s: Snapshot) {
   } else if (siteLimit !== null || globalLimit !== null) {
     state = 'ok'
   }
-  // The meter follows the limit that applies: the one the worker blocks by,
-  // else this site's own, else the all-sites cap.
+  // The summary follows the limit that applies: the one the worker blocks
+  // by, else this site's own, else the all-sites cap.
   const scope = tab?.limit?.scope ?? (siteLimit !== null ? 'site' : 'global')
-  const meterLimit = scope === 'site' ? siteLimit : globalLimit
-  const meterValue = scope === 'site' ? totals.siteToday : totals.globalToday
-  return { state, reason, resumes, siteLimit, globalLimit, scope, meterLimit, meterValue, ...totals }
+  const applied = scope === 'site' ? siteLimit : globalLimit
+  const used = scope === 'site' ? totals.siteToday : totals.globalToday
+  return { state, reason, resumes, siteLimit, globalLimit, scope, applied, used, ...totals }
 }
 
 type Face = ReturnType<typeof faceFor>
 
-// "01:10" then ":04", the seconds set smaller.
 function renderFace(base: string, s: Snapshot) {
   const face = faceFor(base, s)
   const hero = byId('hero')
   const status = byId('status')
   const today = byId('today')
   const of = byId('readout-of')
-  const meterWrap = byId('meter-wrap')
-  const meter = byId('meter')
   const summary = byId('summary')
   const globalLine = byId('global-line')
 
@@ -134,25 +131,16 @@ function renderFace(base: string, s: Snapshot) {
     }
   }
 
-  const { meterLimit, meterValue } = face
   // The readout counts this site's time, against its own limit only.
   if (today && of) {
     drawReadout(today, of, face.siteToday, face.siteLimit)
   }
-  if (meterWrap && meter) {
-    meterWrap.hidden = meterLimit === null
-    meter.hidden = meterLimit === null
-    if (meterLimit !== null) {
-      drawLimitMeter(meter, meterValue, meterLimit, face.scope, base)
-    }
-  }
-
   if (summary) {
     renderSummary(summary, face)
   }
 
   if (globalLine) {
-    // Show the all-sites cap separately when the meter is about this site.
+    // Show the all-sites cap separately when the summary is about this site.
     const globalLimit = face.scope === 'site' && face.siteLimit !== null ? face.globalLimit : null
     globalLine.hidden = globalLimit === null
     if (globalLimit !== null) {
@@ -161,10 +149,10 @@ function renderFace(base: string, s: Snapshot) {
   }
 }
 
-// Under: the time left. Over: the time over in the accent (the meter's
-// over piece), then a snooze's time left.
+// Under: the time left. Over: the time over in the accent, then a snooze's
+// time left.
 function renderSummary(el: HTMLElement, face: Face) {
-  const { reason, meterLimit, meterValue } = face
+  const { reason, applied, used } = face
   if (reason) {
     const over = formatDuration(reason.elapsed - reason.limit)
     const left = face.resumes === null ? null : t('popupSnoozeLeft', formatDuration(Math.max(60000, face.resumes)))
@@ -174,11 +162,11 @@ function renderSummary(el: HTMLElement, face: Face) {
     )
     return
   }
-  if (meterLimit === null) {
+  if (applied === null) {
     el.textContent = t('popupNoLimit')
     return
   }
-  const left = formatDuration(meterLimit - meterValue)
+  const left = formatDuration(applied - used)
   el.textContent = face.scope === 'site' ? t('popupLeftSite', left) : t('popupLeftGlobal', left)
 }
 
@@ -207,7 +195,7 @@ function renderTracked(tabId: number, base: string, focus = false) {
     const now = Date.now()
     const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today } }
     const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
-    renderStrip(base, usage[base] ?? emptyBuckets(), limitsFor(limits, base).site)
+    renderStrip(base, usage[base] ?? emptyBuckets())
   }
   const draw = () => {
     drawStrip()

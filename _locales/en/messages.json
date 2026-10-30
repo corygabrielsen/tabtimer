@@ -74,15 +74,6 @@
     "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "popupUsedOf": {
-    "message": "$used$ of $limit$",
-    "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }
-  },
-  "popupMeterSiteAria": {
-    "message": "Time used of the daily limit for $host$",
-    "placeholders": { "host": { "content": "$1" } }
-  },
-  "popupMeterGlobalAria": { "message": "Time used of the daily limit for all tracked sites" },
   "popupLimit": { "message": "Daily limit" },
   "popupLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "popupNotTrackedTitle": { "message": "Not tracked" },

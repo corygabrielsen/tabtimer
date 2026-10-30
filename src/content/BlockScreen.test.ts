@@ -155,9 +155,7 @@ describe('deciding to block', () => {
     await mount()
     expect(normText(screen().querySelector('.site .name'))).toBe('reddit.com')
     expect(normText(screen().querySelector('.readout'))).toBe('Today00:16:00/ 00:15:00')
-    expect(screen().querySelector('.meter')?.getAttribute('aria-label')).toBe(
-      'Time used of the daily limit for reddit.com'
-    )
+    expect(screen().querySelector('dialog')?.getAttribute('aria-label')).toBe('Take a break. reddit.com limit reached.')
   })
 
   it('fails open when limits cannot be read', async () => {
@@ -427,20 +425,17 @@ describe('what it shows', () => {
     seedLimits({ perSite: { 'reddit.com': 60 } })
   })
 
-  it('reads out today and meters it as the popup does: grey to the limit, one accent piece over', async () => {
+  it('reads out today against the limit as the popup does, with no meter', async () => {
     await mount()
     expect(normText(screen().querySelector('.readout'))).toBe('Today01:10:00/ 01:00:00')
     // One notation, one size: the limit in HH:MM:SS too, no "of 1 h".
     expect(screen().querySelector('.readout small')).toBeNull()
     expect(normText(screen().querySelector('.readout .limit'))).toBe('/ 01:00:00')
-    const meter = screen().querySelector('.meter')!
-    expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over'])
-    // The readout states the limit: the meter's mark is unlabelled.
-    expect(screen().querySelector('.meter-label')).toBeNull()
-    expect(meter.getAttribute('aria-valuetext')).toBe('1 h 10 min of 1 h')
+    expect(screen().querySelector('.readout')?.classList.contains('readout-secondary')).toBe(true)
+    expect(screen().querySelector('.meter')).toBeNull()
   })
 
-  it('charts today by hour: grey within the limit, the overage capped, the limit named, now marked', async () => {
+  it('charts today by hour, one tone, now marked', async () => {
     await mount()
     const chart = screen().querySelector('.chart')!
     expect(chart.getAttribute('role')).toBe('img')
@@ -449,11 +444,11 @@ describe('what it shows', () => {
     expect(chart.querySelectorAll('[data-hour]')).toHaveLength(24)
     expect(chart.querySelectorAll('[data-now]')).toEqual(expect.objectContaining({ length: 1 }))
     expect(col(12).hasAttribute('data-now')).toBe(true)
-    // Hour 10 within the limit; noon crosses it.
-    expect([...col(10).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['within'])
-    expect([...col(12).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['within', 'over'])
-    // The daily limit is on the meter, not an hour bar.
-    expect(chart.querySelectorAll('.tick, .tick-label')).toHaveLength(0)
+    // Usage only: noon went past the limit, but its bar is one piece, as
+    // is every other. The readout states the limit.
+    expect([...col(10).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['usage'])
+    expect([...col(12).querySelectorAll('.seg')].map((el) => el.getAttribute('data-part'))).toEqual(['usage'])
+    expect(chart.querySelectorAll('.tick, .tick-label, .seg.over')).toHaveLength(0)
     expect([...chart.querySelectorAll('.val')].map(normText)).toEqual(['30m', '40m'])
     const axis = [...chart.querySelectorAll('.axis span')].map(normText)
     expect(axis.at(-1)).toBe('Now')

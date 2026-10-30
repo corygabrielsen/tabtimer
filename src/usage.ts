@@ -18,7 +18,6 @@ import {
   patchHistory,
   periodOf,
   rangeLabel,
-  splitAtLimit,
   stack,
   summarize,
   type Bar,
@@ -32,7 +31,6 @@ import { localizeDom, t } from './i18n'
 import { liveToday } from './liveToday'
 import { createSiteLimitPicker, formatChipMinutes, type LimitPicker } from './limitPicker'
 import { byId, firstDayOfWeek, formatDuration, h, placeChildren, setDocumentLang, uiLocale } from './ui'
-import { drawBar } from './bars'
 
 const local = chromeStore('local')
 
@@ -156,9 +154,9 @@ function refLine(kind: 'average' | 'limit', ms: number, top: number, label: stri
 function chart(period: Period, summary: Summary): HTMLElement {
   const totals = summary.bars.map((bar) => barTotal(bar, state.site))
   const week = period.mode === 'week'
-  // A site's own limit splits its bars: grey within, the accent over.
+  // A site's own daily limit, drawn as a reference line on the week's daily
+  // bars. Bars are usage only: no split at it.
   const limit = state.site !== null ? siteLimit(state.site) : null
-  const parts = limit === null ? null : splitAtLimit(totals, limit, !week)
   const average = week && summary.total > 0 ? summary.average : null
   // An empty or quiet chart still spans a readable range.
   const floor = week ? 60 * 60_000 : 30 * 60_000
@@ -194,18 +192,14 @@ function chart(period: Period, summary: Summary): HTMLElement {
       'data-value': total > 0 ? value : undefined,
     })
     col.style.setProperty('--h', `${(total / top) * 100}%`)
-    if (parts) {
-      drawBar(col, parts[i]!, top)
-    } else {
-      col.classList.add('stack')
-      segments(bar, summary).forEach((ms, series) => {
-        if (ms > 0) {
-          const seg = h('span', { class: 'seg', 'data-series': state.site === null ? String(series) : 'site' })
-          seg.style.height = `${(ms / top) * 100}%`
-          col.append(seg)
-        }
-      })
-    }
+    col.classList.add('stack')
+    segments(bar, summary).forEach((ms, series) => {
+      if (ms > 0) {
+        const seg = h('span', { class: 'seg', 'data-series': state.site === null ? String(series) : 'site' })
+        seg.style.height = `${(ms / top) * 100}%`
+        col.append(seg)
+      }
+    })
     bars.append(col)
   })
   bars.addEventListener('keydown', (e) => moveBar(e, totals.length))

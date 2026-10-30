@@ -4,9 +4,9 @@ import { bus as chromeBus } from '../chrome/bus'
 import { hourOf } from '../core/day'
 import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
 import { hoursAt, totalsAt, type TabState } from '../core/messages'
-import { hourLabel, splitAtLimit } from '../core/usage'
+import { hourLabel } from '../core/usage'
 import type { Bus } from '../ports'
-import { drawBar, drawLimitMeter, drawReadout, HOUR_FLOOR_MS } from '../bars'
+import { drawBar, drawReadout, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
 import { h, svg, uiLocale } from '../ui'
 import { HoldButton } from './hold'
@@ -86,15 +86,17 @@ const STYLES = `${BASE}
     padding: 0;
   }
   .btn.gear svg { width: 20px; height: 20px; margin: 0; }
+  /* One title. Rhythm: the site, 8 px, the title, 8 px, the readout as its
+     secondary line, 24 px, the chart, 24 px, the actions. */
   h1 {
-    margin: var(--s-4) 0 var(--s-2);
+    margin: var(--s-2) 0 0;
     font-size: 36px;
     line-height: 1.1;
     letter-spacing: -0.022em;
     font-weight: 680;
   }
-  .column .readout { margin: var(--s-3) 0 var(--s-4); font-size: 36px; }
-  .chart { margin: var(--s-5) 0 var(--s-6); }
+  .column .readout { margin: var(--s-2) 0 0; }
+  .chart { margin: var(--s-6) 0; }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
     position: relative;
@@ -150,10 +152,8 @@ const STYLES = `${BASE}
     font-size: 17px;
   }
   .close svg { width: 20px; height: 20px; }
-  /* Hold to snooze: one cue, a solid accent fill whose crisp right edge
-     shows how far (clipped, so the label inside it stays put). The label
-     reads in accent ink on the track and in the accent's own ink on the
-     fill. --p: 0..1. */
+  /* Hold to snooze: one cue, a soft tint whose leading edge, one unbroken
+     full-height accent line behind the label, shows how far. --p: 0..1. */
   .btn.hold {
     position: relative;
     isolation: isolate;
@@ -178,19 +178,17 @@ const STYLES = `${BASE}
     color: var(--accent-ink);
   }
   .btn.hold.holding { transform: scale(0.985); }
-  .btn.hold.done { border-color: var(--accent); color: var(--accent-ink); }
+  .btn.hold.done { border-color: var(--accent-ink); color: var(--accent-ink); }
   .hold .fill {
     position: absolute;
     inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--accent);
-    color: var(--on-accent);
-    clip-path: inset(0 calc((1 - var(--p, 0)) * 100%) 0 0);
-    pointer-events: none;
+    z-index: -1;
+    border-right: 2px solid var(--accent);
+    background: var(--accent-soft);
+    transform: translateX(calc((var(--p, 0) - 1) * 100%));
   }
-  .hold.released .fill { transition: clip-path 0.32s var(--ease); }
+  .hold.done .fill { border-right-color: transparent; }
+  .hold.released .fill { transition: transform 0.32s var(--ease); }
   .hold .lbl { display: inline-flex; align-items: center; gap: var(--s-2); }
   .hold.done .lbl { animation: settle 0.36s var(--ease); }
   @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
@@ -204,9 +202,8 @@ const STYLES = `${BASE}
      the actions always stay in view. */
   @media (max-height: 680px) {
     dialog.screen { padding: var(--s-4); }
-    h1 { margin: var(--s-3) 0 var(--s-1); font-size: 30px; }
-    .column .readout { margin: var(--s-2) 0 var(--s-3); }
-    .chart { margin: var(--s-5) 0 var(--s-4); }
+    h1 { margin: var(--s-2) 0 0; font-size: 30px; }
+    .chart { margin: var(--s-5) 0; }
     .plot { height: 84px; padding-top: 16px; }
     .close { min-height: 48px; }
     .btn.hold { min-height: 44px; margin-top: var(--s-2); }
@@ -216,10 +213,9 @@ const STYLES = `${BASE}
   }
   @media (max-height: 460px) {
     dialog.screen { padding: var(--s-3) var(--s-4); }
-    h1 { margin: var(--s-2) 0 var(--s-1); font-size: 26px; }
+    h1 { margin: var(--s-1) 0 0; font-size: 26px; }
     .chart { display: none; }
-    .column .meter { margin-bottom: var(--s-4); }
-    .column .readout { font-size: 30px; }
+    .column .readout { margin-bottom: var(--s-5); }
     .close { min-height: 44px; }
     .btn.hold { min-height: 40px; }
   }
@@ -256,7 +252,6 @@ export default class BlockScreen {
   private siteName: HTMLSpanElement
   private time: HTMLSpanElement
   private limitText: HTMLSpanElement
-  private meter: HTMLDivElement
   private chart: HTMLDivElement
   private closeButton: HTMLButtonElement
   private holdButton: HoldButton
@@ -340,7 +335,6 @@ export default class BlockScreen {
     this.siteName = h('span', { class: 'name' })
     this.time = h('span', { class: 'time' })
     this.limitText = h('span', { class: 'limit' })
-    this.meter = h('div', { class: 'meter', role: 'meter', 'aria-valuemin': '0' })
     this.chart = h('div', { class: 'chart', role: 'img' })
 
     const hold = this.holdButton
@@ -359,12 +353,11 @@ export default class BlockScreen {
         h('h1', { id: 'title' }, t('blockTitle')),
         h(
           'p',
-          { class: 'readout', title: t('tooltipToday') },
+          { class: 'readout readout-secondary', title: t('tooltipToday') },
           h('span', { class: 'sr' }, t('labelToday')),
           this.time,
           this.limitText
         ),
-        this.meter,
         this.chart,
         this.closeButton,
         hold.el,
@@ -442,13 +435,10 @@ export default class BlockScreen {
     this.drawn = key
     this.siteName.textContent = state.site
     this.dialog.setAttribute('aria-label', scope === 'site' ? t('blockAriaSite', state.site) : t('blockAriaAllSites'))
-    // The popup's readout and meter, from the same state: this site's time
-    // against its own limit, and the meter against the limit that blocked.
+    // The popup's readout, from the same state: this site's time against
+    // its own limit.
     drawReadout(this.time, this.limitText, siteToday, state.siteLimit)
-    drawLimitMeter(this.meter, elapsed, limit, scope, state.site)
-    // The site's hours split where its own limit fell; against the
-    // all-sites limit, the hours of one site can't be.
-    drawChart(this.chart, hours, scope === 'site' ? limit : null, hourOf(now), state.site)
+    drawChart(this.chart, hours, hourOf(now), state.site)
   }
 
   // Each tick while blocked, take back what the page changed since the last:
@@ -777,13 +767,11 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
 
 const toMinutes = (ms: number) => Math.round(ms / 60_000)
 
-// Today on `site` by hour: grey for the time before the daily `limit` was
-// reached (null: none to split at), the accent after it, a value over the
-// busiest bars that have room, and the current hour marked Now. The limit
-// itself is on the meter: it is a daily total, not an hour's.
-function drawChart(el: HTMLElement, hours: number[], limit: number | null, now: number, site: string): void {
+// Today on `site` by hour, one tone (usage only), a value over the busiest
+// bars that have room, and the current hour marked Now. The readout states
+// the limit.
+function drawChart(el: HTMLElement, hours: number[], now: number, site: string): void {
   const top = Math.max(HOUR_FLOOR_MS, ...hours)
-  const parts = splitAtLimit(hours, limit, true)
   // Values over bars with no labelled neighbour: Now first, then the
   // busiest.
   const labelled = new Set<number>()
@@ -793,9 +781,9 @@ function drawChart(el: HTMLElement, hours: number[], limit: number | null, now: 
       labelled.add(i)
     }
   }
-  const cols = parts.map((part, i) => {
+  const cols = hours.map((ms, i) => {
     const col = h('div', { 'data-hour': String(i), 'data-now': i === now })
-    drawBar(col, part, top)
+    drawBar(col, ms, top)
     if (labelled.has(i)) {
       col.append(h('span', { class: 'val' }, t('limitChipMinutes', String(toMinutes(hours[i]!)))))
     }

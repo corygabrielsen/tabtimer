@@ -3,7 +3,7 @@ import { test, expect, seed, today, openPopup, snoozeBlock, LIMITS_KEY, OVERLAY_
 
 // WCAG AA on the real built pages, light and dark: every visible text
 // against what is behind it (4.5:1, 3:1 when large), and the graphics that
-// carry meaning (the meter, the hour bars, the limit's mark, the switch, a
+// carry meaning (the hour bars, the switch, a
 // chosen chip, field edges) against theirs (3:1). The page script's shadow
 // roots are read through DevTools, which sees into closed roots. States the
 // pages don't show at rest (hover, pressed, focus) are checked as the token
@@ -60,13 +60,12 @@ const classes = (n: Node) => (attr(n, 'class') ?? '').split(/\s+/)
 
 // The graphics that carry meaning, by tag and class.
 const GRAPHICS: Array<[string, (node: Node) => boolean]> = [
-  ['hour bar', (n) => classes(n).includes('seg') && attr(n, 'data-part') !== null],
-  ['meter piece', (n) => n.nodeName === 'SPAN' && /^(in|over)$/.test(attr(n, 'class') ?? '')],
-  ['meter mark', (n) => classes(n).includes('lim')],
+  [
+    'hour bar',
+    (n) => classes(n).includes('seg') && (attr(n, 'data-part') !== null || attr(n, 'data-series') === 'site'),
+  ],
   ['switch', (n) => classes(n).includes('switch')],
   ['chosen chip', (n) => classes(n).includes('limit-chip') && attr(n, 'aria-checked') === 'true'],
-  // The hold button's fill, against its track (the surface behind it).
-  ['hold fill', (n) => classes(n).includes('fill')],
   // An icon button: its glyph is drawn in its text colour.
   ['gear', (n) => classes(n).includes('gear')],
 ]
@@ -214,10 +213,11 @@ async function tokenPairs(page: Page): Promise<Finding[]> {
     ['--field-line', '--sheet', 3],
     ['--bar', '--sunk', 3],
     ['--accent', '--sunk', 3],
-    // The hold button: its fill on its track, the label on each.
+    // The hold button: its fill's edge line on the tint and on the track,
+    // the label on each.
+    ['--accent', '--accent-soft', 3],
     ['--accent', '--bg', 3],
     ['--accent-ink', '--bg', 4.5],
-    ['--on-accent', '--accent', 4.5],
     ['--thumb-on', '--accent', 3],
     ['--series-other', '--sunk', 3],
   ]
@@ -294,7 +294,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await off.emulateMedia({ colorScheme: scheme })
       await expect(off.locator('#enable')).toBeVisible()
       findings.push(...(await audit(off)))
-      expect(misses(findings, ['text', 'meter piece', 'meter mark', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'switch', 'chosen chip'])).toEqual([])
     })
 
     test('Settings and Activity', async ({ context, serviceWorker, extensionId }) => {
@@ -314,7 +314,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await expect(usage.locator('#report')).toBeVisible()
       findings.push(...(await audit(usage)))
       await usage.locator(`[data-site="${SITE_A}"]`).click()
-      await expect(usage.locator('#bars .seg[data-part="over"]')).not.toHaveCount(0)
+      await expect(usage.locator('#bars .seg[data-series="site"]')).not.toHaveCount(0)
       findings.push(...(await audit(usage)))
       await usage.getByRole('radio', { name: 'Week' }).check()
       await expect(usage.locator('.ref-limit')).toBeVisible()
@@ -340,7 +340,7 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.waitForTimeout(500)
       findings.push(...(await audit(page)))
       // The pill's dimmed panel rows are the original design, kept as is.
-      expect(misses(findings, ['text', 'hour bar', 'meter piece', 'meter mark', 'hold fill', 'gear'])).toEqual([])
+      expect(misses(findings, ['text', 'hour bar', 'gear'])).toEqual([])
     })
   })
 }

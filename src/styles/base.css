@@ -463,57 +463,23 @@ a:hover {
   font-weight: 500;
 }
 
-/* --- Meter: grey up to the limit's mark, then one accent piece for the time over.
-   Under the limit the rest of the way is an empty track. */
-
-.meter {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 16px;
+/* A readout under a title: secondary in size, so the title stays the one
+   title. */
+.readout-secondary {
+  gap: var(--s-1);
+  font-size: 20px;
+  letter-spacing: 0;
 }
 
-.meter > span {
-  height: 8px;
-  min-width: 2px;
-  border-radius: var(--r-xs);
-  background: var(--accent);
+.readout-secondary .time {
+  font-weight: 600;
 }
 
-.meter > span:first-of-type {
-  border-radius: var(--r-pill) var(--r-xs) var(--r-xs) var(--r-pill);
+.readout-secondary .limit {
+  font-weight: 400;
 }
 
-.meter > span:last-of-type {
-  border-radius: var(--r-xs) var(--r-pill) var(--r-pill) var(--r-xs);
-}
-
-.meter > span:only-of-type {
-  border-radius: var(--r-pill);
-}
-
-.meter > .in {
-  background: var(--bar);
-}
-
-.meter > .rest {
-  background: var(--sunk);
-  box-shadow: 0 0 0 1px var(--line) inset;
-}
-
-.meter > .lim {
-  flex: none;
-  width: 2px;
-  height: 16px;
-  margin: 0 2px;
-  border-radius: 1px;
-  background: var(--mark);
-}
-
-/* --- Hour bars: grey for the time before the daily limit was reached, an
-   accent cap for the time after. No limit mark: the limit is a daily total,
-   not an hour's. The gap between comes out of the bar. */
+/* --- Hour bars: one tone, usage only. The readout states the limit. */
 
 .hbar {
   position: relative;
@@ -524,21 +490,8 @@ a:hover {
   position: absolute;
   left: 0;
   right: 0;
-  border-radius: var(--r-xs);
+  border-radius: 4px 4px 0 0;
   background: var(--bar);
-}
-
-.hbar > .seg.top {
-  border-radius: 4px 4px var(--r-xs) var(--r-xs);
-}
-
-.hbar > .seg.base {
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.hbar > .seg.over {
-  background: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -160,27 +160,19 @@ test('shows the worker’s numbers, as the popup does, and marks the current hou
   const page = await blockedPage(context, site(SITE_A))
   const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
   await expect(popup.locator('#summary')).toHaveText('10 min over')
-  // The block screen's readout and meter are the popup's, at the same moment
+  // The block screen's readout is the popup's, at the same moment
   // (the blocked tab isn't counting, so the time holds still).
   expect(await shadowText(page, BLOCK_ID, '.readout .time')).toBe('01:10:00')
   await expect(popup.locator('#today')).toHaveText('01:10:00')
   expect(await shadowText(page, BLOCK_ID, '.readout .limit')).toBe('/ 01:00:00')
   await expect(popup.locator('#readout-of')).toHaveText('/ 01:00:00')
-  expect(await shadowAttribute(page, BLOCK_ID, '.meter', 'aria-valuetext')).toBe(
-    await popup.locator('#meter').getAttribute('aria-valuetext')
-  )
-  // Grey to the limit's mark, then one accent piece over, on both.
-  await expect(popup.locator('#meter > *')).toHaveCount(3)
-  expect(await shadowAttribute(page, BLOCK_ID, '.meter > .over', 'class')).toBe('over')
-  expect(await shadowAttribute(page, BLOCK_ID, '.meter > .over + *', 'class')).toBeNull()
 
   const hour = String(await page.evaluate(() => new Date().getHours()))
   expect(await shadowAttribute(page, BLOCK_ID, '[data-now]', 'data-hour')).toBe(hour)
   expect(await shadowText(page, BLOCK_ID, '.axis .now')).toBe('Now')
-  // This hour went past the daily limit: its overage capped. No limit mark
-  // on an hour bar; the meter names the limit.
-  expect(await shadowAttribute(page, BLOCK_ID, '[data-now] .seg.over', 'data-part')).toBe('over')
-  expect(await shadowAttribute(page, BLOCK_ID, '.chart .tick', 'class')).toBeNull()
+  // The hour bar is usage only, one tone; the readout states the limit.
+  expect(await shadowAttribute(page, BLOCK_ID, '[data-now] .seg', 'data-part')).toBe('usage')
+  expect(await shadowAttribute(page, BLOCK_ID, '.chart .seg.over', 'class')).toBeNull()
 })
 
 test('restores focus to the page control that had it', async ({ context, serviceWorker, site }) => {

@@ -32,9 +32,6 @@ export class HoldButton {
   // A polite live region: what the hold did.
   readonly status: HTMLSpanElement
   private label: HTMLSpanElement
-  // The label again, inside the fill: the part the fill covers reads in
-  // the fill's ink.
-  private filled: HTMLSpanElement
   private state: State = 'rest'
   private start = 0
   private frame = 0
@@ -50,12 +47,11 @@ export class HoldButton {
     this.hint = h('span', { class: 'sr', id: 'hold-hint' }, labels.hint)
     this.status = h('span', { class: 'sr', 'aria-live': 'polite' })
     this.label = h('span', { class: 'lbl' })
-    this.filled = h('span', { class: 'lbl' })
     this.el = h(
       'button',
       { type: 'button', class: 'btn hold', 'aria-describedby': 'hold-hint' },
-      this.label,
-      h('span', { class: 'fill', 'aria-hidden': 'true' }, this.filled)
+      h('span', { class: 'fill' }),
+      this.label
     )
     this.show(null, labels.rest)
     const el = this.el
@@ -174,7 +170,6 @@ export class HoldButton {
 
   private show(icon: SVGSVGElement | null, text: string) {
     this.label.replaceChildren(...(icon ? [icon] : []), h('span', { class: 'txt' }, text))
-    this.filled.replaceChildren(...(icon ? [icon.cloneNode(true)] : []), text)
   }
 
   private clearNudge() {
