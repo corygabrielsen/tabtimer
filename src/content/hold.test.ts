@@ -37,10 +37,11 @@ afterEach(() => {
 })
 
 describe('press and hold', () => {
-  it('rests as an outlined button with its ring, described as press and hold', () => {
+  it('rests as an outlined button with its label, described as press and hold', () => {
     expect(hold.el.className).toBe('btn hold')
     expect(text()).toBe(LABELS.rest)
-    expect(hold.el.querySelector('svg.ring')).not.toBeNull()
+    // The label alone: the fill is the one progress cue.
+    expect(hold.el.querySelector('svg')).toBeNull()
     expect(hold.el.getAttribute('aria-describedby')).toBe(hold.hint.id)
     expect(hold.hint.textContent).toBe('Press and hold')
     expect(hold.status.getAttribute('aria-live')).toBe('polite')

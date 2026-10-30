@@ -7,6 +7,7 @@ import {
   shadowAttribute,
   clickInShadow,
   holdInShadow,
+  shadowBox,
   openPopup,
   read,
   shadowText,
@@ -94,6 +95,35 @@ test('holding Space on 2 more minutes snoozes too', async ({ context, serviceWor
   await page.keyboard.up('Space')
   await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
 })
+
+// Short CSS viewports: a 1080p screen at 150% zoom, shorter windows, a 720p
+// window at 150%, and the shortest supported. The card adapts; its actions
+// stay in view with nothing to scroll.
+for (const [width, height] of [
+  [1280, 620],
+  [1280, 520],
+  [1000, 440],
+  [853, 400],
+  [640, 360],
+] as const) {
+  test(`fits ${width}x${height} without scrolling, its actions in view`, async ({ context, serviceWorker, site }) => {
+    await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+    const page = await context.newPage()
+    await page.setViewportSize({ width, height })
+    await page.goto(site(SITE_A))
+    await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+    // The card's entrance settles first.
+    await page.waitForTimeout(600)
+    for (const selector of ['button.close', 'button.hold', 'button.settings', 'button.activity']) {
+      const box = await shadowBox(page, BLOCK_ID, selector)
+      expect(box.top, selector).toBeGreaterThanOrEqual(0)
+      expect(box.left, selector).toBeGreaterThanOrEqual(0)
+      expect(box.bottom, selector).toBeLessThanOrEqual(height)
+      expect(box.right, selector).toBeLessThanOrEqual(width)
+    }
+    expect((await shadowBox(page, BLOCK_ID, 'dialog')).overflow).toBeLessThanOrEqual(0)
+  })
+}
 
 test('shows the worker’s numbers, as the popup does, and marks the current hour', async ({
   context,

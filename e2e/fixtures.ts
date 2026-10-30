@@ -359,6 +359,37 @@ async function centreInShadow(page: Page, hostId: string, selector: string): Pro
   return { x: (x1! + x3!) / 2, y: (y1! + y3!) / 2 }
 }
 
+// An element's box inside a host's closed shadow root, and how far its
+// content overflows it (scrollHeight - clientHeight).
+export async function shadowBox(
+  page: Page,
+  hostId: string,
+  selector: string
+): Promise<{ top: number; left: number; bottom: number; right: number; overflow: number }> {
+  const { cdp, shadow } = await shadowRootOf(page, hostId)
+  try {
+    if (!shadow) {
+      throw new Error(`no shadow root on #${hostId}`)
+    }
+    const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: shadow.nodeId, selector })
+    if (!nodeId) {
+      throw new Error(`${selector} not found in #${hostId}`)
+    }
+    const { object } = await cdp.send('DOM.resolveNode', { nodeId })
+    const { result } = await cdp.send('Runtime.callFunctionOn', {
+      objectId: object.objectId!,
+      functionDeclaration: `function () {
+        const r = this.getBoundingClientRect()
+        return { top: r.top, left: r.left, bottom: r.bottom, right: r.right, overflow: this.scrollHeight - this.clientHeight }
+      }`,
+      returnByValue: true,
+    })
+    return result.value as { top: number; left: number; bottom: number; right: number; overflow: number }
+  } finally {
+    await cdp.detach()
+  }
+}
+
 // Real mouse click on an element inside a host's closed shadow root.
 export async function clickInShadow(page: Page, hostId: string, selector: string): Promise<void> {
   const { x, y } = await centreInShadow(page, hostId, selector)

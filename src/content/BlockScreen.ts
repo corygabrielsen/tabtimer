@@ -154,8 +154,8 @@ const STYLES = `${BASE}
     font-size: 17px;
   }
   .close svg { width: 20px; height: 20px; }
-  /* Hold to snooze: one cue, the ring's arc closing over a soft fill whose
-     leading edge shows how far. --p: 0..1. */
+  /* Hold to snooze: one cue, a soft fill whose leading edge shows how far.
+     --p: 0..1. */
   .btn.hold {
     position: relative;
     isolation: isolate;
@@ -185,26 +185,24 @@ const STYLES = `${BASE}
     position: absolute;
     inset: 0;
     z-index: -1;
-    border-right: 2px solid var(--accent);
     background: var(--accent-soft);
     transform: translateX(calc((var(--p, 0) - 1) * 100%));
   }
-  .hold.done .fill { border-right-color: transparent; }
+  /* The leading edge: above and below the label, never across it. */
+  .hold .fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(var(--accent) 28%, transparent 28% 72%, var(--accent) 72%);
+  }
+  .hold.done .fill::after { display: none; }
   .hold.released .fill { transition: transform 0.32s var(--ease); }
   .hold .lbl { display: inline-flex; align-items: center; gap: var(--s-2); }
   .hold.done .lbl { animation: settle 0.36s var(--ease); }
   @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
-  .ring { transform: rotate(-90deg); }
-  .ring circle { fill: none; }
-  .ring .trk { stroke: var(--bar); stroke-width: 1.75; }
-  .ring .prg {
-    stroke: var(--accent-ink);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-    stroke-dasharray: calc(var(--p, 0) * 100) 100;
-    opacity: clamp(0, calc(var(--p, 0) * 1000), 1);
-  }
-  .hold.released .ring .prg { transition: stroke-dasharray 0.32s var(--ease); }
   .check { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .subrow { display: flex; justify-content: center; gap: var(--s-2); margin-top: var(--s-4); }
   .subrow .btn { padding: 0 var(--s-4); font-size: var(--t-md); }
@@ -212,6 +210,31 @@ const STYLES = `${BASE}
     .sheet { padding: var(--s-6) var(--s-5) var(--s-5); border-radius: var(--r-xl); }
     h1 { font-size: 30px; }
     .plot { column-gap: 3px; }
+  }
+  /* Short viewports (a laptop, or a page zoomed in): the card fits without
+     scrolling. Tighter spacing first, then a shorter chart, then none:
+     the actions always stay in view. */
+  @media (max-height: 680px) {
+    dialog.screen { padding: var(--s-2); }
+    .sheet { padding: var(--s-6) var(--s-8) var(--s-5); border-radius: var(--r-xl); }
+    h1 { margin: var(--s-3) 0 var(--s-1); font-size: 30px; }
+    .panel { margin: var(--s-4) 0; padding: var(--s-3) var(--s-4) var(--s-2); }
+    .plot { height: 84px; padding-top: 16px; }
+    .close { min-height: 48px; }
+    .btn.hold { min-height: 44px; margin-top: var(--s-2); }
+    .subrow { margin-top: var(--s-2); }
+  }
+  @media (max-height: 540px) {
+    .plot { height: 60px; }
+  }
+  @media (max-height: 460px) {
+    .sheet { padding: var(--s-4) var(--s-6); }
+    h1 { margin: var(--s-2) 0 var(--s-1); font-size: 26px; }
+    .panel { display: none; }
+    .used { margin-bottom: var(--s-4); }
+    .close { min-height: 44px; }
+    .btn.hold { min-height: 40px; }
+    .subrow { margin-top: var(--s-1); }
   }
   @media (prefers-reduced-motion: reduce) {
     .btn.hold.holding { transform: none; }

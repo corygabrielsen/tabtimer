@@ -1,4 +1,4 @@
-// Press and hold: a button that acts only after HOLD_MS held down, by
+// Press and hold: a button (its fill shows the progress) that acts only after HOLD_MS held down, by
 // pointer or by Space/Enter while focused. Letting go early drains the
 // progress back. The block screen's snooze, a deliberate act (styles in
 // BlockScreen.ts).
@@ -16,14 +16,6 @@ const DRAIN_MS = 320
 export type HoldLabels = { rest: string; holding: string; done: string; hint: string }
 
 type State = 'rest' | 'holding' | 'done'
-
-const RING = (): SVGSVGElement =>
-  svg(
-    '0 0 20 20',
-    'ring',
-    ['circle', { class: 'trk', cx: '10', cy: '10', r: '7.25' }],
-    ['circle', { class: 'prg', cx: '10', cy: '10', r: '7.25', pathLength: '100' }]
-  )
 
 const CHECK = (): SVGSVGElement => svg('0 0 20 20', 'check', ['path', { d: 'M4.75 10.25l3.5 3.5 7-7.5' }])
 
@@ -56,11 +48,11 @@ export class HoldButton {
       h('span', { class: 'fill' }),
       this.label
     )
-    this.show(RING(), labels.rest)
+    this.show(null, labels.rest)
     const el = this.el
     el.addEventListener('pointerdown', (e) => {
       if (e.button === 0) {
-        // The default stays: the press focuses the button (no ring), as any
+        // The default stays: the press focuses the button (no focus ring), as any
         // button press does.
         this.press()
       }
@@ -96,7 +88,7 @@ export class HoldButton {
     this.state = 'rest'
     this.el.classList.remove('holding', 'released', 'done')
     this.setProgress(0)
-    this.show(RING(), this.labels.rest)
+    this.show(null, this.labels.rest)
     this.status.textContent = ''
   }
 
@@ -110,7 +102,7 @@ export class HoldButton {
     this.steps = 0
     this.el.classList.remove('released')
     this.el.classList.add('holding')
-    this.show(RING(), this.labels.holding)
+    this.show(null, this.labels.holding)
     this.frame = requestAnimationFrame(this.tick)
   }
 
@@ -139,7 +131,7 @@ export class HoldButton {
     this.el.classList.remove('holding')
     this.el.classList.add('released')
     this.setProgress(0)
-    this.show(RING(), this.labels.rest)
+    this.show(null, this.labels.rest)
     this.timer = setTimeout(() => {
       this.timer = null
       this.el.classList.remove('released')
@@ -165,8 +157,8 @@ export class HoldButton {
     this.el.style.setProperty('--p', String(shown))
   }
 
-  private show(icon: SVGSVGElement, text: string) {
-    this.label.replaceChildren(icon, h('span', { class: 'txt' }, text))
+  private show(icon: SVGSVGElement | null, text: string) {
+    this.label.replaceChildren(...(icon ? [icon] : []), h('span', { class: 'txt' }, text))
   }
 
   private clearTimer() {
