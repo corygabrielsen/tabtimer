@@ -71,14 +71,16 @@ const STYLES = `${BASE}
     animation: column-in 0.48s var(--ease) both;
   }
   @keyframes column-in { from { opacity: 0; transform: translateY(14px); } }
-  /* The site, then its time against the limit: one block of facts under
-     the title, the same size, the site in regular text ink. */
+  /* The site, small and muted (its look from above the title), then its
+     time against the limit. */
   .site {
-    margin: var(--s-4) 0 0;
-    color: var(--text);
-    font-size: 20px;
-    font-weight: 400;
-    line-height: 1.3;
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    margin: var(--s-2) 0 0;
+    color: var(--muted);
+    font-size: var(--t-md);
     overflow-wrap: anywhere;
   }
   /* Settings: an icon in a 32 px round quiet button, in the screen's top
@@ -93,8 +95,8 @@ const STYLES = `${BASE}
     padding: 0;
   }
   .btn.gear svg { width: 20px; height: 20px; margin: 0; }
-  /* One title. Rhythm: the title, 16 px, the site and the readout (4 px
-     apart), 24 px, the chart, 24 px, the actions. */
+  /* One title. Rhythm: the title, 8 px, the site, 8 px, the readout, 24 px,
+     the chart, 24 px, the actions. */
   h1 {
     margin: 0;
     font-size: 36px;
@@ -102,7 +104,7 @@ const STYLES = `${BASE}
     letter-spacing: -0.022em;
     font-weight: 680;
   }
-  .column .readout { margin: var(--s-1) 0 0; }
+  .column .readout { margin: var(--s-2) 0 0; }
   .chart { margin: var(--s-6) 0; }
   /* 24 hour columns; the top 20 px holds the values over the bars. */
   .plot {
@@ -209,7 +211,6 @@ const STYLES = `${BASE}
   @media (max-height: 680px) {
     dialog.screen { padding: var(--s-4); }
     h1 { font-size: 30px; }
-    .site { margin-top: var(--s-3); }
     .chart { margin: var(--s-5) 0; }
     .plot { height: 84px; padding-top: 16px; }
     .close { min-height: 48px; }
@@ -221,7 +222,7 @@ const STYLES = `${BASE}
   @media (max-height: 460px) {
     dialog.screen { padding: var(--s-3) var(--s-4); }
     h1 { font-size: 26px; }
-    .site { margin-top: var(--s-2); }
+    .site { margin-top: var(--s-1); }
     .chart { display: none; }
     .column .readout { margin-bottom: var(--s-5); }
     .close { min-height: 44px; }
