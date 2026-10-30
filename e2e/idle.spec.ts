@@ -10,7 +10,7 @@ const SITE_A = 'site-a.test'
 
 // The overlay pill's time today (its first HH:MM:SS), in seconds.
 async function overlaySeconds(page: Parameters<typeof shadowText>[0]): Promise<number> {
-  const match = /(\d\d):(\d\d):(\d\d)/.exec(await shadowText(page, OVERLAY_ID))
+  const match = /(\d+):(\d\d):(\d\d)/.exec(await shadowText(page, OVERLAY_ID))
   return match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : NaN
 }
 

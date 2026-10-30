@@ -378,6 +378,12 @@ export default class FocusTracker {
     return this.state && !this.snoozing ? overAt(this.state, this.clock.now(), 'holds') : null
   }
 
+  // Whether this site's time today is over its limit (a snooze holding or
+  // not): the timer's over state.
+  isOver(): boolean {
+    return this.state !== null && overAt(this.state, this.clock.now(), 'ignored') !== null
+  }
+
   // The block screen is up (or down): blocked time is not counted.
   setBlocked(blocked: boolean): void {
     if (blocked !== this.blocked) {

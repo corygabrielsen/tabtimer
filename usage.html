@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title data-i18n="usageDocTitle">Tab Timer activity</title>
     <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
     <link rel="stylesheet" href="/src/styles/usage.css" />
   </head>
   <body>
@@ -22,46 +23,50 @@
       </header>
 
       <!-- No usage stored at all: one way forward. -->
-      <section id="empty" class="empty" hidden aria-labelledby="empty-h">
+      <section id="empty" class="empty card" hidden aria-labelledby="empty-h">
         <h2 id="empty-h" data-i18n="usageEmptyTitle">No activity yet</h2>
         <a href="options.html" data-i18n="usageEmptyLink">Choose sites to track</a>
       </section>
 
       <div id="report" hidden>
-        <section class="period" aria-labelledby="period-label">
-          <div class="period-nav">
-            <button id="prev" type="button" class="step">‹</button>
-            <h2 id="period-label" class="period-label" aria-live="polite" tabindex="-1"></h2>
-            <button id="next" type="button" class="step">›</button>
+        <div class="card main">
+          <section class="period" aria-labelledby="period-label">
+            <div class="period-nav">
+              <button id="prev" type="button" class="step">‹</button>
+              <h2 id="period-label" class="period-label" aria-live="polite" tabindex="-1"></h2>
+              <button id="next" type="button" class="step">›</button>
+            </div>
+            <p id="total" class="total"></p>
+            <p class="period-meta">
+              <span id="change"></span>
+              <span id="average"></span>
+            </p>
+          </section>
+
+          <div id="filter" class="filter" hidden>
+            <span id="filter-label"></span>
+            <button id="clear" type="button" class="btn btn-quiet btn-sm" data-i18n="usageShowAll">
+              Show all sites
+            </button>
           </div>
-          <p id="total" class="total"></p>
-          <p class="period-meta">
-            <span id="change"></span>
-            <span id="average"></span>
-          </p>
-        </section>
 
-        <div id="filter" class="filter" hidden>
-          <span id="filter-label"></span>
-          <button id="clear" type="button" class="btn btn-quiet" data-i18n="usageShowAll">Show all sites</button>
+          <div id="chart" class="chart"></div>
+          <div id="table-wrap" class="table-wrap" hidden></div>
+          <div class="chart-foot">
+            <ul id="legend" class="legend"></ul>
+            <button
+              id="table-toggle"
+              type="button"
+              class="btn btn-quiet btn-sm"
+              aria-controls="table-wrap"
+              data-i18n="usageShowTable"
+            >
+              Show as table
+            </button>
+          </div>
         </div>
 
-        <div id="chart" class="chart"></div>
-        <div id="table-wrap" class="table-wrap" hidden></div>
-        <div class="chart-foot">
-          <ul id="legend" class="legend"></ul>
-          <button
-            id="table-toggle"
-            type="button"
-            class="btn btn-quiet"
-            aria-controls="table-wrap"
-            data-i18n="usageShowTable"
-          >
-            Show as table
-          </button>
-        </div>
-
-        <section class="sites" aria-labelledby="sites-h">
+        <section class="sites card" aria-labelledby="sites-h">
           <h2 id="sites-h" data-i18n="usageSitesHeading">Sites</h2>
           <ul id="site-list" class="site-list"></ul>
         </section>

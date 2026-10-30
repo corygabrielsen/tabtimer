@@ -5,27 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title data-i18n="appName">Tab Timer</title>
     <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/base.css" />
     <link rel="stylesheet" href="/src/styles/popup.css" />
   </head>
   <body>
     <header class="bar">
       <span class="brand" data-i18n="appName">Tab Timer</span>
-      <button id="manage-btn" type="button" class="btn btn-quiet" data-i18n="popupSettings">Settings</button>
+      <button id="manage-btn" type="button" class="btn btn-quiet btn-sm" data-i18n="popupSettings">Settings</button>
     </header>
 
     <main class="body">
       <!-- Tracked site: today's time, limit progress, state, actions. -->
       <section id="tracked" hidden aria-labelledby="site">
-        <div id="hero" class="hero" data-state="open">
+        <div id="hero" class="hero card" data-state="open">
           <div class="hero-top">
-            <h1 id="site" class="host"></h1>
-            <span id="status" class="status"></span>
+            <h1 class="host"><span id="site-fav" class="fav" aria-hidden="true"></span><span id="site"></span></h1>
+            <span id="status" class="badge"></span>
           </div>
           <p class="readout figure" data-i18n-attr="title=tooltipToday">
             <span class="visually-hidden" data-i18n="labelToday">Today</span>
-            <span id="today">00:00:00</span>
+            <span id="today">0:00:00</span>
+            <span id="readout-of" class="of"></span>
           </p>
-          <div id="meter" class="meter" role="meter" aria-valuemin="0" hidden></div>
+          <div id="meter-wrap" hidden>
+            <div id="meter" class="meter" role="meter" aria-valuemin="0"></div>
+            <div id="meter-label" class="meter-label" aria-hidden="true"></div>
+          </div>
           <div class="timeline">
             <div id="strip" class="strip" role="img"></div>
             <div id="strip-axis" class="strip-axis" aria-hidden="true"></div>
@@ -35,7 +40,7 @@
 
         <p id="global-line" class="global" hidden></p>
 
-        <div class="controls">
+        <div class="controls card">
           <div class="control control-limit">
             <div class="control-head">
               <span class="control-label" data-i18n="popupLimit">Daily limit</span>
@@ -44,7 +49,7 @@
             <div id="site-limit"></div>
           </div>
 
-          <div class="control">
+          <div class="control control-switch">
             <span id="overlay-label" class="control-label" data-i18n="overlaySwitchLabel">Show timer on the page</span>
             <button
               id="toggle-btn"
@@ -58,7 +63,9 @@
         </div>
 
         <div class="actions">
-          <button id="reset-btn" type="button" class="btn btn-quiet" data-i18n="popupResetToday">Reset today</button>
+          <button id="reset-btn" type="button" class="btn btn-quiet btn-sm" data-i18n="popupResetToday">
+            Reset today
+          </button>
           <a id="activity-link" class="link" href="usage.html" target="_blank" data-i18n="usageSeeAll"
             >See all activity</a
           >
@@ -67,20 +74,21 @@
 
       <!-- A website that isn't tracked yet: one primary action. -->
       <section id="enable" hidden aria-labelledby="enable-site">
-        <div class="hero" data-state="idle">
+        <div class="hero card" data-state="idle">
           <div class="hero-top">
-            <h1 id="enable-site" class="host"></h1>
-            <span class="status" data-i18n="popupNotTrackedTitle">Not tracked</span>
+            <h1 class="host">
+              <span id="enable-fav" class="fav" aria-hidden="true"></span><span id="enable-site"></span>
+            </h1>
+            <span class="badge" data-i18n="popupNotTrackedTitle">Not tracked</span>
           </div>
-          <p class="readout figure" aria-hidden="true">--:--:--</p>
+          <button id="enable-btn" type="button" class="btn btn-primary wide" data-i18n="popupEnableSite">
+            Track this site
+          </button>
         </div>
-        <button id="enable-btn" type="button" class="btn btn-primary wide" data-i18n="popupEnableSite">
-          Track this site
-        </button>
       </section>
 
       <!-- Browser pages, the Web Store, files: extensions can't run there. -->
-      <section id="untracked" hidden aria-labelledby="untracked-title">
+      <section id="untracked" class="card plain" hidden aria-labelledby="untracked-title">
         <h1 id="untracked-title" class="lead" data-i18n="popupCantTrack">This page can't be tracked</h1>
         <p class="note" data-i18n="popupCantTrackDetail">Extensions can't run on this page.</p>
       </section>

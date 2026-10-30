@@ -47,7 +47,7 @@ describe('content script', () => {
   it('mounts the overlay and tracks focus time on load', async () => {
     await inject()
     await vi.advanceTimersByTimeAsync(seconds(12))
-    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('00:00:12')
+    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('0:00:12')
     // The service worker credits the open interval when it closes (or at
     // its checkpoint, every minute).
     expect(storedToday()).toBe(0)
@@ -62,7 +62,7 @@ describe('content script', () => {
     expect(storedToday()).toBe(minutes(1))
     await vi.advanceTimersByTimeAsync(minutes(2))
     expect(storedToday()).toBe(minutes(3))
-    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('00:03:00')
+    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('0:03:00')
   })
 
   it('enforces limits through the block screen', async () => {
@@ -151,7 +151,7 @@ describe('content script', () => {
     setPageState({ hidden: false })
     pageTransition('pageshow', true)
     await vi.advanceTimersByTimeAsync(seconds(30))
-    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('00:00:37')
+    expect(shadowOf('tabtimer-root').querySelector('.pill')?.textContent).toBe('0:00:37')
     await vi.advanceTimersByTimeAsync(seconds(23))
     expect(isBlocked()).toBe(true)
   })
@@ -227,6 +227,6 @@ describe('the page follows its grant and its extension', () => {
     await inject()
     await browser.permissions.remove({ origins: originsForSite('reddit.com') })
     await vi.advanceTimersByTimeAsync(seconds(5))
-    expect(shadowOf(OVERLAY).querySelector('.pill')?.textContent).toBe('00:00:05')
+    expect(shadowOf(OVERLAY).querySelector('.pill')?.textContent).toBe('0:00:05')
   })
 })

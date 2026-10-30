@@ -12,10 +12,7 @@
   "overlayLabel": { "message": "Tab Timer" },
   "overlayPillAria": {
     "message": "Tab Timer — $label$ $time$. Activate to expand.",
-    "placeholders": {
-      "label": { "content": "$1" },
-      "time": { "content": "$2" }
-    }
+    "placeholders": { "label": { "content": "$1" }, "time": { "content": "$2" } }
   },
   "overlayHide": { "message": "Hide Tab Timer on this page" },
   "overlaySmaller": { "message": "Make Tab Timer smaller" },
@@ -26,10 +23,7 @@
     "message": "$elapsed$ today · $limit$ limit",
     "placeholders": { "elapsed": { "content": "$1" }, "limit": { "content": "$2" } }
   },
-  "blockSnooze": {
-    "message": "$minutes$ more minutes",
-    "placeholders": { "minutes": { "content": "$1" } }
-  },
+  "blockSnooze": { "message": "$minutes$ more minutes", "placeholders": { "minutes": { "content": "$1" } } },
   "blockManage": { "message": "Limits…" },
   "durMinutes": { "message": "$n$ min", "placeholders": { "n": { "content": "$1" } } },
   "durHours": { "message": "$h$ h", "placeholders": { "h": { "content": "$1" } } },
@@ -67,17 +61,15 @@
   "popupStatusOver": { "message": "Limit reached" },
   "popupStatusSnoozed": { "message": "Snoozed" },
   "popupNoLimit": { "message": "No limit" },
-  "popupLeftSite": {
-    "message": "$left$ left of $limit$",
-    "placeholders": { "left": { "content": "$1" }, "limit": { "content": "$2" } }
-  },
-  "popupLeftGlobal": {
-    "message": "$left$ left of $limit$ (all sites)",
-    "placeholders": { "left": { "content": "$1" }, "limit": { "content": "$2" } }
-  },
-  "popupOverSite": { "message": "$over$ over limit", "placeholders": { "over": { "content": "$1" } } },
-  "popupOverGlobal": { "message": "$over$ over limit (all sites)", "placeholders": { "over": { "content": "$1" } } },
-  "popupSnoozeResumes": { "message": "Snoozed · $time$ left", "placeholders": { "time": { "content": "$1" } } },
+  "popupLeftSite": { "message": "$left$ left", "placeholders": { "left": { "content": "$1" } } },
+  "popupLeftGlobal": { "message": "$left$ left (all sites)", "placeholders": { "left": { "content": "$1" } } },
+  "popupOverSite": { "message": "$over$ over", "placeholders": { "over": { "content": "$1" } } },
+  "popupOverGlobal": { "message": "$over$ over (all sites)", "placeholders": { "over": { "content": "$1" } } },
+  "popupSnoozeLeft": { "message": "$time$ left", "placeholders": { "time": { "content": "$1" } } },
+  "popupOf": { "message": "of $limit$", "placeholders": { "limit": { "content": "$1" } } },
+  "snoozedOnce": { "message": "Snoozed once" },
+  "snoozedTwice": { "message": "Snoozed twice" },
+  "snoozedTimes": { "message": "Snoozed $n$ times", "placeholders": { "n": { "content": "$1" } } },
   "popupGlobalLine": {
     "message": "All sites: $used$ of $limit$",
     "placeholders": { "used": { "content": "$1" }, "limit": { "content": "$2" } }

@@ -5,10 +5,10 @@ import { test as base, chromium, type BrowserContext, type Page, type Worker } f
 
 export const EXTENSION_PATH = path.resolve(import.meta.dirname, '..', 'dist-e2e')
 
-// Mirrors src/core/schema.ts (schema 3). Kept literal so a change to the
+// Mirrors src/core/schema.ts (schema 4). Kept literal so a change to the
 // storage layout also fails these tests.
 export const SCHEMA_KEY = 'schema'
-export const SCHEMA = 3
+export const SCHEMA = 4
 export const LIMITS_KEY = 'limits'
 export const OVERLAY_ID = 'tabtimer-root'
 export const BLOCK_ID = 'tabtimer-block'

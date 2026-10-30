@@ -28,7 +28,7 @@ const STYLES = `
   .screen:not([open]) { display: none; }
   .screen,
   .screen::backdrop {
-    background: #000;
+    background: var(--bg);
   }
   .screen {
     position: fixed;
@@ -36,7 +36,7 @@ const STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #f5f5f5;
+    color: var(--text);
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-variant-numeric: tabular-nums;
     -webkit-user-select: none;
@@ -51,7 +51,7 @@ const STYLES = `
     font-size: 12px;
     letter-spacing: 0.3em;
     text-transform: uppercase;
-    color: #8a8a8a;
+    color: var(--muted);
     margin-bottom: 20px;
   }
   .host {
@@ -61,7 +61,7 @@ const STYLES = `
   }
   .detail {
     font-size: 13px;
-    color: #8a8a8a;
+    color: var(--muted);
     margin-bottom: 28px;
   }
   .row {
@@ -74,7 +74,7 @@ const STYLES = `
     border: 0;
     padding: 8px 4px;
     background: transparent;
-    color: #8a8a8a;
+    color: var(--muted);
     font: inherit;
     font-size: 12px;
     text-decoration: underline;
@@ -82,39 +82,39 @@ const STYLES = `
     cursor: pointer;
   }
   .activity:hover {
-    color: #f5f5f5;
+    color: var(--text);
   }
   .snooze {
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid var(--bar);
     border-radius: 2px;
     background: transparent;
-    color: #8a8a8a;
+    color: var(--muted);
     font: inherit;
     font-size: 12px;
     padding: 8px 16px;
     cursor: pointer;
   }
   .snooze:hover {
-    color: #f5f5f5;
-    border-color: rgba(255, 255, 255, 0.35);
+    color: var(--text);
+    border-color: var(--text);
   }
   .manage {
     display: block;
     margin: 16px auto 0;
     border: 0;
     background: transparent;
-    color: #8a8a8a;
+    color: var(--muted);
     font: inherit;
     font-size: 11px;
     cursor: pointer;
   }
   .manage:hover {
-    color: #f5f5f5;
+    color: var(--text);
   }
   .snooze:focus-visible,
   .activity:focus-visible,
   .manage:focus-visible {
-    outline: 1px solid #9a9a9a;
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 `
@@ -170,7 +170,7 @@ export default class BlockScreen {
     s.setProperty('inset', '0', 'important')
     s.setProperty('display', 'none', 'important')
     // Opaque even before (or without) the modal dialog painting over it.
-    s.setProperty('background', '#000', 'important')
+    s.setProperty('background', 'var(--bg)', 'important')
 
     const button = (cls: string, text: string, onClick: () => void) => {
       const el = h('button', { type: 'button', class: cls }, text)

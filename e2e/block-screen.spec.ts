@@ -348,14 +348,15 @@ for (const path of ['/scroll-document', '/scroll-inner']) {
 test('is fully opaque over a bright page, in light and dark', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/scroll-document'))
-  expect(await page.evaluate((id) => getComputedStyle(document.getElementById(id)!).backgroundColor, BLOCK_ID)).toBe(
-    'rgb(0, 0, 0)'
-  )
+  // The host itself is painted in the theme's ground, before and without
+  // the dialog: light stone, or near-black.
+  const ground = () => page.evaluate((id) => getComputedStyle(document.getElementById(id)!).backgroundColor, BLOCK_ID)
+  expect(await ground()).toBe('rgb(231, 235, 239)')
 
-  // Brightest channel anywhere in a strip across the top of the viewport,
-  // clear of the block screen's text.
+  // Every pixel in a strip across the top of the viewport, clear of the
+  // block screen's text, is that ground: none of the bright page shows.
   const decoder = await context.newPage()
-  const brightest = async () => {
+  const colours = async () => {
     const { width } = page.viewportSize()!
     const png = await page.screenshot({ clip: { x: 0, y: 0, width, height: 120 } })
     return decoder.evaluate(async (b64) => {
@@ -368,16 +369,17 @@ test('is fully opaque over a bright page, in light and dark', async ({ context, 
       const ctx = canvas.getContext('2d')!
       ctx.drawImage(img, 0, 0)
       const { data } = ctx.getImageData(0, 0, img.width, img.height)
-      let max = 0
+      const seen = new Set<string>()
       for (let i = 0; i < data.length; i += 4) {
-        max = Math.max(max, data[i]!, data[i + 1]!, data[i + 2]!)
+        seen.add(`rgb(${data[i]}, ${data[i + 1]}, ${data[i + 2]})`)
       }
-      return max
+      return [...seen]
     }, png.toString('base64'))
   }
-  expect(await brightest()).toBe(0)
+  expect(await colours()).toEqual(['rgb(231, 235, 239)'])
   await page.emulateMedia({ colorScheme: 'dark' })
-  expect(await brightest()).toBe(0)
+  expect(await ground()).toBe('rgb(15, 20, 24)')
+  expect(await colours()).toEqual(['rgb(15, 20, 24)'])
 })
 
 // The id of the element on top at (x, y): a host's, for anything in its

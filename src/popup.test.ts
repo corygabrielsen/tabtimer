@@ -4,7 +4,7 @@ import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { fakeChrome, type FakeChrome } from './test/chrome'
 import { $, click, enterCustom as enterCustomIn, flush, loadPageBody, normText } from './test/dom'
-import { dayEntry, seedToday, startBackground, storedToday } from './test/content'
+import { dayEntry, dayKeyOf, seedToday, startBackground, storedToday } from './test/content'
 import { bus } from './chrome/bus'
 
 let browser: FakeChrome
@@ -154,14 +154,14 @@ describe('popup on a tracked site', () => {
     await openReddit()
     expect(visibleSection()).toEqual(['tracked'])
     expect($('site').textContent).toBe('reddit.com')
-    expect($('today').textContent).toBe('00:01:05')
+    expect($('today').textContent).toBe('0:01:05')
   })
 
   it('updates live while open', async () => {
     await openReddit()
     seedToday({ 'reddit.com': 3_600_000 })
     await flush()
-    expect($('today').textContent).toBe('01:00:00')
+    expect($('today').textContent).toBe('1:00:00')
   })
 
   it('shows today on this site by hour, and links to all activity', async () => {
@@ -232,7 +232,7 @@ describe('popup on a tracked site', () => {
       expect(meter.getAttribute('aria-valuemax')).toBe('60')
       expect(meter.getAttribute('aria-valuetext')).toBe('23 min of 1 h')
       expect(meter.getAttribute('aria-label')).toBe('Time used of the daily limit for reddit.com')
-      expect(text('summary')).toBe('37 min left of 1 h')
+      expect(text('summary')).toBe('37 min left')
     })
 
     it('over the site limit: limit reached, by how much', async () => {
@@ -243,7 +243,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('over')
       expect(text('status')).toBe('Limit reached')
-      expect(text('summary')).toBe('3 min over limit')
+      expect(text('summary')).toBe('3 min over')
       expect($('meter').getAttribute('aria-valuenow')).toBe('45') // clamped to the max
     })
 
@@ -259,7 +259,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('ok')
-      expect(text('summary')).toBe('20 min left of 30 min (all sites)')
+      expect(text('summary')).toBe('20 min left (all sites)')
     })
 
     it('over the all-sites cap only: names the cap', async () => {
@@ -270,7 +270,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('over')
-      expect(text('summary')).toBe('5 min over limit (all sites)')
+      expect(text('summary')).toBe('5 min over (all sites)')
       expect($('meter').getAttribute('aria-label')).toBe('Time used of the daily limit for all tracked sites')
     })
 
@@ -282,7 +282,7 @@ describe('popup on a tracked site', () => {
       })
       await openReddit()
       expect(face()).toBe('ok')
-      expect(text('summary')).toBe('2 h left of 3 h (all sites)')
+      expect(text('summary')).toBe('2 h left (all sites)')
       expect($('global-line').hidden).toBe(true)
     })
 
@@ -305,7 +305,37 @@ describe('popup on a tracked site', () => {
       await openReddit()
       expect(face()).toBe('snoozed')
       expect(text('status')).toBe('Snoozed')
-      expect(text('summary')).toBe('3 min over limit. Snoozed · 4 min left')
+      expect(text('summary')).toBe('3 min over · 4 min left')
+    })
+
+    it('snoozed twice: counts them, and splits the time over at each', async () => {
+      const day = dayKeyOf()
+      const taken = (siteMs: number) => ({ site: 'reddit.com', at: 0, ms: 5 * MIN, siteMs, globalMs: siteMs })
+      browser.storage.local.seed({
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 }, snoozeUntil: Date.now() + 2 * MIN },
+        [`snoozes:${day.slice(4)}`]: [taken(60 * MIN), taken(65 * MIN)],
+        ...dayEntry({ 'reddit.com': 70 * MIN }),
+      })
+      await openReddit()
+      expect($('today').textContent).toBe('1:10:00')
+      expect($('today').querySelector('small')?.textContent).toBe(':00')
+      expect(text('readout-of')).toBe('of 1 h')
+      expect(text('summary')).toBe('Snoozed twice, 10 min over · 2 min left')
+      expect($('summary').querySelector('.over-ink')?.textContent).toBe('10 min over')
+      const meter = $('meter')
+      expect([...meter.children].map((c) => c.className)).toEqual(['in', 'lim', 'over', 'over'])
+      expect(text('meter-label')).toBe('1 h')
+      expect($('status').getAttribute('data-tone')).toBe('accent')
+    })
+
+    it('under the limit: the meter runs to an empty track and the limit’s mark', async () => {
+      browser.storage.local.seed({
+        [LIMITS_KEY]: { global: null, perSite: { 'reddit.com': 60 } },
+        ...dayEntry({ 'reddit.com': 20 * MIN }),
+      })
+      await openReddit()
+      expect([...$('meter').children].map((c) => c.className)).toEqual(['in', 'rest', 'lim'])
+      expect($('status').hasAttribute('data-tone')).toBe(false)
     })
 
     it('over, not snoozed, when the snooze was set before the clock went back', async () => {
@@ -340,7 +370,7 @@ describe('popup on a tracked site', () => {
       vi.advanceTimersByTime(3000)
       await flush()
       expect(on()).toBe(0)
-      expect($('today').textContent).toBe('00:00:00')
+      expect($('today').textContent).toBe('0:00:00')
     } finally {
       vi.useRealTimers()
     }
@@ -380,11 +410,11 @@ describe('popup on a tracked site', () => {
         await inUse(50_000)
         await openReddit()
         expect(storedToday('reddit.com')).toBe(0)
-        expect($('today').textContent).toBe('00:00:50')
+        expect($('today').textContent).toBe('0:00:50')
         expect(face()).toBe('ok')
         // It runs on while the tab does, and goes over when the page blocks.
         vi.advanceTimersByTime(10_000)
-        expect($('today').textContent).toBe('00:01:00')
+        expect($('today').textContent).toBe('0:01:00')
         expect(face()).toBe('over')
       } finally {
         vi.useRealTimers()
@@ -410,7 +440,7 @@ describe('popup on a tracked site', () => {
     it('counts another tab’s running time only as that tab’s page is told', async () => {
       await inUse(30_000)
       await openPopup({ id: 2, url: 'https://www.reddit.com/' })
-      expect($('today').textContent).toBe('00:00:00')
+      expect($('today').textContent).toBe('0:00:00')
     })
   })
 
@@ -418,7 +448,7 @@ describe('popup on a tracked site', () => {
     seedToday({ 'reddit.com': 65_000 })
     browser.storage.local.writeDuringNextRead(dayEntry({ 'reddit.com': 3_600_000 }))
     await openReddit()
-    expect($('today').textContent).toBe('01:00:00')
+    expect($('today').textContent).toBe('1:00:00')
   })
 
   it('ignores another day’s usage', async () => {
@@ -427,7 +457,7 @@ describe('popup on a tracked site', () => {
     const bar = $('strip').querySelector('span')
     browser.storage.local.set(dayEntry({ 'reddit.com': 3_600_000 }, new Date(Date.now() - 86_400_000)))
     await flush()
-    expect($('today').textContent).toBe('00:01:05')
+    expect($('today').textContent).toBe('0:01:05')
     expect($('strip').querySelector('span')).toBe(bar)
   })
 
@@ -439,9 +469,9 @@ describe('popup on a tracked site', () => {
         ...dayEntry({ 'reddit.com': 48 * MIN }),
       })
       await openReddit()
-      expect(text('summary')).toContain('Snoozed · 4 min left')
+      expect(text('summary')).toContain('· 4 min left')
       vi.advanceTimersByTime(2 * MIN)
-      expect(text('summary')).toContain('Snoozed · 2 min left')
+      expect(text('summary')).toContain('· 2 min left')
       // Once the snooze lapses the face goes back to blocking.
       vi.advanceTimersByTime(3 * MIN)
       expect(face()).toBe('over')
@@ -455,13 +485,13 @@ describe('popup on a tracked site', () => {
     browser.runtime.onMessage.listeners.clear()
     await openReddit()
     expect(visibleSection()).toEqual(['tracked'])
-    expect($('today').textContent).toBe('00:00:00')
+    expect($('today').textContent).toBe('0:00:00')
     expect($('toggle-btn').getAttribute('aria-checked')).toBe('true')
     click($('toggle-btn'))
     click($('reset-btn'))
     click($('reset-btn'))
     await flush()
-    expect($('today').textContent).toBe('00:00:00')
+    expect($('today').textContent).toBe('0:00:00')
   })
 
   describe('reset today', () => {
@@ -484,7 +514,7 @@ describe('popup on a tracked site', () => {
       await openReddit()
       click($('reset-btn'))
       click($('reset-btn'))
-      expect($('today').textContent).toBe('00:00:00') // optimistic
+      expect($('today').textContent).toBe('0:00:00') // optimistic
       await flush()
       expect(storedToday('reddit.com')).toBe(0)
       expect(storedToday('x.com')).toBe(5)
@@ -506,9 +536,9 @@ describe('popup on a tracked site', () => {
       browser.storage.local.error = 'quota'
       click($('reset-btn'))
       click($('reset-btn'))
-      expect($('today').textContent).toBe('00:00:00') // optimistic
+      expect($('today').textContent).toBe('0:00:00') // optimistic
       await flush()
-      expect($('today').textContent).toBe('00:01:05')
+      expect($('today').textContent).toBe('0:01:05')
     })
 
     it('disarms by itself after a few seconds', async () => {
@@ -561,7 +591,7 @@ describe('popup on a tracked site', () => {
       await flush()
       expect(storedLimits()).toEqual({ global: 60, perSite: { 'reddit.com': 120 }, snoozeUntil: 0 })
       expect(text('site-limit-saved')).toBe('Saved')
-      expect(text('summary')).toBe('2 h left of 2 h')
+      expect(text('summary')).toBe('2 h left')
     })
 
     it('Off clears the limit', async () => {

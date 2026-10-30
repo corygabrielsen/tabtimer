@@ -153,7 +153,7 @@ function paintToday(el: HTMLElement, host: string): void {
 function stopButton(host: string, name: string, origins: () => string[]): HTMLButtonElement {
   const stop = h(
     'button',
-    { type: 'button', class: 'btn btn-quiet stop', 'aria-label': t('optionsStopAria', name), 'data-host': host },
+    { type: 'button', class: 'btn btn-quiet btn-sm stop', 'aria-label': t('optionsStopAria', name), 'data-host': host },
     t('optionsStop')
   )
   stop.addEventListener('click', () => {

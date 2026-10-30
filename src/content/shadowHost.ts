@@ -1,3 +1,9 @@
+import TOKENS from '../styles/tokens.css?raw'
+
+// The design tokens the extension pages use (src/styles/tokens.css), scoped
+// to a shadow root's host: one palette for every surface.
+export const HOST_TOKENS = TOKENS.replaceAll(':root', ':host')
+
 // Top of the stacking context, so the content UI stays above page chrome.
 const MAX_Z_INDEX = 2147483647
 
@@ -8,7 +14,8 @@ export type ShadowHost = {
   attach: () => boolean
 }
 
-// A fixed host element on the page, with `styles` in a closed shadow root:
+// A fixed host element on the page, with the tokens and `styles` in a closed
+// shadow root:
 // the page can't query into it, and the page's CSS and the UI's can't reach
 // each other. A stale host left by a previous instance (re-injection, SPA
 // remount) is removed first, so hosts never stack. The host is a child of
@@ -23,7 +30,7 @@ export function mountShadowHost(id: string, styles: string): ShadowHost {
   host.style.setProperty('z-index', String(MAX_Z_INDEX), 'important')
   const shadow = host.attachShadow({ mode: 'closed' })
   const style = document.createElement('style')
-  style.textContent = styles
+  style.textContent = `${HOST_TOKENS}\n${styles}`
   shadow.append(style)
   const attach = () => {
     const root = document.documentElement as HTMLElement | null

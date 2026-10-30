@@ -4,12 +4,14 @@ import type { StoreChanges } from './ports'
 import { formatTime } from './format'
 import { dayOf } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
-import { hourLabel, withUncredited } from './core/usage'
+import { overSegments } from './core/snooze'
+import { hourLabel, splitAtLimit, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { dayKey, emptyBuckets, normalizeDay, normalizePrefs, LIMITS_KEY, PREFS_KEY, type DayUsage } from './core/schema'
 import { localizeDom, t } from './i18n'
-import { byId, formatDuration, h, setDocumentLang, uiLocale } from './ui'
+import { byId, formatDuration, h, setDocumentLang, snoozedText, uiLocale } from './ui'
+import { drawBar, drawMeter } from './bars'
 import { createSiteLimitPicker, type LimitPicker } from './limitPicker'
 
 type ActiveTab = { id: number; url: string }
@@ -61,9 +63,10 @@ function moveNow() {
   nowMark.style.left = at(now.getHours() + now.getMinutes() / 60)
 }
 
-// Today's time on this site as a timeline: 24 thin bars, faint marks every
-// six hours with their names below, and the now mark.
-function renderStrip(base: string, hours: number[]) {
+// Today's time on this site as a timeline: 24 hour bars (split where its
+// own limit fell), faint marks every six hours with their names below, and
+// the now mark.
+function renderStrip(base: string, hours: number[], limit: number | null) {
   const strip = byId('strip')
   const axis = byId('strip-axis')
   if (!strip || !axis) {
@@ -78,9 +81,9 @@ function renderStrip(base: string, hours: number[]) {
   moveNow()
   strip.replaceChildren(
     ...STRIP_MARKS.map((hour) => placed(h('i', { class: 'mark' }), hour)),
-    ...hours.map((ms) => {
-      const bar = h('span', { 'data-on': ms > 0 })
-      bar.style.setProperty('--v', String(ms / top))
+    ...splitAtLimit(hours, limit, true).map((part) => {
+      const bar = h('span', { 'data-on': part.within + part.over > 0 })
+      drawBar(bar, part, top, null, false)
       return bar
     }),
     nowMark
@@ -102,7 +105,22 @@ function faceFor(base: string, s: Snapshot) {
   } else if (siteLimit !== null || globalLimit !== null) {
     state = 'ok'
   }
-  return { state, reason, resumes, siteLimit, globalLimit, ...totals }
+  // The meter follows the limit that applies: the one the worker blocks by,
+  // else this site's own, else the all-sites cap.
+  const scope = tab?.limit?.scope ?? (siteLimit !== null ? 'site' : 'global')
+  const meterLimit = scope === 'site' ? siteLimit : globalLimit
+  const meterValue = scope === 'site' ? totals.siteToday : totals.globalToday
+  const snoozes = tab?.snoozes ?? []
+  return { state, reason, resumes, siteLimit, globalLimit, scope, meterLimit, meterValue, snoozes, ...totals }
+}
+
+type Face = ReturnType<typeof faceFor>
+
+// "1:10" then ":04", the seconds set smaller.
+function renderReadout(el: HTMLElement, ms: number) {
+  const time = formatTime(ms)
+  const cut = time.lastIndexOf(':')
+  el.replaceChildren(time.slice(0, cut), h('small', {}, time.slice(cut)))
 }
 
 function renderFace(base: string, s: Snapshot) {
@@ -110,13 +128,15 @@ function renderFace(base: string, s: Snapshot) {
   const hero = byId('hero')
   const status = byId('status')
   const today = byId('today')
+  const of = byId('readout-of')
+  const meterWrap = byId('meter-wrap')
   const meter = byId('meter')
   const summary = byId('summary')
   const globalLine = byId('global-line')
 
   hero?.setAttribute('data-state', face.state)
   if (today) {
-    today.textContent = formatTime(face.siteToday)
+    renderReadout(today, face.siteToday)
   }
   if (status) {
     status.textContent = {
@@ -125,33 +145,41 @@ function renderFace(base: string, s: Snapshot) {
       over: t('popupStatusOver'),
       snoozed: t('popupStatusSnoozed'),
     }[face.state]
+    if (face.reason) {
+      status.setAttribute('data-tone', 'accent')
+    } else {
+      status.removeAttribute('data-tone')
+    }
   }
 
-  // The meter tracks this site's own limit; fall back to the all-sites cap.
-  const meterLimit = face.siteLimit ?? face.globalLimit
-  const meterValue = face.siteLimit !== null ? face.siteToday : face.globalToday
-  if (meter) {
+  const { meterLimit, meterValue } = face
+  // The readout counts this site's time: "of" names its own limit only.
+  if (of) {
+    of.textContent = face.siteLimit !== null ? t('popupOf', formatDuration(face.siteLimit)) : ''
+  }
+  if (meterWrap && meter) {
+    meterWrap.hidden = meterLimit === null
     meter.hidden = meterLimit === null
     if (meterLimit !== null) {
-      const pct = Math.min(100, (meterValue / meterLimit) * 100)
-      meter.style.setProperty('--fill', `${pct}%`)
+      const over = overSegments(meterLimit, meterValue, face.snoozes)
+      drawMeter(meter, byId('meter-label'), meterValue, meterLimit, over, formatDuration(meterLimit))
       meter.setAttribute('aria-valuemax', String(msToMinutes(meterLimit)))
       meter.setAttribute('aria-valuenow', String(Math.min(msToMinutes(meterValue), msToMinutes(meterLimit))))
       meter.setAttribute(
         'aria-label',
-        face.siteLimit !== null ? t('popupMeterSiteAria', base) : t('popupMeterGlobalAria')
+        face.scope === 'site' ? t('popupMeterSiteAria', base) : t('popupMeterGlobalAria')
       )
       meter.setAttribute('aria-valuetext', t('popupUsedOf', [formatDuration(meterValue), formatDuration(meterLimit)]))
     }
   }
 
   if (summary) {
-    summary.textContent = summaryText(face, meterLimit, meterValue)
+    renderSummary(summary, face)
   }
 
   if (globalLine) {
     // Show the all-sites cap separately when the meter is about this site.
-    const globalLimit = face.siteLimit !== null ? face.globalLimit : null
+    const globalLimit = face.scope === 'site' && face.siteLimit !== null ? face.globalLimit : null
     globalLine.hidden = globalLimit === null
     if (globalLimit !== null) {
       globalLine.textContent = t('popupGlobalLine', [formatDuration(face.globalToday), formatDuration(globalLimit)])
@@ -159,25 +187,38 @@ function renderFace(base: string, s: Snapshot) {
   }
 }
 
-function summaryText(face: ReturnType<typeof faceFor>, meterLimit: number | null, meterValue: number): string {
-  if (face.reason) {
-    const over = formatDuration(face.reason.elapsed - face.reason.limit)
-    const cause = face.reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)
-    if (face.resumes !== null) {
-      return `${cause}. ${t('popupSnoozeResumes', formatDuration(Math.max(60000, face.resumes)))}`
-    }
-    return cause
+// Under: the time left. Over: the snoozes taken, then the time over in the
+// accent (the meter's over pieces), then a snooze's time left.
+function renderSummary(el: HTMLElement, face: Face) {
+  const { reason, meterLimit, meterValue } = face
+  if (reason) {
+    const over = formatDuration(reason.elapsed - reason.limit)
+    const snoozed = snoozedText(face.snoozes.length)
+    const left = face.resumes === null ? null : t('popupSnoozeLeft', formatDuration(Math.max(60000, face.resumes)))
+    el.replaceChildren(
+      snoozed ? `${snoozed}, ` : '',
+      h('span', { class: 'over-ink' }, reason.scope === 'site' ? t('popupOverSite', over) : t('popupOverGlobal', over)),
+      left ? ` · ${left}` : ''
+    )
+    return
   }
   if (meterLimit === null) {
-    return t('popupNoLimit')
+    el.textContent = t('popupNoLimit')
+    return
   }
   const left = formatDuration(meterLimit - meterValue)
-  return face.siteLimit !== null
-    ? t('popupLeftSite', [left, formatDuration(meterLimit)])
-    : t('popupLeftGlobal', [left, formatDuration(meterLimit)])
+  el.textContent = face.scope === 'site' ? t('popupLeftSite', left) : t('popupLeftGlobal', left)
 }
 
 const local = chromeStore('local')
+
+// A site's monogram: its first letter.
+function setFav(id: string, site: string) {
+  const fav = byId(id)
+  if (fav) {
+    fav.textContent = site.charAt(0)
+  }
+}
 
 // `focus`: move focus into the view once shown (the enable view it replaces
 // held it).
@@ -187,6 +228,7 @@ function renderTracked(tabId: number, base: string, focus = false) {
     siteEl.textContent = base
     siteEl.title = base
   }
+  setFav('site-fav', base)
 
   // The face follows the worker's state for this tab (what its page is
   // told), asked again whenever stored time or limits change. The strip,
@@ -202,7 +244,7 @@ function renderTracked(tabId: number, base: string, focus = false) {
     const now = Date.now()
     const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today }, snoozes: {} }
     const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
-    renderStrip(base, usage[base] ?? emptyBuckets())
+    renderStrip(base, usage[base] ?? emptyBuckets(), limitsFor(limits, base).site)
   }
   const draw = () => {
     drawStrip()
@@ -352,6 +394,7 @@ function renderEnable(tab: ActiveTab, base: string) {
     siteEl.textContent = base
     siteEl.title = base
   }
+  setFav('enable-fav', base)
   const btn = byId('enable-btn')
   btn?.setAttribute('aria-label', t('popupEnableSiteAria', base))
   showView('enable')

@@ -92,6 +92,14 @@ export function formatDuration(ms: number): string {
   return t('durHoursMinutes', [String(hours), String(minutes).padStart(2, '0')])
 }
 
+// How many snoozes were taken: "Snoozed twice" ('' for none).
+export function snoozedText(count: number): string {
+  if (count <= 0) {
+    return ''
+  }
+  return count === 1 ? t('snoozedOnce') : count === 2 ? t('snoozedTwice') : t('snoozedTimes', String(count))
+}
+
 // Read a minutes field: null when blank, else a whole number of minutes in
 // the settable range, or 'invalid'.
 export function validateMinutes(raw: string): number | null | 'invalid' {
