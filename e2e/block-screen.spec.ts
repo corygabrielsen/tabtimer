@@ -39,19 +39,51 @@ async function blockedPage(context: import('@playwright/test').BrowserContext, u
 const snoozeUntil = async (sw: import('@playwright/test').Worker) =>
   ((await read(sw, LIMITS_KEY)) as { snoozeUntil?: number }).snoozeUntil ?? 0
 
-test('takes focus on Close tab, ring showing: Enter closes the tab', async ({ context, serviceWorker, site }) => {
+test('typing on the page as it appears closes nothing and snoozes nothing', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
+  await seed(serviceWorker, await today(serviceWorker, { [SITE_A]: 2 * MINUTE }))
+  const page = await context.newPage()
+  await page.goto(site(SITE_A, '/interactive'))
+  await expect(page.locator(`#${OVERLAY_ID}`)).toBeAttached()
+  await page.evaluate(() => {
+    const field = document.body.insertBefore(document.createElement('textarea'), document.body.firstChild)
+    field.id = 'typing'
+    field.focus()
+  })
+  // Typing without a pause, Enter and Space included, while the limit is hit.
+  let typing = true
+  const typist = (async () => {
+    while (typing && !page.isClosed()) {
+      for (const key of ['h', 'Enter', 'Space', 'i', 'Enter']) {
+        await page.keyboard.press(key).catch(() => undefined)
+      }
+    }
+  })()
+  await page.waitForTimeout(300)
+  await seed(serviceWorker, BLOCKING)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  await page.waitForTimeout(2500)
+  typing = false
+  await typist
+  expect(page.isClosed()).toBe(false)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
+  // Focus is on the dialog, not a button.
+  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toBeNull()
+})
+
+test('Tab reaches Close tab deliberately, and Enter on it closes the tab', async ({ context, serviceWorker, site }) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A, '/interactive'))
-
-  // Focus inside a closed shadow root retargets to its host...
-  await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
-  // ...and it's Close tab, its focus ring showing.
+  await page.waitForTimeout(600)
+  await page.keyboard.press('Tab')
   expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toContain('close')
-  // The ring: :focus-visible, or the class standing in for it.
-  expect(await shadowAttribute(page, BLOCK_ID, '.close:focus-visible, .close.is-focus', 'type')).toBe('button')
   // The tab can close before the key comes back up.
   await Promise.all([page.waitForEvent('close'), page.keyboard.press('Enter').catch(() => undefined)])
-  expect(await serviceWorker.evaluate(async () => (await chrome.tabs.query({})).length)).toBeGreaterThan(0)
 })
 
 test('Close tab closes the tab', async ({ context, serviceWorker, site }) => {
@@ -107,15 +139,27 @@ test('holding 2 more minutes for 2 s snoozes; a short press or a click does not'
   await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
 })
 
-test('holding Space on 2 more minutes snoozes too', async ({ context, serviceWorker, site }) => {
+test('holding Space for 3 s snoozes nothing, on the dialog or on 2 more minutes', async ({
+  context,
+  serviceWorker,
+  site,
+}) => {
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A))
   await expect.poll(() => activeId(page)).toBe(BLOCK_ID)
+  const holdSpace = async () => {
+    await page.keyboard.down('Space')
+    await page.waitForTimeout(3000)
+    await page.keyboard.up('Space')
+  }
+  await holdSpace()
   await page.keyboard.press('Tab')
-  await page.keyboard.down('Space')
-  await page.waitForTimeout(2300)
-  await page.keyboard.up('Space')
-  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+  await page.keyboard.press('Tab')
+  expect(await shadowAttribute(page, BLOCK_ID, 'button:focus', 'class')).toContain('hold')
+  await holdSpace()
+  await page.waitForTimeout(800)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
 })
 
 // Short CSS viewports: a 1080p screen at 150% zoom, shorter windows, a 720p
@@ -286,7 +330,9 @@ test('leaves fullscreen when the limit is hit, and stays out of it', async ({ co
   // back into fullscreen while blocked. Whether Chromium grants that request
   // for a moment is timing-dependent, so assert the attempt happened and that
   // the page stays out of fullscreen with the block screen on top, not that
-  // the request succeeded.
+  // the request succeeded. (Past the first moments, when the block screen
+  // swallows every key.)
+  await page.waitForTimeout(600)
   await page.keyboard.press('f')
   await expect
     .poll(() => page.evaluate(() => (window as unknown as { fullscreenAttempts: number }).fullscreenAttempts))

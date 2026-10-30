@@ -1,5 +1,6 @@
 // Press and hold: a button (its fill shows the progress) that acts only
-// after HOLD_MS held down, by pointer or by Space/Enter while focused.
+// after HOLD_MS held down, by pointer or touch only: no key holds it, so
+// typing can't.
 // Letting go early drains the progress back and says, briefly, to hold. The
 // block screen's snooze, a deliberate act (styles in BlockScreen.ts).
 import { h, svg } from '../ui'
@@ -62,25 +63,9 @@ export class HoldButton {
         this.press()
       }
     })
-    for (const type of ['pointerup', 'pointerleave', 'pointercancel', 'blur']) {
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
       el.addEventListener(type, this.release)
     }
-    el.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.release()
-      } else if (isHoldKey(e)) {
-        // No page scroll, no key click; a held key's repeats don't restart.
-        e.preventDefault()
-        if (!e.repeat) {
-          this.press()
-        }
-      }
-    })
-    el.addEventListener('keyup', (e) => {
-      if (isHoldKey(e)) {
-        this.release()
-      }
-    })
     // A click (or a key's) does nothing: only holding counts.
     el.addEventListener('click', (e) => e.preventDefault())
     el.addEventListener('contextmenu', (e) => e.preventDefault())
@@ -185,10 +170,6 @@ export class HoldButton {
       this.timer = null
     }
   }
-}
-
-function isHoldKey(e: KeyboardEvent): boolean {
-  return e.code === 'Space' || e.key === ' ' || e.key === 'Enter'
 }
 
 function vibrate(pattern: number | number[]) {

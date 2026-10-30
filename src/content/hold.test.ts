@@ -137,8 +137,8 @@ describe('press and hold', () => {
     expect(hold.el.classList.contains('holding')).toBe(false)
   })
 
-  it('lets go when the pointer is cancelled or focus leaves', () => {
-    for (const end of [() => pointer('pointercancel'), () => hold.el.dispatchEvent(new FocusEvent('blur'))]) {
+  it('lets go when the pointer is cancelled', () => {
+    for (const end of [() => pointer('pointercancel')]) {
       pointer('pointerdown')
       vi.advanceTimersByTime(HOLD_MS / 2)
       end()
@@ -149,41 +149,18 @@ describe('press and hold', () => {
   })
 })
 
-describe('by keyboard', () => {
-  for (const [name, init] of [
-    ['Space', { code: 'Space', key: ' ' }],
-    ['Enter', { code: 'Enter', key: 'Enter' }],
-  ] as const) {
-    it(`holds while ${name} is down`, () => {
-      expect(key('keydown', init).defaultPrevented).toBe(true)
-      // Auto-repeat doesn't restart it.
-      vi.advanceTimersByTime(HOLD_MS / 2)
-      key('keydown', { ...init, repeat: true })
-      vi.advanceTimersByTime(HOLD_MS / 2 + 50)
-      expect(hold.el.classList.contains('done')).toBe(true)
-      vi.advanceTimersByTime(DONE_MS)
-      expect(done).toHaveBeenCalledOnce()
-    })
-
-    it(`lets go when ${name} comes up early`, () => {
+describe('keys', () => {
+  it('hold nothing: no key presses or holds it, typing included', () => {
+    for (const init of [{ code: 'Space', key: ' ' }, { code: 'Enter', key: 'Enter' }, { key: 'a' }]) {
       key('keydown', init)
       vi.advanceTimersByTime(HOLD_MS / 2)
+      key('keydown', { ...init, repeat: true })
+      vi.advanceTimersByTime(HOLD_MS)
       key('keyup', init)
-      expect(progress()).toBe(0)
-      vi.advanceTimersByTime(HOLD_MS + DONE_MS)
-      expect(done).not.toHaveBeenCalled()
-    })
-  }
-
-  it('lets go on Escape, and ignores other keys', () => {
-    expect(key('keydown', { key: 'a' }).defaultPrevented).toBe(false)
-    key('keyup', { key: 'a' })
+    }
     expect(hold.el.classList.contains('holding')).toBe(false)
-    key('keydown', { code: 'Space', key: ' ' })
-    vi.advanceTimersByTime(HOLD_MS / 2)
-    key('keydown', { key: 'Escape' })
     expect(progress()).toBe(0)
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS)
+    vi.advanceTimersByTime(DONE_MS)
     expect(done).not.toHaveBeenCalled()
   })
 })

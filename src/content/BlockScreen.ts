@@ -14,6 +14,10 @@ import { mountShadowHost, shadowRootOf } from './shadowHost'
 
 const HOST_ID = 'tabtimer-block'
 
+// How long after the block appears every key is swallowed: a key held down
+// while typing, auto-repeating across the moment it appears, does nothing.
+export const KEY_GUARD_MS = 500
+
 // The hours the chart's axis names besides Now: midnight, 6, noon and 18.
 const AXIS_MARKS = [0, 6, 12, 18]
 
@@ -34,6 +38,8 @@ const STYLES = `${BASE}
     overscroll-behavior: contain;
   }
   .screen:not([open]) { display: none; }
+  /* The dialog holds focus when it appears (no button does): no ring. */
+  dialog.screen:focus { outline: none; }
   /* Opaque: nothing of the page shows through. */
   .screen::backdrop { background: var(--bg); }
   .screen {
@@ -146,7 +152,6 @@ const STYLES = `${BASE}
   .axis span.now { color: var(--accent-ink); font-weight: 650; }
   .btn svg { width: 18px; height: 18px; flex: none; margin-left: -2px; }
   .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-  .btn.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
   .close {
     width: 100%;
     min-height: 56px;
@@ -262,6 +267,8 @@ export default class BlockScreen {
   // What the content was last drawn from, so a tick redraws only on change.
   private drawn = ''
   private blocked = false
+  // When the block last appeared (epoch ms), for the key guard.
+  private shownAt = 0
   private unsubscribeState: () => void
   // Where focus was before blocking, restored on dismissal.
   private previousFocus: Element | null = null
@@ -347,6 +354,9 @@ export default class BlockScreen {
         class: 'screen',
         role: 'alertdialog',
         'aria-modal': 'true',
+        // Focus starts on the dialog itself, so a keystroke meant for the
+        // page presses nothing.
+        tabindex: '-1',
         'aria-label': t('blockTitle'),
       },
       h(
@@ -401,6 +411,7 @@ export default class BlockScreen {
       return
     }
     this.blocked = true
+    this.shownAt = Date.now()
     this.holdButton.reset()
     this.tracker.setBlocked(true)
     this.previousFocus = document.activeElement
@@ -512,25 +523,7 @@ export default class BlockScreen {
         this.dialog.setAttribute('open', '')
       }
     }
-    this.focusClose()
-  }
-
-  // Focus Close tab with its ring showing: a browser that withholds
-  // :focus-visible from script focus gets the ring by class, until focus
-  // moves or a pointer is used.
-  private focusClose() {
-    const button = this.closeButton
-    button.focus({ preventScroll: true, focusVisible: true } as FocusOptions)
-    if (!button.matches(':focus-visible')) {
-      button.classList.add('is-focus')
-      const drop = () => {
-        button.classList.remove('is-focus')
-        button.removeEventListener('blur', drop)
-        this.dialog.removeEventListener('pointerdown', drop)
-      }
-      button.addEventListener('blur', drop)
-      this.dialog.addEventListener('pointerdown', drop)
-    }
+    this.dialog.focus({ preventScroll: true })
   }
 
   // Show the dialog again, now the newest entry in the top layer: above, and
@@ -653,7 +646,7 @@ export default class BlockScreen {
     }
     // Focus in the closed shadow root reads as the host.
     const refocus = () => {
-      this.closeButton.focus({ preventScroll: true })
+      this.dialog.focus({ preventScroll: true })
       return document.activeElement === this.host
     }
     if (!refocus()) {
@@ -678,11 +671,13 @@ export default class BlockScreen {
     }
   }
 
-  // Keep Tab cycling through the buttons (Shift+Tab backwards), and swallow
-  // Escape.
+  // Swallow every key for KEY_GUARD_MS after the block appears (one held
+  // across it, auto-repeating), and Escape always; keep Tab cycling through
+  // the buttons (Shift+Tab backwards).
   private handleKeydown = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || Date.now() - this.shownAt < KEY_GUARD_MS) {
       e.preventDefault()
+      e.stopPropagation()
       return
     }
     if (e.key !== 'Tab') {
@@ -692,7 +687,9 @@ export default class BlockScreen {
     const order = [this.closeButton, this.holdButton.el, this.settingsButton]
     const current = order.indexOf(this.shadow.activeElement as HTMLButtonElement)
     const step = e.shiftKey ? order.length - 1 : 1
-    const next = current === -1 ? this.closeButton : order[(current + step) % order.length]!
+    // From the dialog itself (where focus starts): the first button, or the
+    // last backwards.
+    const next = current === -1 ? order[e.shiftKey ? order.length - 1 : 0]! : order[(current + step) % order.length]!
     next.focus({ preventScroll: true })
   }
 }

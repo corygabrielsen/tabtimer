@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://old.reddit.com/r/all"}
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import BlockScreen from './BlockScreen'
+import BlockScreen, { KEY_GUARD_MS } from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import { SNOOZE_MS } from '../core/limits'
 import { DONE_MS, HOLD_MS } from './hold'
@@ -44,6 +44,7 @@ const host = () => document.getElementById('tabtimer-block')!
 const screen = () => shadowOf('tabtimer-block')
 const closeButton = () => screen().querySelector<HTMLButtonElement>('.close')
 const holdButton = () => screen().querySelector<HTMLButtonElement>('.hold')
+const dialog = () => screen().querySelector<HTMLDialogElement>('dialog')!
 
 // Hold "2 more minutes" down to the end, as a pointer would, and let the
 // done state run out.
@@ -302,18 +303,27 @@ describe('block screen', () => {
     expect(dialog.open).toBe(true)
   })
 
-  it('moves focus to Close tab when it appears, its ring showing', async () => {
+  it('focuses the dialog itself when it appears, no button', async () => {
     await mount()
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
+    expect(dialog().getAttribute('tabindex')).toBe('-1')
     // Focus inside a closed shadow root retargets to its host.
     expect(document.activeElement).toBe(host())
-    // happy-dom never matches :focus-visible: the ring comes by class, and
-    // goes with a pointer press or when focus moves.
-    expect(closeButton()!.classList.contains('is-focus')).toBe(true)
-    screen()
-      .querySelector('dialog')!
-      .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
-    expect(closeButton()!.classList.contains('is-focus')).toBe(false)
+  })
+
+  it('swallows every key for its first moments, then only Escape', async () => {
+    await mount()
+    for (const key of ['Enter', ' ', 'a']) {
+      const e = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+      dialog().dispatchEvent(e)
+      expect(e.defaultPrevented).toBe(true)
+    }
+    vi.advanceTimersByTime(KEY_GUARD_MS)
+    const later = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
+    dialog().dispatchEvent(later)
+    expect(later.defaultPrevented).toBe(false)
+    expect(isBlocked()).toBe(true)
+    expect(browser.tabs.remove).not.toHaveBeenCalled()
   })
 
   it('closes the tab through the worker from Close tab', async () => {
@@ -331,28 +341,35 @@ describe('block screen', () => {
     await mount()
     pageLink.focus()
     expect(document.activeElement).toBe(host())
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
-  it('cycles Tab and Shift+Tab through its buttons', async () => {
+  it('cycles Tab and Shift+Tab through its buttons, from the dialog', async () => {
     await mount()
+    vi.advanceTimersByTime(KEY_GUARD_MS)
     const settings = screen().querySelector<HTMLButtonElement>('.settings')!
     const seen: (Element | null)[] = []
-    for (const shiftKey of [false, false, false, true, true]) {
+    for (const shiftKey of [false, false, false, false, true, true]) {
       const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
       screen().activeElement!.dispatchEvent(tab)
       expect(tab.defaultPrevented).toBe(true)
       seen.push(screen().activeElement)
     }
-    expect(seen).toEqual([holdButton(), settings, closeButton(), settings, holdButton()])
+    expect(seen).toEqual([closeButton(), holdButton(), settings, closeButton(), settings, holdButton()])
+    // Shift+Tab from the dialog itself: the last button.
+    dialog().focus()
+    dialog().dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })
+    )
+    expect(screen().activeElement).toBe(settings)
   })
 
-  it('leaves other keys alone', async () => {
+  it('leaves other keys alone once settled', async () => {
     await mount()
+    vi.advanceTimersByTime(KEY_GUARD_MS)
     const key = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true })
     closeButton()!.dispatchEvent(key)
     expect(key.defaultPrevented).toBe(false)
-    expect(screen().activeElement).toBe(closeButton())
   })
 
   it('cannot be dismissed with Escape', async () => {
@@ -369,12 +386,11 @@ describe('block screen', () => {
 
   it('reopens if the browser closes it while still blocked', async () => {
     await mount()
-    const dialog = screen().querySelector<HTMLDialogElement>('dialog')!
-    dialog.close()
+    dialog().close()
     await flush()
-    expect(dialog.open).toBe(true)
+    expect(dialog().open).toBe(true)
     expect(isBlocked()).toBe(true)
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
   it('still shows if showModal is refused', async () => {
@@ -385,7 +401,7 @@ describe('block screen', () => {
     await mount()
     expect(isBlocked()).toBe(true)
     expect(screen().querySelector('dialog')!.hasAttribute('open')).toBe(true)
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
   })
 
   it('gives focus back to the page when dismissed', async () => {
@@ -593,7 +609,7 @@ describe('staying on the page', () => {
     blocker.tick()
     expect(document.getElementById('tabtimer-block')?.parentNode).toBe(document.documentElement)
     expect(showModal).toHaveBeenCalledTimes(2)
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
     // Nothing else changed: no further raise.
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
@@ -641,7 +657,7 @@ describe('staying on top', () => {
     topLayer.push(page('dialog'))
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
-    expect(screen().activeElement).toBe(closeButton())
+    expect(screen().activeElement).toBe(dialog())
     // Now below the block screen: left alone.
     blocker.tick()
     expect(showModal).toHaveBeenCalledTimes(2)
@@ -674,7 +690,7 @@ describe('staying on top', () => {
     await mount()
     const dialogButton = page('button')
     // The page's modal dialog makes the block screen inert.
-    const focus = vi.spyOn(closeButton()!, 'focus').mockImplementation(() => undefined)
+    const focus = vi.spyOn(dialog(), 'focus').mockImplementation(() => undefined)
     dialogButton.focus()
     // Raised once the page's script is done.
     expect(showModal).toHaveBeenCalledTimes(1)
