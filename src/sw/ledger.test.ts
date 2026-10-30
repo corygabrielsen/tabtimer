@@ -25,6 +25,8 @@ const addElapsed = (site: string, spans: Span[], media = false, on: Ledger = led
   })
 const setIdleState = (state: IdleState, on: Ledger = ledger) => on.transaction((tx) => tx.observeIdle(state))
 const resetToday = (site: string) => ledger.transaction((tx) => tx.resetToday(site))
+const snooze = (site = 'a.com', siteMs = HOUR, globalMs = HOUR) =>
+  ledger.transaction((tx) => tx.snooze({ site, siteMs, globalMs }))
 
 beforeEach(() => {
   browser = fakeChrome()
@@ -286,7 +288,7 @@ describe('setLimit', () => {
 describe('snooze and prefs', () => {
   it('snoozes for SNOOZE_MS from now, keeping the limits; a limit edit keeps the snooze', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
-    await ledger.snooze()
+    await snooze()
     expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
     await ledger.setLimit({ scope: 'global', minutes: 90 })
     expect(data()[LIMITS_KEY]).toEqual({ global: 90, perSite: {}, snoozeUntil: NOON + SNOOZE_MS })
@@ -294,12 +296,51 @@ describe('snooze and prefs', () => {
 
   it('clears a snooze set before the clock went back', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: 60, perSite: {} } })
-    await ledger.snooze()
+    await snooze()
     now = NOON - 3600_000
     await expect(ledger.transaction((tx) => tx.limits())).resolves.toEqual({ global: 60, perSite: {}, snoozeUntil: 0 })
     expect(data()[LIMITS_KEY]).toEqual({ global: 60, perSite: {}, snoozeUntil: 0 })
     now = NOON + SNOOZE_MS - MIN
     await expect(ledger.transaction((tx) => tx.limits())).resolves.toMatchObject({ snoozeUntil: 0 })
+  })
+
+  it('records each snooze under the day it was taken, oldest first', async () => {
+    await snooze('a.com', HOUR, HOUR)
+    now = NOON + SNOOZE_MS
+    await snooze('b.com', 10 * MIN, HOUR + 5 * MIN)
+    expect(data()['snoozes:2026-06-10']).toEqual([
+      { site: 'a.com', at: NOON, ms: SNOOZE_MS, siteMs: HOUR, globalMs: HOUR },
+      { site: 'b.com', at: NOON + SNOOZE_MS, ms: SNOOZE_MS, siteMs: 10 * MIN, globalMs: HOUR + 5 * MIN },
+    ])
+    await expect(ledger.transaction((tx) => tx.snoozes())).resolves.toHaveLength(2)
+    // The snooze is seen by the rest of its own transaction.
+    await expect(
+      ledger.transaction(async (tx) => {
+        await tx.snooze({ site: 'a.com', siteMs: 0, globalMs: 0 })
+        return [(await tx.limits()).snoozeUntil, (await tx.snoozes()).length]
+      })
+    ).resolves.toEqual([now + SNOOZE_MS, 3])
+  })
+
+  it('resetting a site today forgets its snoozes, and only its', async () => {
+    await snooze('a.com')
+    await snooze('b.com')
+    await resetToday('a.com')
+    expect(data()['snoozes:2026-06-10']).toMatchObject([{ site: 'b.com' }])
+    const before = data()['snoozes:2026-06-10']
+    await resetToday('a.com')
+    expect(data()['snoozes:2026-06-10']).toBe(before)
+  })
+
+  it('prunes snoozes with the days they were taken on', async () => {
+    browser.storage.local.seed({
+      [CLOCK_KEY]: { day: '2026-06-10', pending: null },
+      'snoozes:2026-05-01': [],
+      'snoozes:2026-06-09': [],
+      'day:2026-05-01': {},
+    })
+    await ledger.prune()
+    expect(Object.keys(data()).sort()).toEqual(['clock', 'snoozes:2026-06-09'])
   })
 
   it('merges a prefs change into the stored prefs', async () => {

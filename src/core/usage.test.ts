@@ -331,6 +331,7 @@ describe('withUncredited', () => {
     seq: 3,
     running: 'a.com',
     sites: { 'a.com': 3000 + 20_000, 'b.com': 4000, 'c.com': 7000 },
+    snoozes: {},
   }
 
   it('adds what storage lacks to the current hour, in a copy', () => {

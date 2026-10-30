@@ -200,7 +200,7 @@ function renderTracked(tabId: number, base: string, focus = false) {
   // Today's hours with the time not yet stored in the current one.
   const drawStrip = () => {
     const now = Date.now()
-    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today } }
+    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today }, snoozes: {} }
     const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
     renderStrip(base, usage[base] ?? emptyBuckets())
   }
