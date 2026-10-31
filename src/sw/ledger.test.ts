@@ -149,6 +149,12 @@ describe('retention', () => {
     expect(dayKeys()).toEqual(['day:2026-06-09', 'day:2026-06-10', 'day:2026-06-11'])
   })
 
+  it('prunes snooze counts with the days', async () => {
+    browser.storage.local.seed({ 'snoozes:2026-05-11': 4, 'snoozes:2026-05-12': 2, 'snoozes:bad': 1 })
+    await addElapsed('a.com', [[NOON - 1000, NOON]])
+    expect(Object.keys(data()).filter((key) => key.startsWith('snoozes:'))).toEqual(['snoozes:2026-05-12'])
+  })
+
   it('drops the days written while the clock was 3 days ahead once it is corrected and holds', async () => {
     seedDays('2026-07-01')
     browser.storage.local.seed({ [CLOCK_KEY]: { day: '2026-06-10', pending: null } })
@@ -231,6 +237,24 @@ describe('ensureSchema', () => {
     expect(data()).toEqual({ schema: SCHEMA })
   })
 
+  it('keeps a 1.7.0 store as it is: the snooze counts are an added key', async () => {
+    const stored = {
+      schema: 3,
+      [LIMITS_KEY]: { global: 60, perSite: { 'a.com': 30 }, snoozeUntil: 0 },
+      [PREFS_KEY]: { hidden: false, scale: 0.75 },
+      [CLOCK_KEY]: { day: '2026-06-10', pending: null },
+      'day:2026-06-09': { 'a.com': bucketsOf({ 9: MIN }) },
+      'day:2026-06-10': { 'a.com': bucketsOf({ 11: 2 * MIN }) },
+    }
+    browser.storage.local.seed(stored)
+    await ledger.ensureSchema()
+    expect(data()).toEqual(stored)
+    await snooze()
+    await ledger.ensureSchema()
+    expect(data()).toMatchObject({ ...stored, [LIMITS_KEY]: { snoozeUntil: NOON + SNOOZE_MS } })
+    expect(data()['snoozes:2026-06-10']).toBe(1)
+  })
+
   it('leaves storage in this schema alone', async () => {
     const stored = { schema: SCHEMA, [LIMITS_KEY]: { global: 1, perSite: {} }, 'day:2026-06-10': {} }
     browser.storage.local.seed(stored)
@@ -285,7 +309,39 @@ describe('snooze and prefs', () => {
         return (await tx.limits()).snoozeUntil
       })
     ).resolves.toBe(NOON + SNOOZE_MS)
-    expect(Object.keys(data())).toEqual([LIMITS_KEY])
+    expect(Object.keys(data()).sort()).toEqual([LIMITS_KEY, 'snoozes:2026-06-10'])
+  })
+
+  it('counts each snooze for its day, in the same write as the snooze', async () => {
+    const set = vi.spyOn(browser.storage.local, 'set')
+    const taken = () => ledger.transaction((tx) => tx.snoozesToday())
+    await expect(taken()).resolves.toBe(0)
+    await snooze()
+    expect(set).toHaveBeenLastCalledWith(
+      expect.objectContaining({ [LIMITS_KEY]: expect.anything(), 'snoozes:2026-06-10': 1 })
+    )
+    await snooze()
+    await expect(taken()).resolves.toBe(2)
+    await expect(
+      ledger.transaction(async (tx) => {
+        await tx.snooze()
+        return tx.snoozesToday()
+      })
+    ).resolves.toBe(3)
+    expect(data()['snoozes:2026-06-10']).toBe(3)
+    // A new day counts from 0, and keeps the last day's count.
+    now = at(2026, 5, 11, 9)
+    await expect(taken()).resolves.toBe(0)
+    await snooze()
+    expect(data()['snoozes:2026-06-11']).toBe(1)
+    expect(data()['snoozes:2026-06-10']).toBe(3)
+  })
+
+  it('counts on from 0 over a malformed count', async () => {
+    browser.storage.local.seed({ 'snoozes:2026-06-10': 'lots' })
+    await expect(ledger.transaction((tx) => tx.snoozesToday())).resolves.toBe(0)
+    await snooze()
+    expect(data()['snoozes:2026-06-10']).toBe(1)
   })
 
   it('merges a prefs change into the stored prefs', async () => {

@@ -9,7 +9,7 @@ import type { Bus } from '../ports'
 import { drawBar, drawReadout, HOUR_FLOOR_MS } from '../bars'
 import { t } from '../i18n'
 import { h, svg, uiLocale } from '../ui'
-import { HoldButton } from './hold'
+import { HoldButton, HOLD_MS } from './hold'
 import { mountShadowHost, shadowRootOf } from './shadowHost'
 
 const HOST_ID = 'tabtimer-block'
@@ -198,9 +198,6 @@ const STYLES = `${BASE}
   .hold.done .fill { border-right-color: transparent; }
   .hold.released .fill { transition: transform 0.32s var(--ease); }
   .hold .lbl { display: inline-flex; align-items: center; gap: var(--s-2); }
-  .hold.done .lbl { animation: settle 0.36s var(--ease); }
-  @keyframes settle { from { transform: scale(0.92); opacity: 0.4; } }
-  .check { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   @media (max-width: 480px) {
     h1 { font-size: 30px; }
     .plot { column-gap: 3px; }
@@ -312,17 +309,14 @@ export default class BlockScreen {
     )
     const minutes = String(msToMinutes(SNOOZE_MS))
     this.holdButton = new HoldButton(
-      {
-        rest: t('blockSnooze', minutes),
-        holding: t('blockHolding'),
-        done: t('blockSnooze', minutes),
-        early: t('blockHoldToContinue'),
-        hint: t('blockHoldHint'),
-      },
+      { label: t('blockSnooze', minutes), hint: t('blockHoldHint') },
       () => {
         this.unblock()
         void this.tracker.snooze()
-      }
+      },
+      undefined,
+      // The worker's latest hold length, read at each press.
+      () => this.tracker.tabState?.holdMs ?? HOLD_MS
     )
     // Settings opens through the service worker, in a tab of its own; this
     // page stays blocked.

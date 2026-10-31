@@ -8,7 +8,9 @@ import {
   normalizeClock,
   normalizeDay,
   normalizePrefs,
+  normalizeSnoozes,
   settleClock,
+  snoozesKey,
   siteTotal,
   snapScale,
   sumBuckets,
@@ -38,6 +40,20 @@ describe('day keys', () => {
   })
 })
 
+describe('snooze counts', () => {
+  it('are keyed by day', () => {
+    expect(snoozesKey('2026-06-10')).toBe('snoozes:2026-06-10')
+  })
+
+  it('read a whole count from 0 up, and anything else as 0', () => {
+    expect(normalizeSnoozes(4)).toBe(4)
+    expect(normalizeSnoozes(0)).toBe(0)
+    for (const bad of [undefined, null, -1, 2.5, NaN, Infinity, '3', [3], { n: 3 }]) {
+      expect(normalizeSnoozes(bad), String(bad)).toBe(0)
+    }
+  })
+})
+
 describe('retention', () => {
   const now = new Date(2026, 5, 30, 9).getTime()
 
@@ -45,6 +61,22 @@ describe('retention', () => {
     const keys = ['day:2026-06-30', 'day:2026-06-01', 'day:2026-05-31', 'day:2025-12-25']
     // 1 June is 29 days before 30 June: the oldest day kept.
     expect(expiredDayKeys(keys, now)).toEqual(['day:2026-05-31', 'day:2025-12-25'])
+  })
+
+  it('prunes snoozes:* keys by the same window', () => {
+    const keys = [
+      'snoozes:2026-06-30',
+      'snoozes:2026-06-01',
+      'snoozes:2026-05-31',
+      'snoozes:junk',
+      'snoozes:2026-07-03',
+    ]
+    expect(expiredDayKeys(keys, now)).toEqual(['snoozes:2026-05-31', 'snoozes:junk'])
+    expect(expiredDayKeys(keys, now, '2026-07-03')).toEqual([
+      'snoozes:2026-05-31',
+      'snoozes:junk',
+      'snoozes:2026-07-03',
+    ])
   })
 
   it('drops malformed day keys and leaves every other key alone', () => {

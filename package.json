@@ -1,7 +1,7 @@
 {
   "name": "tabtimer",
   "private": true,
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Counts your active time on the sites you choose and blocks them when you hit your daily limit.",
   "type": "module",
   "author": "Cory Gabrielsen <corygabrielsen@gmail.com>",

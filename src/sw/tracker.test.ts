@@ -73,6 +73,7 @@ describe('presence', () => {
       limit: null,
       hours: emptyBuckets(),
       prefs: { hidden: false, scale: 1 },
+      holdMs: 2000,
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
     now += 30 * S
@@ -461,7 +462,7 @@ describe('limits', () => {
     ])
   })
 
-  it('snooze stops blocking for SNOOZE_MS, and stores nothing else', async () => {
+  it('snooze stops blocking for SNOOZE_MS, and counts it for today', async () => {
     browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 } } })
     const tracker = worker()
     await tracker.presence(1, { ...PAGE, ...SHOWN })
@@ -469,7 +470,26 @@ describe('limits', () => {
     await tracker.snooze()
     expect(browser.storage.local.data[LIMITS_KEY]).toMatchObject({ snoozeUntil: now + SNOOZE_MS })
     await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ blockAt: now + SNOOZE_MS })
-    expect(Object.keys(browser.storage.local.data).filter((key) => key.startsWith('snoozes'))).toEqual([])
+    expect(browser.storage.local.data['snoozes:2026-06-10']).toBe(1)
+  })
+
+  it('tells pages the hold length for the snoozes taken today, every site’s', async () => {
+    const tracker = worker()
+    const hold = async (site: string) => (await tracker.tabState(1, site)).holdMs
+    await expect(hold('a.com')).resolves.toBe(2000)
+    for (let i = 0; i < 3; i++) {
+      await tracker.snooze()
+    }
+    await expect(hold('a.com')).resolves.toBe(5000)
+    await expect(hold('b.com')).resolves.toBe(5000)
+    browser.storage.local.seed({ 'snoozes:2026-06-10': 10 })
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    sent = []
+    await tracker.refresh()
+    expect(sent.at(-1)?.[2].state.holdMs).toBe(20_000)
+    // The next day starts over.
+    now = new Date(2026, 5, 11, 9).getTime()
+    await expect(hold('a.com')).resolves.toBe(2000)
   })
 })
 

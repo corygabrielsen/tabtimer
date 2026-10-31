@@ -25,7 +25,9 @@ import {
   normalizeDay,
   normalizeClock,
   normalizePrefs,
+  normalizeSnoozes,
   settleClock,
+  snoozesKey,
   CLOCK_KEY,
   LIMITS_KEY,
   PREFS_KEY,
@@ -68,7 +70,9 @@ export type Tx = {
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
   prefs(): Promise<Prefs>
-  // Suppress all blocking for SNOOZE_MS from now.
+  // The snoozes taken today, every site's (this transaction's included).
+  snoozesToday(): Promise<number>
+  // Suppress all blocking for SNOOZE_MS from now, and count it for today.
   snooze(): Promise<void>
 }
 
@@ -115,6 +119,8 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     const changed = new Set<string>()
     // The limits to write back: a void snooze cleared, or a new one.
     let newLimits: Limits | null = null
+    // Today's snooze count to write back: one more for a snooze.
+    let newSnoozes: number | null = null
 
     async function day(key: string): Promise<DayUsage> {
       let usage = days.get(key)
@@ -173,8 +179,10 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         }
         return limits
       },
+      snoozesToday: async () => newSnoozes ?? normalizeSnoozes(await local.get(snoozesKey(today))),
       snooze: async () => {
         newLimits = { ...(await tx.limits()), snoozeUntil: now + SNOOZE_MS }
+        newSnoozes = (await tx.snoozesToday()) + 1
       },
       prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
     }
@@ -183,6 +191,9 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     const writes: Record<string, unknown> = Object.fromEntries([...changed].map((key) => [key, days.get(key)]))
     if (newLimits) {
       writes[LIMITS_KEY] = newLimits
+    }
+    if (newSnoozes !== null) {
+      writes[snoozesKey(today)] = newSnoozes
     }
     if (clockCheck && clockCheck.next !== clockCheck.mark) {
       writes[CLOCK_KEY] = clockCheck.next

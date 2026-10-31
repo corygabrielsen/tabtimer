@@ -1,14 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { DONE_MS, HOLD_MS, NUDGE_MS, HoldButton } from './hold'
+import { DONE_MS, HOLD_MS, HoldButton } from './hold'
 
-const LABELS = {
-  rest: '2 more minutes',
-  holding: 'Keep holding',
-  done: '2 more minutes',
-  early: 'Hold to continue',
-  hint: 'Press and hold',
-}
+const LABELS = { label: '2 more minutes', hint: 'Press and hold' }
 
 let reduced = false
 let done: ReturnType<typeof vi.fn<() => void>>
@@ -40,7 +34,7 @@ afterEach(() => {
 describe('press and hold', () => {
   it('rests as an outlined button with its label, described as press and hold', () => {
     expect(hold.el.className).toBe('btn hold')
-    expect(text()).toBe(LABELS.rest)
+    expect(text()).toBe(LABELS.label)
     // The label alone: the fill is the one progress cue.
     expect(hold.el.querySelector('svg')).toBeNull()
     expect(hold.el.getAttribute('aria-describedby')).toBe(hold.hint.id)
@@ -51,16 +45,17 @@ describe('press and hold', () => {
   it('acts after HOLD_MS held, through a done state', () => {
     pointer('pointerdown')
     expect(hold.el.classList.contains('holding')).toBe(true)
-    expect(text()).toBe(LABELS.holding)
+    expect(text()).toBe(LABELS.label)
     vi.advanceTimersByTime(HOLD_MS / 2)
     expect(progress()).toBeGreaterThan(0.4)
     expect(progress()).toBeLessThan(0.6)
     vi.advanceTimersByTime(HOLD_MS / 2 + 50)
     expect(progress()).toBe(1)
     expect(hold.el.classList.contains('done')).toBe(true)
-    expect(hold.el.querySelector('svg.check')).not.toBeNull()
-    expect(text()).toBe(LABELS.done)
-    expect(hold.status.textContent).toBe(LABELS.done)
+    // The label stays as it is; the live region says what was done.
+    expect(hold.el.querySelector('svg')).toBeNull()
+    expect(text()).toBe(LABELS.label)
+    expect(hold.status.textContent).toBe(LABELS.label)
     // The done state shows before the action runs; letting go now changes
     // nothing.
     pointer('pointerup')
@@ -87,29 +82,18 @@ describe('press and hold', () => {
     expect(done).not.toHaveBeenCalled()
   })
 
-  it('says to hold after a short press, then goes back to its label', () => {
+  it('keeps its label through a short press: the fill starts, then drains back', () => {
     pointer('pointerdown')
-    vi.advanceTimersByTime(150)
+    vi.advanceTimersByTime(500)
+    expect(progress()).toBeGreaterThan(0)
+    expect(text()).toBe(LABELS.label)
     pointer('pointerup')
-    expect(text()).toBe(LABELS.early)
-    vi.advanceTimersByTime(NUDGE_MS - 10)
-    expect(text()).toBe(LABELS.early)
-    vi.advanceTimersByTime(10)
-    expect(text()).toBe(LABELS.rest)
-    expect(done).not.toHaveBeenCalled()
-  })
-
-  it('drops the nudge when held again, or reset', () => {
-    pointer('pointerdown')
-    pointer('pointerup')
-    pointer('pointerdown')
-    expect(text()).toBe(LABELS.holding)
-    vi.advanceTimersByTime(NUDGE_MS)
-    expect(text()).toBe(LABELS.holding)
-    pointer('pointerup')
-    hold.reset()
-    vi.advanceTimersByTime(NUDGE_MS)
-    expect(text()).toBe(LABELS.rest)
+    expect(progress()).toBe(0)
+    expect(hold.el.classList.contains('released')).toBe(true)
+    for (let t = 0; t < 2000; t += 100) {
+      vi.advanceTimersByTime(100)
+      expect(text()).toBe(LABELS.label)
+    }
     expect(done).not.toHaveBeenCalled()
   })
 
@@ -119,7 +103,6 @@ describe('press and hold', () => {
     pointer('pointerleave')
     expect(progress()).toBe(0)
     expect(hold.el.classList.contains('released')).toBe(true)
-    expect(text()).toBe(LABELS.early)
     vi.advanceTimersByTime(400)
     expect(hold.el.className).toBe('btn hold')
     // The time held before doesn't count toward the next hold.
@@ -194,7 +177,7 @@ describe('reset', () => {
     hold.reset()
     expect(hold.el.className).toBe('btn hold')
     expect(progress()).toBe(0)
-    expect(text()).toBe(LABELS.rest)
+    expect(text()).toBe(LABELS.label)
     expect(hold.status.textContent).toBe('')
     vi.advanceTimersByTime(DONE_MS)
     expect(done).not.toHaveBeenCalled()
@@ -217,5 +200,60 @@ describe('reset', () => {
     vi.advanceTimersByTime(HOLD_MS + DONE_MS + 50)
     expect(done).toHaveBeenCalledOnce()
     Reflect.deleteProperty(navigator, 'vibrate')
+  })
+})
+
+describe('hold length', () => {
+  let ms: number
+  beforeEach(() => {
+    hold.el.remove()
+    ms = 5000
+    hold = new HoldButton(
+      LABELS,
+      done,
+      () => reduced,
+      () => ms
+    )
+    document.body.append(hold.el, hold.hint, hold.status)
+  })
+
+  it('takes the given length, the label unchanged', () => {
+    pointer('pointerdown')
+    vi.advanceTimersByTime(2500)
+    expect(progress()).toBeCloseTo(0.5, 1)
+    expect(text()).toBe(LABELS.label)
+    vi.advanceTimersByTime(2400)
+    expect(hold.el.classList.contains('done')).toBe(false)
+    vi.advanceTimersByTime(200 + DONE_MS)
+    expect(done).toHaveBeenCalledOnce()
+    expect(text()).toBe(LABELS.label)
+  })
+
+  it('steps in quarters over the length when motion is reduced', () => {
+    reduced = true
+    pointer('pointerdown')
+    const seen: number[] = []
+    for (let t = 0; t < ms + 250; t += 250) {
+      vi.advanceTimersByTime(250)
+      seen.push(progress())
+    }
+    expect([...new Set(seen)]).toEqual([0, 0.25, 0.5, 0.75, 1])
+    // A quarter of 5 s: the first step comes after 1.25 s, not 0.5 s.
+    expect(seen[3]).toBe(0)
+    expect(seen[5]).toBe(0.25)
+  })
+
+  it('reads the length again at each press', () => {
+    pointer('pointerdown')
+    ms = 20_000
+    vi.advanceTimersByTime(5100)
+    expect(hold.el.classList.contains('done')).toBe(true)
+    vi.advanceTimersByTime(DONE_MS)
+    hold.reset()
+    pointer('pointerdown')
+    vi.advanceTimersByTime(19_000)
+    expect(hold.el.classList.contains('done')).toBe(false)
+    vi.advanceTimersByTime(1100 + DONE_MS)
+    expect(done).toHaveBeenCalledTimes(2)
   })
 })

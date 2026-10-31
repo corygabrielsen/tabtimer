@@ -20,6 +20,18 @@ export const MAX_LIMIT_MINUTES = 1440
 
 export const SNOOZE_MS = 2 * 60 * 1000
 
+// How long "2 more minutes" must be held, by the snoozes `taken` today
+// before this one (every site's): longer in steps as the day goes on.
+export function holdMs(taken: number): number {
+  if (taken < 3) {
+    return 2000
+  }
+  if (taken < 6) {
+    return 5000
+  }
+  return taken < 10 ? 10_000 : 20_000
+}
+
 // The snooze's end as of `now` (0: none). One ending more than SNOOZE_MS
 // after `now` was set before the clock went back: it is void.
 export function snoozeOf(limits: Limits, now: number): number {

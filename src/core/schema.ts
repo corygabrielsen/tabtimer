@@ -7,6 +7,7 @@
 //   limits       Limits (core/limits.ts), the snooze included
 //   prefs        Prefs
 //   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
+//   snoozes:<date>  the snoozes taken that day, every site's (a count)
 //   clock        ClockMark: the date pruning last trusted
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
@@ -21,8 +22,9 @@ export const LIMITS_KEY = 'limits'
 export const PREFS_KEY = 'prefs'
 export const CLOCK_KEY = 'clock'
 export const DAY_KEY_PREFIX = 'day:'
+export const SNOOZES_KEY_PREFIX = 'snoozes:'
 
-// Days of usage kept, today included: older day:* keys are pruned.
+// Days kept, today included: older day:* and snoozes:* keys are pruned.
 export const RETENTION_DAYS = 30
 
 export const HOURS_PER_DAY = 24
@@ -64,6 +66,29 @@ export function dayOfKey(key: string): DayStamp | null {
   return isDayStamp(day) ? day : null
 }
 
+export type SnoozesKey = `${typeof SNOOZES_KEY_PREFIX}${DayStamp}`
+
+export function snoozesKey(day: DayStamp): SnoozesKey {
+  return `${SNOOZES_KEY_PREFIX}${day}`
+}
+
+// A day's snooze count; anything but a whole number from 0 up reads as 0.
+export function normalizeSnoozes(value: unknown): number {
+  return Number.isSafeInteger(value) && (value as number) > 0 ? (value as number) : 0
+}
+
+// The day a dated key (day:* or snoozes:*) is for, or null if `key` isn't
+// one; undefined if it has no dated prefix at all.
+function datedDay(key: string): DayStamp | null | undefined {
+  for (const prefix of [DAY_KEY_PREFIX, SNOOZES_KEY_PREFIX]) {
+    if (key.startsWith(prefix)) {
+      const day = key.slice(prefix.length)
+      return isDayStamp(day) ? day : null
+    }
+  }
+  return undefined
+}
+
 // The oldest day still kept on `today`.
 export function oldestKept(today: DayStamp): DayStamp {
   return addDays(today, -(RETENTION_DAYS - 1))
@@ -75,8 +100,8 @@ export function isKept(day: DayStamp, today: DayStamp): boolean {
   return day >= oldestKept(today) && day <= today
 }
 
-// The day:* keys among `keys` that fall outside the retention window ending
-// on the day containing `now` (malformed day:* keys go too). `last`: a later
+// The day:* and snoozes:* keys among `keys` that fall outside the retention
+// window ending on the day containing `now` (malformed ones go too). `last`: a later
 // day the clock showed before it went back; the days after tomorrow up to it
 // were written while the clock was ahead, and go too, as far as a window
 // ahead. Tomorrow is kept: a time zone change moves the date by at most a
@@ -88,10 +113,10 @@ export function expiredDayKeys(keys: string[], now: number, last: DayStamp | nul
   const tomorrow = addDays(today, 1)
   const ahead = addDays(today, RETENTION_DAYS)
   return keys.filter((key) => {
-    if (!key.startsWith(DAY_KEY_PREFIX)) {
+    const day = datedDay(key)
+    if (day === undefined) {
       return false
     }
-    const day = dayOfKey(key)
     return day === null || day < oldest || (last !== null && day > tomorrow && day <= last && day <= ahead)
   })
 }

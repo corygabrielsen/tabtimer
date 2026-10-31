@@ -190,6 +190,11 @@ export function todayKey(sw: Worker): Promise<string> {
   })
 }
 
+// Today's snooze count key (snoozes:<date>), dated as todayKey.
+export async function snoozesTodayKey(sw: Worker): Promise<string> {
+  return (await todayKey(sw)).replace(/^day:/, 'snoozes:')
+}
+
 // A storage entry for today's usage: each site's time in the current local
 // hour's bucket (of 24), to spread into a seed().
 export async function today(sw: Worker, sites: Record<string, number>): Promise<Record<string, unknown>> {
@@ -399,6 +404,9 @@ export async function clickInShadow(page: Page, hostId: string, selector: string
 // Real mouse press held `ms` on an element inside a host's closed shadow
 // root, then let go.
 export async function holdInShadow(page: Page, hostId: string, selector: string, ms: number): Promise<void> {
+  // In front: a background tab runs no animation frames, so a hold there
+  // never ends (the options page a fresh install opens can land on top).
+  await page.bringToFront()
   const { x, y } = await centreInShadow(page, hostId, selector)
   await page.mouse.move(x, y)
   await page.mouse.down()

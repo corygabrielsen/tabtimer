@@ -1,11 +1,14 @@
 // Press and hold: a button (its fill shows the progress) that acts only
-// after HOLD_MS held down, by pointer or touch only: no key holds it, so
-// typing can't.
-// Letting go early drains the progress back and says, briefly, to hold. The
-// block screen's snooze, a deliberate act (styles in BlockScreen.ts).
-import { h, svg } from '../ui'
+// after it is held down for `duration()` (read at each press), by pointer or
+// touch only: no key holds it, so typing can't.
+// The label never changes: the fill is the only feedback, and letting go
+// early drains it back. The block screen's snooze, a deliberate act (styles
+// in BlockScreen.ts).
+import { holdMs } from '../core/limits'
+import { h } from '../ui'
 
-export const HOLD_MS = 2000
+// The shortest hold, the first snooze of the day's.
+export const HOLD_MS = holdMs(0)
 // Quarter steps: a haptic tick at each, and the progress shown in them when
 // motion is reduced.
 export const HOLD_STEPS = 4
@@ -13,16 +16,12 @@ export const HOLD_STEPS = 4
 export const DONE_MS = 600
 // The drain back after an early release (its CSS transition).
 const DRAIN_MS = 320
-// How long "Hold to continue" shows after an early release.
-export const NUDGE_MS = 1500
 
-// rest, holding and done: the label in each state; early: after letting go
-// too soon; hint: the description for assistive tech.
-export type HoldLabels = { rest: string; holding: string; done: string; early: string; hint: string }
+// label: the button's, in every state; hint: the description for assistive
+// tech.
+export type HoldLabels = { label: string; hint: string }
 
 type State = 'rest' | 'holding' | 'done'
-
-const CHECK = (): SVGSVGElement => svg('0 0 20 20', 'check', ['path', { d: 'M4.75 10.25l3.5 3.5 7-7.5' }])
 
 const reducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
 
@@ -32,29 +31,28 @@ export class HoldButton {
   readonly hint: HTMLSpanElement
   // A polite live region: what the hold did.
   readonly status: HTMLSpanElement
-  private label: HTMLSpanElement
   private state: State = 'rest'
   private start = 0
+  // This press's hold length.
+  private ms = HOLD_MS
   private frame = 0
   private steps = 0
   private timer: ReturnType<typeof setTimeout> | null = null
-  private nudge: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private labels: HoldLabels,
     private onDone: () => void,
-    private reduced: () => boolean = reducedMotion
+    private reduced: () => boolean = reducedMotion,
+    private duration: () => number = () => HOLD_MS
   ) {
     this.hint = h('span', { class: 'sr', id: 'hold-hint' }, labels.hint)
     this.status = h('span', { class: 'sr', 'aria-live': 'polite' })
-    this.label = h('span', { class: 'lbl' })
     this.el = h(
       'button',
       { type: 'button', class: 'btn hold', 'aria-describedby': 'hold-hint' },
       h('span', { class: 'fill' }),
-      this.label
+      h('span', { class: 'lbl' }, h('span', { class: 'txt' }, labels.label))
     )
-    this.show(null, labels.rest)
     const el = this.el
     el.addEventListener('pointerdown', (e) => {
       if (e.button === 0) {
@@ -75,11 +73,9 @@ export class HoldButton {
   reset(): void {
     cancelAnimationFrame(this.frame)
     this.clearTimer()
-    this.clearNudge()
     this.state = 'rest'
     this.el.classList.remove('holding', 'released', 'done')
     this.setProgress(0)
-    this.show(null, this.labels.rest)
     this.status.textContent = ''
   }
 
@@ -88,18 +84,17 @@ export class HoldButton {
       return
     }
     this.clearTimer()
-    this.clearNudge()
     this.state = 'holding'
     this.start = performance.now()
+    this.ms = this.duration()
     this.steps = 0
     this.el.classList.remove('released')
     this.el.classList.add('holding')
-    this.show(null, this.labels.holding)
     this.frame = requestAnimationFrame(this.tick)
   }
 
   private tick = (now: number) => {
-    const p = Math.min(1, Math.max(0, now - this.start) / HOLD_MS)
+    const p = Math.min(1, Math.max(0, now - this.start) / this.ms)
     this.setProgress(p)
     const step = Math.floor(p * HOLD_STEPS)
     if (step > this.steps && step < HOLD_STEPS) {
@@ -123,15 +118,10 @@ export class HoldButton {
     this.el.classList.remove('holding')
     this.el.classList.add('released')
     this.setProgress(0)
-    this.show(null, this.labels.early)
     this.timer = setTimeout(() => {
       this.timer = null
       this.el.classList.remove('released')
     }, DRAIN_MS)
-    this.nudge = setTimeout(() => {
-      this.nudge = null
-      this.show(null, this.labels.rest)
-    }, NUDGE_MS)
   }
 
   private finish() {
@@ -139,8 +129,7 @@ export class HoldButton {
     vibrate([10, 40, 18])
     this.el.classList.remove('holding')
     this.el.classList.add('done')
-    this.show(CHECK(), this.labels.done)
-    this.status.textContent = this.labels.done
+    this.status.textContent = this.labels.label
     this.timer = setTimeout(() => {
       this.timer = null
       this.onDone()
@@ -151,17 +140,6 @@ export class HoldButton {
   private setProgress(p: number) {
     const shown = this.reduced() ? Math.floor(p * HOLD_STEPS) / HOLD_STEPS : p
     this.el.style.setProperty('--p', String(shown))
-  }
-
-  private show(icon: SVGSVGElement | null, text: string) {
-    this.label.replaceChildren(...(icon ? [icon] : []), h('span', { class: 'txt' }, text))
-  }
-
-  private clearNudge() {
-    if (this.nudge !== null) {
-      clearTimeout(this.nudge)
-      this.nudge = null
-    }
   }
 
   private clearTimer() {

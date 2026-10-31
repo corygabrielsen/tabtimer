@@ -4,6 +4,15 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-10-30
+
+### Changed
+
+- 2 more minutes takes a longer hold as the day goes on: 2 seconds for the
+  first three, then 5, 10, and 20 seconds. Resets at midnight.
+- The 2 more minutes button keeps its label while you hold it.
+- A new icon: a sleeping clock.
+
 ## [1.7.0] - 2026-10-29
 
 ### Added
@@ -288,6 +297,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.8.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.3...v1.6.4
 [1.6.3]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.2...v1.6.3

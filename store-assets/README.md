@@ -9,5 +9,5 @@ Required by the dashboard:
   Show the on-page overlay (collapsed and expanded) and the popup.
 - **Small promo tile** — 440×280 PNG/JPEG (optional but recommended).
 
-The extension icon source lives at the repo root (`icon.svg`,
-`icon16/32/48/128.png`).
+The extension icon source lives at the repo root: `icon.svg`, `icon-16.svg` (the
+hand-tuned 16 px size) and `icon16/32/48/128.png`.

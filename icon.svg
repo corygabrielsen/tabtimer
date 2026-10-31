@@ -1,27 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#6366f1"/>
-      <stop offset="100%" stop-color="#4338ca"/>
-    </linearGradient>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+<defs>
+<linearGradient id="glaze" gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="0" y2="120">
+ <stop offset="0" stop-color="#26ad9d"/><stop offset="1" stop-color="#11796e"/></linearGradient>
+<radialGradient id="sheen" cx=".5" cy=".3" r=".6">
+ <stop offset="0" stop-color="#fff" stop-opacity=".30"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<clipPath id="bc"><circle cx="64" cy="64" r="56"/></clipPath>
+<linearGradient id="well" x1="0" y1="0" x2="0" y2="1">
+ <stop offset="0" stop-color="#0a5a52"/><stop offset="1" stop-color="#5ccbbd"/></linearGradient>
+<linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+ <stop offset="0" stop-color="#f2f8f7"/><stop offset="1" stop-color="#dcebe8"/></linearGradient>
+<clipPath id="fc"><circle cx="64" cy="64" r="42"/></clipPath>
+<filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2"/></filter>
+</defs>
 
-  <!-- app-icon background -->
-  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-
-  <!-- stopwatch crown + stem -->
-  <rect x="57" y="13" width="14" height="11" rx="3.5" fill="#fff"/>
-  <rect x="61" y="21" width="6" height="10" fill="#fff"/>
-
-  <!-- clock face -->
-  <circle cx="64" cy="68" r="38" fill="#fff"/>
-
-  <!-- elapsed-time wedge: 12 o'clock sweeping clockwise to ~4:30 -->
-  <path d="M64 68 L64 30 A38 38 0 0 1 90.87 94.87 Z" fill="#4f46e5"/>
-
-  <!-- hand at the leading edge of the elapsed wedge -->
-  <line x1="64" y1="68" x2="85.2" y2="89.2" stroke="#fff" stroke-width="4.5" stroke-linecap="round"/>
-
-  <!-- center hub -->
-  <circle cx="64" cy="68" r="5" fill="#fff"/>
+<circle cx="64" cy="64" r="56" fill="url(#glaze)"/>
+<ellipse clip-path="url(#bc)" cx="64" cy="36.0" rx="47.6" ry="28.0" fill="url(#sheen)"/>
+<circle cx="64" cy="64" r="55.4" fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1.2"/>
+<circle cx="64" cy="64" r="44.6" fill="url(#well)"/>
+<circle cx="64" cy="64" r="42" fill="url(#face)"/>
+<g clip-path="url(#fc)"><circle cx="64" cy="61" r="44.5" fill="none" stroke="#0b3f39" stroke-opacity=".13" stroke-width="5" filter="url(#soft)"/></g>
+<g fill="#0b7268" fill-opacity="0.32"><circle cx="64.00" cy="29.00" r="2.4"/><circle cx="99.00" cy="64.00" r="2.4"/><circle cx="29.00" cy="64.00" r="2.4"/></g>
+<g fill="none" stroke="#0b4f48" stroke-linecap="round"><path d="M39.22 76.81 Q47.20 86.05 55.18 76.81" stroke-width="5.46"/><path d="M72.82 76.81 Q80.80 86.05 88.78 76.81" stroke-width="5.46"/><path d="M59.38 90.88 Q64.00 95.08 68.62 90.88" stroke-width="4.20"/></g>
 </svg>
