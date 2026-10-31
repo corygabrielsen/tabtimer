@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { LIMITS_KEY } from './core/schema'
+import { LIMITS_KEY, PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { bus } from './chrome/bus'
 import { fakeChrome, type FakeChrome } from './test/chrome'
@@ -516,5 +516,51 @@ describe('storage it can’t read', () => {
     await import('./usage')
     await flush()
     expect($('empty').hidden).toBe(false)
+  })
+})
+
+describe('with days starting at 06:00', () => {
+  const SIX = { [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } }
+
+  it('runs today’s hours from 6 AM, and counts 1 AM toward the evening before', async () => {
+    vi.setSystemTime(new Date(2026, 9, 29, 1, 30))
+    await open({ ...SEED, ...SIX })
+    expect(text('period-label')).toBe('Today')
+    // 28 October is still today: its 2 PM is eight hours in.
+    expect(text('total')).toBe('1 h 39 min')
+    expect(bars()).toHaveLength(24)
+    expect(bars()[0]!.getAttribute('aria-label')).toBe('6 AM, 0 min')
+    expect(bars()[8]!.getAttribute('aria-label')).toBe('2 PM, 43 min')
+    expect(bars()[23]!.getAttribute('aria-label')).toBe('5 AM, 0 min')
+    expect([...document.querySelectorAll('.axis span')].map((s) => s.textContent).filter(Boolean)).toEqual([
+      '6 AM',
+      '12 PM',
+      '6 PM',
+      '12 AM',
+    ])
+  })
+
+  it('starts the new day at 06:00, not midnight', async () => {
+    vi.setSystemTime(new Date(2026, 9, 28, 23, 59, 59))
+    await open({ ...SEED, ...SIX })
+    vi.advanceTimersByTime(2000)
+    await flush()
+    expect(text('total')).toBe('1 h 39 min')
+    vi.setSystemTime(new Date(2026, 9, 29, 5, 59, 59))
+    vi.advanceTimersByTime(2000)
+    await flush()
+    expect(text('period-label')).toBe('Today')
+    expect(text('total')).toBe('0 min')
+  })
+
+  it('follows a change of the day start at once', async () => {
+    vi.setSystemTime(new Date(2026, 9, 29, 1, 30))
+    await open()
+    // Midnight: the 29th, with nothing yet.
+    expect(text('total')).toBe('0 min')
+    browser.storage.local.seed(SIX)
+    await flush()
+    expect(text('total')).toBe('1 h 39 min')
+    expect(bars()[0]!.getAttribute('aria-label')).toBe('6 AM, 0 min')
   })
 })

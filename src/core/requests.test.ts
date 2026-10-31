@@ -43,6 +43,14 @@ describe('parseRequest', () => {
       { type: 'setPrefs', scale: 0.75 },
       { type: 'setPrefs', scale: 0.75 },
     ],
+    [
+      { type: 'setPrefs', dayStart: 0 },
+      { type: 'setPrefs', dayStart: 0 },
+    ],
+    [
+      { type: 'setPrefs', dayStart: 23 },
+      { type: 'setPrefs', dayStart: 23 },
+    ],
   ])('accepts %j', (raw, expected) => {
     expect(parse(raw)).toEqual(expected)
   })
@@ -85,6 +93,10 @@ describe('parseRequest', () => {
     { type: 'setPrefs', hidden: 'yes' },
     { type: 'setPrefs', scale: 0.4 },
     { type: 'setPrefs', scale: 1.5 },
+    { type: 'setPrefs', dayStart: 24 },
+    { type: 'setPrefs', dayStart: -1 },
+    { type: 'setPrefs', dayStart: 6.5 },
+    { type: 'setPrefs', dayStart: '6' },
   ])('rejects %j', (raw) => {
     expect(parse(raw)).toBeNull()
   })

@@ -6,7 +6,7 @@
 // a worker stopped at any moment resumes where it was on the next event.
 // Pages are told their state by message; a page's reply is its presence,
 // which is how the worker asks a page to report again (`probe`).
-import { dayOf, startOfDay } from '../core/day'
+import { logicalDay, startOfLogicalDay } from '../core/day'
 import { blockAt, holdMs, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, withTimeAt, type DayUsage, type Prefs } from '../core/schema'
@@ -43,8 +43,8 @@ const everySite = () => true
 const ignore = () => undefined
 
 // The open interval's uncredited part, today's share of it.
-function uncredited(open: Open, now: number): number {
-  return Math.max(0, creditEnd(open, now) - Math.max(open.since, startOfDay(now)))
+function uncredited(open: Open, now: number, dayStart: number): number {
+  return Math.max(0, creditEnd(open, now) - Math.max(open.since, startOfLogicalDay(now, dayStart)))
 }
 
 export function createTracker(deps: TrackerDeps) {
@@ -62,14 +62,14 @@ export function createTracker(deps: TrackerDeps) {
       ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), counted(), tx.snoozesToday()])
       const [usage, limits, prefs, counts, snoozes] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
-      const extra = open ? uncredited(open, tx.now) : 0
+      const extra = open ? uncredited(open, tx.now, tx.dayStart) : 0
       const today = siteTotal(usage, attest.site) + extra
       // Sites no longer tracked don't count toward the all-sites limit.
       const globalToday = dayTotal(usage, counts) + extra
       const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null)
       return {
         site: attest.site,
-        day: dayOf(tx.now),
+        day: logicalDay(tx.now, tx.dayStart),
         asOf: tx.now,
         seq: tx.seq,
         today,
@@ -224,9 +224,10 @@ export function createTracker(deps: TrackerDeps) {
         }
         const open = tx.tracker.open
         if (open) {
-          sites[open.site] = (sites[open.site] ?? 0) + uncredited(open, tx.now)
+          sites[open.site] = (sites[open.site] ?? 0) + uncredited(open, tx.now, tx.dayStart)
         }
-        return { day: dayOf(tx.now), asOf: tx.now, seq: tx.seq, running: open?.site ?? null, sites }
+        const { now, dayStart, seq } = tx
+        return { day: logicalDay(now, dayStart), dayStart, asOf: now, seq, running: open?.site ?? null, sites }
       }),
 
     // A block screen took a snooze: blocking stops for SNOOZE_MS.

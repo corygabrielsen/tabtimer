@@ -1,7 +1,7 @@
 import { chromeStore, loadThenPatch } from './chrome/store'
 import { bus } from './chrome/bus'
 import type { StoreChanges } from './ports'
-import { dayOf } from './core/day'
+import { hourOfSlot, hoursIntoDay, inDayOrder, logicalDay } from './core/day'
 import { overAt, totalsAt, type TabState } from './core/messages'
 import { hourLabel, withUncredited } from './core/usage'
 import { isTracked, originsForSite, trackableSiteOfUrl } from './core/site'
@@ -42,23 +42,23 @@ function activeTab(): Promise<ActiveTab | null> {
 // answers), read at `now`, against the limits as set.
 type Snapshot = { tab: TabState | null; limits: Limits; now: number }
 
-// The hours the timeline names: midnight, 6, noon and 18.
+// Where the timeline's named marks fall, in hours from the day's start
+// (with midnight: midnight, 6, noon and 18).
 const STRIP_MARKS = [0, 6, 12, 18]
 
-const at = (hour: number) => `${(hour / 24) * 100}%`
+const at = (slot: number) => `${(slot / 24) * 100}%`
 
 // Where now falls on the strip.
 const nowMark = h('i', { class: 'now' })
 
-function moveNow() {
-  const now = new Date()
-  nowMark.style.left = at(now.getHours() + now.getMinutes() / 60)
+function moveNow(dayStart: number) {
+  nowMark.style.left = at(hoursIntoDay(Date.now(), dayStart))
 }
 
-// Today's time on this site as a timeline: 24 hour bars (split where its
-// own limit fell), faint marks every six hours with their names below, and
-// the now mark.
-function renderStrip(base: string, hours: number[]) {
+// Today's time on this site as a timeline from the hour the day starts at:
+// 24 hour bars (`hours`, by wall-clock hour), faint marks every six hours
+// with their names below, and the now mark.
+function renderStrip(base: string, hours: number[], dayStart: number) {
   const strip = byId('strip')
   const axis = byId('strip-axis')
   if (!strip || !axis) {
@@ -66,14 +66,14 @@ function renderStrip(base: string, hours: number[]) {
   }
   const top = Math.max(HOUR_FLOOR_MS, ...hours)
   strip.setAttribute('aria-label', t('popupStripAria', base))
-  const placed = <E extends HTMLElement>(el: E, hour: number) => {
-    el.style.left = at(hour)
+  const placed = <E extends HTMLElement>(el: E, slot: number) => {
+    el.style.left = at(slot)
     return el
   }
-  moveNow()
+  moveNow(dayStart)
   strip.replaceChildren(
-    ...STRIP_MARKS.map((hour) => placed(h('i', { class: 'mark' }), hour)),
-    ...hours.map((ms) => {
+    ...STRIP_MARKS.map((slot) => placed(h('i', { class: 'mark' }), slot)),
+    ...inDayOrder(hours, dayStart).map((ms) => {
       const bar = h('span', { 'data-on': ms > 0 })
       drawBar(bar, ms, top)
       return bar
@@ -81,7 +81,9 @@ function renderStrip(base: string, hours: number[]) {
     nowMark
   )
   const locale = uiLocale()
-  axis.replaceChildren(...STRIP_MARKS.map((hour) => placed(h('span', {}, hourLabel(hour, locale)), hour)))
+  axis.replaceChildren(
+    ...STRIP_MARKS.map((slot) => placed(h('span', {}, hourLabel(hourOfSlot(slot, dayStart), locale)), slot))
+  )
 }
 
 function faceFor(base: string, s: Snapshot) {
@@ -188,21 +190,23 @@ function renderTracked(tabId: number, base: string, focus = false) {
   let day: DayUsage = {}
   let limits: Limits = DEFAULT_LIMITS
   let hidden = false
+  let dayStart = 0
   const snapshot = (): Snapshot => ({ tab, limits, now: Date.now() })
   const drawFace = () => renderFace(base, snapshot())
   // Today's hours with the time not yet stored in the current one.
   const drawStrip = () => {
     const now = Date.now()
-    const totals = tab && { ...tab, running: tab.running ? base : null, sites: { [base]: tab.today } }
-    const usage = totals ? withUncredited(new Map([[dayOf(now), day]]), totals, now).get(dayOf(now))! : day
-    renderStrip(base, usage[base] ?? emptyBuckets())
+    const today = logicalDay(now, dayStart)
+    const totals = tab && { ...tab, dayStart, running: tab.running ? base : null, sites: { [base]: tab.today } }
+    const usage = totals ? (withUncredited(new Map([[today, day]]), totals, now).get(today) ?? day) : day
+    renderStrip(base, usage[base] ?? emptyBuckets(), dayStart)
   }
   const draw = () => {
     drawStrip()
     drawFace()
     syncLimitField(limits)
   }
-  const todayKey = () => dayKey(dayOf(Date.now()))
+  const todayKey = () => dayKey(logicalDay(Date.now(), dayStart))
 
   // A state from an earlier worker transaction never replaces the one shown.
   const ask = async () => {
@@ -243,7 +247,8 @@ function renderTracked(tabId: number, base: string, focus = false) {
   const read = (key: string) => local.get(key).catch(() => undefined)
 
   // The time, the now mark and the snooze countdown run on while the popup
-  // is open; at midnight the strip and the face start the new day.
+  // is open; when the next day starts (at the hour set, which may change
+  // meanwhile) the strip and the face start it.
   let shownKey = todayKey()
   window.setInterval(() => {
     const key = todayKey()
@@ -259,20 +264,32 @@ function renderTracked(tabId: number, base: string, focus = false) {
     if (tab?.running) {
       drawStrip()
     }
-    moveNow()
+    moveNow(dayStart)
     drawFace()
   }, 1000)
 
   const load = async () => {
-    const [d, l, p] = await Promise.all([read(todayKey()), read(LIMITS_KEY), read(PREFS_KEY), ask()])
-    day = normalizeDay(d)
+    const [l, p] = await Promise.all([read(LIMITS_KEY), read(PREFS_KEY), ask()])
     limits = normalizeLimits(l)
-    hidden = normalizePrefs(p).hidden
+    ;({ hidden, dayStart } = normalizePrefs(p))
+    // Which day is today depends on the hour it starts at.
+    shownKey = todayKey()
+    day = normalizeDay(await read(shownKey))
   }
   const patch = (changes: StoreChanges) => {
     if (PREFS_KEY in changes) {
-      hidden = normalizePrefs(changes[PREFS_KEY]!.newValue).hidden
+      const prefs = normalizePrefs(changes[PREFS_KEY]!.newValue)
+      hidden = prefs.hidden
       renderToggle()
+      if (prefs.dayStart !== dayStart) {
+        // Another hour starts the day: the strip turns now, or on the next
+        // tick once it has read the day it now is.
+        dayStart = prefs.dayStart
+        if (todayKey() === shownKey) {
+          drawStrip()
+          void ask().then(drawFace)
+        }
+      }
     }
     const key = todayKey()
     if (key in changes) {

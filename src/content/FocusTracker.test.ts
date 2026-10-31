@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import FocusTracker from './FocusTracker'
 import { bus } from '../chrome/bus'
 import type { TabState } from '../core/messages'
+import { PREFS_KEY } from '../core/schema'
 import type { Bus, Pushes } from '../ports'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush, setPageState } from '../test/dom'
@@ -39,7 +40,7 @@ const STATE: TabState = {
   blockAt: null,
   limit: null,
   hours: Array<number>(24).fill(0),
-  prefs: { hidden: false, scale: 1 },
+  prefs: { hidden: false, scale: 1, dayStart: 0 },
   holdMs: 2000,
 }
 
@@ -396,7 +397,7 @@ describe('reporting to the service worker', () => {
       blockAt: null,
       limit: null,
       hours: Array<number>(24).fill(0),
-      prefs: { hidden: false, scale: 1 },
+      prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
     }
     expect(handler!(base, false)).toEqual({ visible: true, focused: true, media: false, blocked: false })
@@ -495,6 +496,31 @@ describe('days', () => {
     expect(storedToday('reddit.com', yesterday)).toBe(minutes(9) + seconds(30))
     expect(storedToday()).toBe(seconds(15))
     expect(Object.keys(browser.storage.local.data)).toContain(dayKeyOf())
+  })
+
+  it('with days starting at 06:00, runs on through midnight', async () => {
+    useClock(new Date(2026, 5, 10, 23, 59, 30))
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    seedToday({ 'reddit.com': minutes(9) })
+    const model = started()
+    await run(seconds(45))
+    expect(model.readElapsed()).toEqual({ today: minutes(9) + seconds(45), focus: seconds(45), session: seconds(45) })
+    await close(model)
+    expect(storedToday('reddit.com', new Date(2026, 5, 10, 12))).toBe(minutes(9) + seconds(45))
+    expect(Object.keys(browser.storage.local.data)).not.toContain('day:2026-06-11')
+  })
+
+  it('with days starting at 06:00, starts a fresh day at 06:00', async () => {
+    useClock(new Date(2026, 5, 11, 5, 59, 30))
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    // The evening's time, stored under its date.
+    seedToday({ 'reddit.com': minutes(9) }, new Date(2026, 5, 10, 23))
+    const model = started()
+    await run(seconds(45))
+    expect(model.readElapsed()).toEqual({ today: seconds(15), focus: seconds(15), session: seconds(15) })
+    await close(model)
+    expect(storedToday('reddit.com', new Date(2026, 5, 10, 12))).toBe(minutes(9) + seconds(30))
+    expect(storedToday()).toBe(seconds(15))
   })
 
   it('B8: a sleep across midnight counts none of the sleep, and only use from waking', async () => {

@@ -325,7 +325,7 @@ describe('handlers', () => {
   it('set prefs, changing only the fields given', async () => {
     await handle({ type: 'setPrefs', scale: 0.5 }, content())
     await expect(handle({ type: 'setPrefs', hidden: true }, page())).resolves.toEqual({ ok: true, value: null })
-    expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5 })
+    expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.5, dayStart: 0 })
   })
 
   it('take the page’s media flag: while idle, only a page playing media accrues', async () => {

@@ -12,7 +12,7 @@ const at = (...args: [number, number, number, number?, number?]) => new Date(...
 
 // Credit [start, end) to one site, the way the service worker stores it.
 function credit(history: History, site: string, start: number, end: number): void {
-  for (const { day, hour, ms } of splitByHour(start, end)) {
+  for (const { day, hour, ms } of splitByHour(start, end, 0)) {
     const usage: DayUsage = history.get(day) ?? {}
     const buckets = (usage[site] ??= emptyBuckets())
     buckets[hour] = (buckets[hour] ?? 0) + ms
@@ -27,7 +27,7 @@ describe('a 23-hour day (clocks go forward)', () => {
   const day = dayOf(at(2026, 2, 8, 12))
 
   it('still has 24 slots, the skipped hour empty', () => {
-    const bars = hourBars(history, day)
+    const bars = hourBars(history, day, 0)
     expect(bars).toHaveLength(24)
     expect(bars[2]).toEqual({})
     expect(bars[1]).toEqual({ 'a.com': HOUR })
@@ -50,7 +50,7 @@ describe('a 25-hour day (clocks go back)', () => {
   const day = dayOf(at(2026, 10, 1, 12))
 
   it('still has 24 slots, the repeated hour doubled', () => {
-    const bars = hourBars(history, day)
+    const bars = hourBars(history, day, 0)
     expect(bars).toHaveLength(24)
     expect(bars[1]).toEqual({ 'a.com': 2 * HOUR })
     expect(bars[2]).toEqual({ 'a.com': HOUR })

@@ -1,7 +1,7 @@
 import type FocusTracker from './FocusTracker'
 import BASE from '../styles/base.css?raw'
 import { bus as chromeBus } from '../chrome/bus'
-import { hourOf } from '../core/day'
+import { hourOf, hourOfSlot, inDayOrder, slotOfHour } from '../core/day'
 import { msToMinutes, SNOOZE_MS, type BlockReason } from '../core/limits'
 import { hoursAt, type TabState } from '../core/messages'
 import { hourLabel } from '../core/usage'
@@ -18,7 +18,8 @@ const HOST_ID = 'tabtimer-block'
 // while typing, auto-repeating across the moment it appears, does nothing.
 export const KEY_GUARD_MS = 500
 
-// The hours the chart's axis names besides Now: midnight, 6, noon and 18.
+// Where the chart's axis names hours besides Now, in hours from the day's
+// start (with midnight: midnight, 6, noon and 18).
 const AXIS_MARKS = [0, 6, 12, 18]
 
 // The shared components (base.css), then the block screen's own.
@@ -426,7 +427,8 @@ export default class BlockScreen {
     const now = Date.now()
     const hours = hoursAt(state, now)
     const { scope, limit, elapsed } = reason
-    const shown = [state.site, scope, limit, Math.floor(elapsed / 1000), hours.map(toMinutes), hourOf(now)]
+    const { dayStart } = state.prefs
+    const shown = [state.site, scope, limit, Math.floor(elapsed / 1000), hours.map(toMinutes), hourOf(now), dayStart]
     const key = JSON.stringify(shown)
     if (key === this.drawn) {
       return
@@ -438,7 +440,7 @@ export default class BlockScreen {
     // site's against its own (the popup's readout), or every tracked site's
     // against the all-sites limit.
     drawReadout(this.time, this.limitText, elapsed, limit)
-    drawChart(this.chart, hours, hourOf(now), state.site)
+    drawChart(this.chart, hours, hourOf(now), dayStart, state.site)
   }
 
   // Each tick while blocked, take back what the page changed since the last:
@@ -753,10 +755,14 @@ function restoreOverflow(style: CSSStyleDeclaration, saved: Map<string, SavedSty
 
 const toMinutes = (ms: number) => Math.round(ms / 60_000)
 
-// Today on `site` by hour, one tone (usage only), a value over the busiest
-// bars that have room, and the current hour marked Now. The readout states
-// the limit.
-function drawChart(el: HTMLElement, hours: number[], now: number, site: string): void {
+// Today on `site` by hour (`byHour`, by wall-clock hour) from the hour the
+// day starts at, one tone (usage only), a value over the busiest bars that
+// have room, and the current hour (`nowHour`) marked Now. The readout
+// states the limit.
+function drawChart(el: HTMLElement, byHour: number[], nowHour: number, dayStart: number, site: string): void {
+  // Slots from the day's start on.
+  const hours = inDayOrder(byHour, dayStart)
+  const now = slotOfHour(nowHour, dayStart)
   const top = Math.max(HOUR_FLOOR_MS, ...hours)
   // Values over bars with no labelled neighbour: Now first, then the
   // busiest.
@@ -768,7 +774,7 @@ function drawChart(el: HTMLElement, hours: number[], now: number, site: string):
     }
   }
   const cols = hours.map((ms, i) => {
-    const col = h('div', { 'data-hour': String(i), 'data-now': i === now })
+    const col = h('div', { 'data-hour': String(hourOfSlot(i, dayStart)), 'data-now': i === now })
     drawBar(col, ms, top)
     if (labelled.has(i)) {
       col.append(h('span', { class: 'val' }, t('limitChipMinutes', String(toMinutes(hours[i]!)))))
@@ -777,10 +783,10 @@ function drawChart(el: HTMLElement, hours: number[], now: number, site: string):
   })
   const locale = uiLocale()
   // Axis names that would crowd Now give way to it.
-  const marks = AXIS_MARKS.filter((hour) => Math.abs(hour - now) >= 3)
-  const axisLabel = (hour: number, text: string, cls?: string) => {
+  const marks = AXIS_MARKS.filter((slot) => Math.abs(slot - now) >= 3)
+  const axisLabel = (slot: number, text: string, cls?: string) => {
     const span = h('span', { class: cls }, text)
-    span.style.setProperty('--h', String(hour))
+    span.style.setProperty('--h', String(slot))
     return span
   }
   el.setAttribute('aria-label', t('popupStripAria', site))
@@ -789,7 +795,9 @@ function drawChart(el: HTMLElement, hours: number[], now: number, site: string):
     h(
       'div',
       { class: 'axis', 'aria-hidden': 'true' },
-      ...marks.map((hour) => axisLabel(hour, hourLabel(hour, locale), hour === 0 ? 'first' : undefined)),
+      ...marks.map((slot) =>
+        axisLabel(slot, hourLabel(hourOfSlot(slot, dayStart), locale), slot === 0 ? 'first' : undefined)
+      ),
       axisLabel(now, t('blockNow'), now === 0 ? 'now first' : 'now')
     )
   )

@@ -766,3 +766,64 @@ describe('this week', () => {
     expect(text($('week-total'))).toBe('10 min')
   })
 })
+
+describe('day start', () => {
+  const select = () => $<HTMLSelectElement>('day-start')
+  const choose = (hour: number) => {
+    select().value = String(hour)
+    select().dispatchEvent(new Event('change'))
+  }
+  const dayStart = () => (browser.storage.local.data[PREFS_KEY] as { dayStart?: number } | undefined)?.dayStart
+
+  it('offers every hour, named as the locale does, from midnight', async () => {
+    await openOptions()
+    expect(text(document.querySelector('label[for="day-start"]'))).toBe('Day starts at')
+    const options = [...select().options]
+    expect(options.map((o) => o.value)).toEqual(Array.from({ length: 24 }, (_, hour) => String(hour)))
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Midnight',
+      ...Array.from({ length: 11 }, (_, i) => `${i + 1} AM`),
+      '12 PM',
+      ...Array.from({ length: 11 }, (_, i) => `${i + 1} PM`),
+    ])
+    expect(select().value).toBe('0')
+  })
+
+  it('saves the hour chosen, and reflects what is stored', async () => {
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 0.75, dayStart: 4 } })
+    await openOptions()
+    expect(select().value).toBe('4')
+    choose(6)
+    await flush()
+    expect(browser.storage.local.data[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75, dayStart: 6 })
+    expect(text($('day-start-saved'))).toBe('Saved')
+  })
+
+  it('goes back to the stored hour when the save fails', async () => {
+    await openOptions()
+    browser.storage.local.error = 'quota'
+    choose(6)
+    await flush()
+    expect(select().value).toBe('0')
+    expect(dayStart()).toBeUndefined()
+    expect(text($('day-start-saved'))).toBe('')
+  })
+
+  it('follows a change made elsewhere, and today’s figures with it', async () => {
+    grant('reddit.com')
+    vi.useFakeTimers({ now: new Date(2026, 9, 29, 1, 30), toFake: ['setInterval', 'Date'] })
+    // 40 minutes the evening before, at 10 PM.
+    browser.storage.local.seed(dayEntry({ 'reddit.com': 40 * MIN }, new Date(2026, 9, 28, 22)))
+    await openOptions()
+    expect(todayCell('reddit.com')?.textContent).toBe('0 min')
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    await flush()
+    expect(select().value).toBe('6')
+    expect(todayCell('reddit.com')?.textContent).toBe('40 min')
+    // And at 06:00 the new day starts.
+    vi.setSystemTime(new Date(2026, 9, 29, 5, 59, 59))
+    vi.advanceTimersByTime(2000)
+    await flush()
+    expect(todayCell('reddit.com')?.textContent).toBe('0 min')
+  })
+})

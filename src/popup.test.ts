@@ -365,6 +365,72 @@ describe('popup on a tracked site', () => {
     }
   })
 
+  describe('with days starting at 06:00', () => {
+    const sixAm = () => browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+
+    it('runs the strip from 6 AM, its marks, names and now turned to match', async () => {
+      vi.useFakeTimers({ now: new Date(2026, 9, 29, 1, 30), toFake: ['Date'] })
+      try {
+        sixAm()
+        // At 9 PM and at 1 AM: both today's day, stored under the 28th.
+        const hours = Array<number>(24).fill(0)
+        hours[21] = 20 * MIN
+        hours[1] = 10 * MIN
+        browser.storage.local.seed({ 'day:2026-10-28': { 'reddit.com': hours } })
+        await openReddit()
+        const bars = [...$('strip').querySelectorAll<HTMLElement>('span')]
+        expect(bars.map((b) => b.hasAttribute('data-on'))).toEqual(
+          Array.from({ length: 24 }, (_, slot) => slot === 15 || slot === 19)
+        )
+        expect([...$('strip-axis').children].map((l) => l.textContent)).toEqual(['6 AM', '12 PM', '6 PM', '12 AM'])
+        expect([...$('strip-axis').children].map((l) => (l as HTMLElement).style.left)).toEqual([
+          '0%',
+          '25%',
+          '50%',
+          '75%',
+        ])
+        expect($('strip').querySelector<HTMLElement>('.now')?.style.left).toBe(`${(19.5 / 24) * 100}%`)
+        expect($('today').textContent).toBe('00:30:00')
+        expect(text('summary')).toBe('No limit')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps the evening’s day through midnight and starts the new day at 06:00', async () => {
+      vi.useFakeTimers({ now: new Date(2026, 9, 28, 23, 59, 58), toFake: ['setInterval', 'Date'] })
+      try {
+        sixAm()
+        seedToday({ 'reddit.com': 40 * MIN }, new Date(2026, 9, 28, 23))
+        await openReddit()
+        vi.advanceTimersByTime(3000)
+        await flush()
+        expect($('today').textContent).toBe('00:40:00')
+        vi.setSystemTime(new Date(2026, 9, 29, 5, 59, 58))
+        vi.advanceTimersByTime(3000)
+        await flush()
+        expect($('today').textContent).toBe('00:00:00')
+        expect($('strip').querySelectorAll('span[data-on]')).toHaveLength(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('turns the strip as soon as the day start changes', async () => {
+      vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['Date'] })
+      try {
+        await openReddit()
+        expect($('strip-axis').firstElementChild?.textContent).toBe('12 AM')
+        sixAm()
+        await flush()
+        expect($('strip-axis').firstElementChild?.textContent).toBe('6 AM')
+        expect($('strip').querySelector<HTMLElement>('.now')?.style.left).toBe(`${(9 / 24) * 100}%`)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   it('moves the now mark while open, without redrawing the strip', async () => {
     vi.useFakeTimers({ now: new Date(2026, 9, 28, 15, 0), toFake: ['setInterval', 'Date'] })
     try {

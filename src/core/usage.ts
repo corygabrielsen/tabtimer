@@ -3,7 +3,7 @@
 //
 // A Bar is one slot of a chart (an hour of a day, or a day of a week): each
 // site's time in it. A day with no stored key is a day of zero usage.
-import { addDays, dayOf, daysBetween, utcOf, type DayStamp } from './day'
+import { addDays, daysBetween, inDayOrder, logicalDay, utcOf, type DayStamp } from './day'
 import { siteTodayAt, type TodayTotals } from './messages'
 import {
   dayOfKey,
@@ -65,7 +65,7 @@ export function patchHistory(history: History, changes: Record<string, { newValu
 // not yet stored goes into the current hour. For display; `history` is left
 // as it is.
 export function withUncredited(history: History, totals: TodayTotals, now: number): History {
-  const day = dayOf(now)
+  const day = logicalDay(now, totals.dayStart)
   const stored = history.get(day) ?? {}
   const usage: DayUsage = { ...stored }
   let added = false
@@ -99,12 +99,13 @@ export function daysFrom(start: DayStamp, count: number): DayStamp[] {
 
 // --- Bars --------------------------------------------------------------------
 
-// One day's 24 hourly bars. Buckets are local wall-clock hours as stored: on a
-// 23-hour day the skipped hour is an empty bar, on a 25-hour day the repeated
-// hour is already folded into one, so there are always 24.
-export function hourBars(history: History, day: DayStamp): Bar[] {
+// One day's 24 hourly bars, from the hour it starts at (`dayStart`) on.
+// Buckets are local wall-clock hours as stored: on a 23-hour day the skipped
+// hour is an empty bar, on a 25-hour day the repeated hour is already folded
+// into one, so there are always 24.
+export function hourBars(history: History, day: DayStamp, dayStart: number): Bar[] {
   const usage = history.get(day) ?? {}
-  return Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
+  const byHour = Array.from({ length: HOURS_PER_DAY }, (_, hour) => {
     const bar: Bar = {}
     for (const [site, buckets] of Object.entries(usage)) {
       const ms = buckets[hour]!
@@ -114,6 +115,7 @@ export function hourBars(history: History, day: DayStamp): Bar[] {
     }
     return bar
   })
+  return inDayOrder(byHour, dayStart)
 }
 
 // One bar per day of `days`: each site's total that day.
@@ -304,15 +306,22 @@ export type Summary = {
 // The previous period's time up to the point the current one has reached:
 // all of it for a period that is over, else its days before today's
 // counterpart and that day up to `hour` (wall-clock hours into today,
-// fractional). An unfinished period is compared with the same part of the
-// one before, not with all of it.
-function previousSoFar(history: History, period: Period, today: DayStamp, hour: number, site: string | null): number {
+// fractional; hoursIntoDay). An unfinished period is compared with the same
+// part of the one before, not with all of it.
+function previousSoFar(
+  history: History,
+  period: Period,
+  today: DayStamp,
+  dayStart: number,
+  hour: number,
+  site: string | null
+): number {
   const at = period.days.indexOf(today)
   if (at === -1) {
     return periodTotal(dayBars(history, period.previous), site)
   }
   const whole = Math.floor(hour)
-  const hours = hourBars(history, period.previous[at]!)
+  const hours = hourBars(history, period.previous[at]!, dayStart)
   return (
     periodTotal(dayBars(history, period.previous.slice(0, at)), site) +
     periodTotal(hours.slice(0, whole), site) +
@@ -320,18 +329,20 @@ function previousSoFar(history: History, period: Period, today: DayStamp, hour: 
   )
 }
 
-// `hour`: how far into today it is, in wall-clock hours (fractional).
+// `dayStart`: the hour days start at; `hour`: how far into today it is, in
+// wall-clock hours (fractional; hoursIntoDay).
 export function summarize(
   stored: History,
   period: Period,
   today: DayStamp,
   site: string | null,
+  dayStart: number,
   hour = HOURS_PER_DAY
 ): Summary {
   const history = keptOf(stored, today)
-  const bars = period.mode === 'day' ? hourBars(history, period.days[0]!) : dayBars(history, period.days)
+  const bars = period.mode === 'day' ? hourBars(history, period.days[0]!, dayStart) : dayBars(history, period.days)
   const total = periodTotal(bars, site)
-  const previous = previousSoFar(history, period, today, hour, site)
+  const previous = previousSoFar(history, period, today, dayStart, hour, site)
   const days = countedDays(period.days, today)
   const sites = siteTotals(bars)
   return {

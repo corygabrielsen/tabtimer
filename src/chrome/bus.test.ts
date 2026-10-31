@@ -66,7 +66,7 @@ describe('state pushes', () => {
     blockAt: null,
     limit: null,
     hours: Array<number>(24).fill(0),
-    prefs: { hidden: false, scale: 1 },
+    prefs: { hidden: false, scale: 1, dayStart: 0 },
     holdMs: 2000,
   }
   const PRESENT = { visible: true, focused: true, media: false, blocked: false }

@@ -4,7 +4,7 @@
 import { isBool, isFiniteNumber, isObject, type Raw } from './guards'
 import { MAX_LIMIT_MINUTES, MIN_LIMIT_MINUTES } from './limits'
 import { parsePresence, type Request } from './messages'
-import { MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
+import { isDayStart, MAX_SCALE, MIN_SCALE, type Prefs } from './schema'
 import { siteOf, type Site } from './site'
 
 // A site in canonical form: a plausible lowercase hostname that is its own
@@ -35,6 +35,12 @@ function parsePrefs(raw: Raw): Partial<Prefs> | null {
       return null
     }
     prefs.scale = raw.scale
+  }
+  if ('dayStart' in raw) {
+    if (!isDayStart(raw.dayStart)) {
+      return null
+    }
+    prefs.dayStart = raw.dayStart
   }
   return Object.keys(prefs).length > 0 ? prefs : null
 }

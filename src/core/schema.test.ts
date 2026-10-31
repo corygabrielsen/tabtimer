@@ -7,6 +7,7 @@ import {
   expiredDayKeys,
   normalizeClock,
   normalizeDay,
+  isDayStart,
   normalizePrefs,
   normalizeSnoozes,
   settleClock,
@@ -60,7 +61,7 @@ describe('retention', () => {
   it(`keeps ${RETENTION_DAYS} days, today included, and expires the rest`, () => {
     const keys = ['day:2026-06-30', 'day:2026-06-01', 'day:2026-05-31', 'day:2025-12-25']
     // 1 June is 29 days before 30 June: the oldest day kept.
-    expect(expiredDayKeys(keys, now)).toEqual(['day:2026-05-31', 'day:2025-12-25'])
+    expect(expiredDayKeys(keys, now, 0)).toEqual(['day:2026-05-31', 'day:2025-12-25'])
   })
 
   it('prunes snoozes:* keys by the same window', () => {
@@ -71,8 +72,8 @@ describe('retention', () => {
       'snoozes:junk',
       'snoozes:2026-07-03',
     ]
-    expect(expiredDayKeys(keys, now)).toEqual(['snoozes:2026-05-31', 'snoozes:junk'])
-    expect(expiredDayKeys(keys, now, '2026-07-03')).toEqual([
+    expect(expiredDayKeys(keys, now, 0)).toEqual(['snoozes:2026-05-31', 'snoozes:junk'])
+    expect(expiredDayKeys(keys, now, 0, '2026-07-03')).toEqual([
       'snoozes:2026-05-31',
       'snoozes:junk',
       'snoozes:2026-07-03',
@@ -80,31 +81,31 @@ describe('retention', () => {
   })
 
   it('drops malformed day keys and leaves every other key alone', () => {
-    expect(expiredDayKeys(['day:garbage', 'limits', 'prefs', 'schema', 'snoozeUntil'], now)).toEqual(['day:garbage'])
+    expect(expiredDayKeys(['day:garbage', 'limits', 'prefs', 'schema', 'snoozeUntil'], now, 0)).toEqual(['day:garbage'])
   })
 
   it('keeps days after today (a clock set back)', () => {
-    expect(expiredDayKeys(['day:2026-07-04'], now)).toEqual([])
+    expect(expiredDayKeys(['day:2026-07-04'], now, 0)).toEqual([])
   })
 
   it('expires days after tomorrow up to the last day shown before the clock went back', () => {
     const keys = ['day:2026-06-30', 'day:2026-07-01', 'day:2026-07-02', 'day:2026-07-03']
-    expect(expiredDayKeys(keys, now, '2026-07-03')).toEqual(['day:2026-07-02', 'day:2026-07-03'])
+    expect(expiredDayKeys(keys, now, 0, '2026-07-03')).toEqual(['day:2026-07-02', 'day:2026-07-03'])
     // Tomorrow is kept: a time zone change moves the date by at most a day.
-    expect(expiredDayKeys(keys, now, '2026-07-01')).toEqual([])
-    expect(expiredDayKeys(keys, now, '2026-06-29')).toEqual([])
+    expect(expiredDayKeys(keys, now, 0, '2026-07-01')).toEqual([])
+    expect(expiredDayKeys(keys, now, 0, '2026-06-29')).toEqual([])
   })
 
   it('expires days written ahead no further than a window ahead', () => {
     const keys = ['day:2026-07-30', 'day:2026-07-31', 'day:2027-06-30']
-    expect(expiredDayKeys(keys, now, '2027-06-30')).toEqual(['day:2026-07-30'])
+    expect(expiredDayKeys(keys, now, 0, '2027-06-30')).toEqual(['day:2026-07-30'])
   })
 })
 
 describe('the clock mark', () => {
   const now = new Date(2026, 5, 30, 9).getTime()
   const DAY = 24 * 60 * 60_000
-  const trusted = (mark: ClockMark) => settleClock(mark, now).day === '2026-06-30'
+  const trusted = (mark: ClockMark) => settleClock(mark, now, 0).day === '2026-06-30'
   const mark = (day: string | null, pending: ClockMark['pending'] = null) => normalizeClock({ day, pending })
 
   it('reads garbage as no mark', () => {
@@ -119,7 +120,7 @@ describe('the clock mark', () => {
 
   it('trusts the same date, a day back, or up to two days on, and is unchanged on the same date', () => {
     const same = mark('2026-06-30')
-    expect(settleClock(same, now)).toBe(same)
+    expect(settleClock(same, now, 0)).toBe(same)
     for (const day of ['2026-06-28', '2026-07-01']) {
       expect(trusted(mark(day))).toBe(true)
     }
@@ -129,19 +130,19 @@ describe('the clock mark', () => {
   })
 
   it('holds any other date pending, trusting it once the clock has run on from it for an hour', () => {
-    const pending = settleClock(mark('2025-06-30'), now)
+    const pending = settleClock(mark('2025-06-30'), now, 0)
     expect(pending).toEqual({ day: '2025-06-30', pending: { day: '2026-06-30', since: now } })
-    expect(settleClock(pending, now + HOLD_MS - 1)).toBe(pending)
-    expect(settleClock(pending, now + HOLD_MS)).toEqual({ day: '2026-06-30', pending: null })
-    expect(settleClock(pending, now + 3 * DAY).day).toBe('2026-07-03')
+    expect(settleClock(pending, now + HOLD_MS - 1, 0)).toBe(pending)
+    expect(settleClock(pending, now + HOLD_MS, 0)).toEqual({ day: '2026-06-30', pending: null })
+    expect(settleClock(pending, now + 3 * DAY, 0).day).toBe('2026-07-03')
     // A clock gone back since restarts the wait.
-    expect(settleClock(pending, now - 2 * DAY)).toEqual({
+    expect(settleClock(pending, now - 2 * DAY, 0)).toEqual({
       day: '2025-06-30',
       pending: { day: '2026-06-28', since: now - 2 * DAY },
     })
-    expect(settleClock(pending, now - 1).pending).toEqual({ day: '2026-06-30', since: now - 1 })
+    expect(settleClock(pending, now - 1, 0).pending).toEqual({ day: '2026-06-30', since: now - 1 })
     // With no mark at all, every date waits.
-    expect(settleClock(mark(null), now)).toEqual({ day: null, pending: { day: '2026-06-30', since: now } })
+    expect(settleClock(mark(null), now, 0)).toEqual({ day: null, pending: { day: '2026-06-30', since: now } })
   })
 })
 
@@ -174,15 +175,37 @@ describe('totals', () => {
 
 describe('normalizePrefs', () => {
   it('defaults to shown at full size', () => {
-    expect(normalizePrefs(undefined)).toEqual({ hidden: false, scale: 1 })
-    expect(normalizePrefs({ hidden: 'yes', scale: 'big' })).toEqual({ hidden: false, scale: 1 })
+    expect(normalizePrefs(undefined)).toEqual({ hidden: false, scale: 1, dayStart: 0 })
+    expect(normalizePrefs({ hidden: 'yes', scale: 'big' })).toEqual({ hidden: false, scale: 1, dayStart: 0 })
   })
 
   it('keeps valid values and clamps the scale into range', () => {
-    expect(normalizePrefs({ hidden: true, scale: 0.75 })).toEqual({ hidden: true, scale: 0.75 })
+    expect(normalizePrefs({ hidden: true, scale: 0.75, dayStart: 6 })).toEqual({
+      hidden: true,
+      scale: 0.75,
+      dayStart: 6,
+    })
     expect(normalizePrefs({ scale: 0.1 }).scale).toBe(0.5)
     expect(normalizePrefs({ scale: 7 }).scale).toBe(1)
     expect(normalizePrefs({ scale: NaN }).scale).toBe(1)
+  })
+
+  it('clamps a whole-hour day start into 0-23, and reads anything else as midnight', () => {
+    expect(normalizePrefs({ dayStart: 0 }).dayStart).toBe(0)
+    expect(normalizePrefs({ dayStart: 23 }).dayStart).toBe(23)
+    expect(normalizePrefs({ dayStart: 24 }).dayStart).toBe(23)
+    expect(normalizePrefs({ dayStart: -3 }).dayStart).toBe(0)
+    for (const bad of [6.5, NaN, Infinity, '6', null, true, [6], {}]) {
+      expect(normalizePrefs({ dayStart: bad }).dayStart).toBe(0)
+    }
+    expect(normalizePrefs({ hidden: true }).dayStart).toBe(0)
+  })
+})
+
+describe('isDayStart', () => {
+  it('accepts whole hours 0-23 only', () => {
+    expect([0, 6, 23].every(isDayStart)).toBe(true)
+    expect([-1, 24, 6.5, NaN, '6', null].some(isDayStart)).toBe(false)
   })
 })
 

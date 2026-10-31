@@ -112,6 +112,8 @@
   "optionsLimitsHeading": { "message": "Daily limits" },
   "optionsGlobalLimit": { "message": "All sites" },
   "optionsMinutes": { "message": "min" },
+  "optionsDayStart": { "message": "Day starts at" },
+  "optionsMidnight": { "message": "Midnight" },
   "optionsSiteLimitAria": { "message": "Daily limit for $host$", "placeholders": { "host": { "content": "$1" } } },
   "optionsOverlayHeading": { "message": "On-page timer" },
   "optionsOverlayHelp": { "message": "Click the timer to switch views." },
