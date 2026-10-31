@@ -254,7 +254,7 @@ describe('hiding', () => {
   })
 
   it('keeps its own change when a state from before it arrives', async () => {
-    let prefs = { hidden: false, scale: 1 }
+    let prefs = { hidden: false, scale: 1, dayStart: 0 }
     let notify = () => {}
     const view = new Overlay({
       readElapsed: () => ({ today: 0, focus: 0, session: 0 }),
@@ -270,9 +270,9 @@ describe('hiding', () => {
     notify()
     expect(pill()).toBeNull()
     // Then hidden is saved, and shown again from the popup.
-    prefs = { hidden: true, scale: 1 }
+    prefs = { hidden: true, scale: 1, dayStart: 0 }
     notify()
-    prefs = { hidden: false, scale: 1 }
+    prefs = { hidden: false, scale: 1, dayStart: 0 }
     notify()
     expect(pill()).not.toBeNull()
   })

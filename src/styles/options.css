@@ -501,6 +501,23 @@ h1 {
   }
 }
 
+/* An hour picker: the field's look, with a chevron drawn in the muted ink. */
+.minutes .field.select {
+  width: auto;
+  padding-right: 28px;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
 fieldset.setting {
   margin: 0;
   padding: var(--s-2) 0;

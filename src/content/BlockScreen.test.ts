@@ -5,7 +5,7 @@ import BlockScreen, { KEY_GUARD_MS } from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import { SNOOZE_MS } from '../core/limits'
 import { DONE_MS, HOLD_MS } from './hold'
-import { LIMITS_KEY } from '../core/schema'
+import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { bucketsOf } from '../test/data'
 import { click, flush, normText, trackShadowRoots } from '../test/dom'
@@ -516,6 +516,20 @@ describe('what it shows', () => {
     // Noon gives way to Now beside it.
     expect(axis).toHaveLength(4)
     expect(chart.querySelector('.axis .now')?.getAttribute('style')).toContain('--h: 12')
+  })
+
+  it('with days starting at 06:00, runs the chart from 6 AM, its names and Now turned to match', async () => {
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    await mount()
+    const chart = screen().querySelector('.chart')!
+    const hours = [...chart.querySelectorAll('[data-hour]')].map((col) => Number(col.getAttribute('data-hour')))
+    expect(hours).toEqual([...Array.from({ length: 18 }, (_, i) => i + 6), 0, 1, 2, 3, 4, 5])
+    // Noon is six hours in.
+    expect(chart.querySelectorAll('.plot > div')[6]!.hasAttribute('data-now')).toBe(true)
+    const axis = [...chart.querySelectorAll<HTMLElement>('.axis span')]
+    expect(axis.map(normText)).toEqual(['6 AM', '6 PM', '12 AM', 'Now'])
+    expect(axis.map((el) => el.style.getPropertyValue('--h'))).toEqual(['0', '12', '18', '6'])
+    expect(axis[0]!.classList.contains('first')).toBe(true)
   })
 
   it('counts the time a snooze took when it blocks again', async () => {

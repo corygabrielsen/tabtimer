@@ -15,7 +15,7 @@ import {
   type IdleState,
   type Span,
 } from '../core/away'
-import { dayOf, isDayStamp, splitByHour, type DayStamp } from '../core/day'
+import { isDayStamp, logicalDay, splitByHour, type DayStamp } from '../core/day'
 import { applyLimit, normalizeLimits, snoozeOf, SNOOZE_MS, type LimitEdit, type Limits } from '../core/limits'
 import {
   dayKey,
@@ -54,6 +54,9 @@ export const WORKER_KEY = 'worker'
 // until the transaction's task has finished.
 export type Tx = {
   now: number
+  // The hour days start at (prefs.dayStart), as of this transaction: today
+  // is the logical day containing `now`.
+  dayStart: number
   // This transaction's number: one more than the last one's.
   seq: number
   // The tracker's state (core/tracker.ts), saved as the transaction ends.
@@ -65,8 +68,8 @@ export type Tx = {
   // time credited since a back-dated idle start.
   observeIdle(next: IdleState): Promise<void>
   idleState(): IdleState
-  // Today's usage, the limits (the snooze included) and the overlay
-  // preferences, as of this transaction.
+  // Today's usage, the limits (the snooze included) and the preferences,
+  // as of this transaction.
   today(): Promise<DayUsage>
   limits(): Promise<Limits>
   prefs(): Promise<Prefs>
@@ -83,21 +86,24 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
   // The stored clock mark, settled for `now` (settleClock): pruning goes
   // ahead only for a trusted date.
-  async function checkClock(now: number): Promise<{ mark: ClockMark; next: ClockMark; trusted: boolean }> {
+  async function checkClock(
+    now: number,
+    dayStart: number
+  ): Promise<{ mark: ClockMark; next: ClockMark; trusted: boolean }> {
     let mark = normalizeClock(await local.get(CLOCK_KEY))
     if (mark.day === null && mark.pending === null) {
       // No mark yet: the newest day of usage stands in (today, with none).
       const days = (await local.keys()).map(dayOfKey).filter((day) => day !== null)
-      mark = { day: days.sort().at(-1) ?? dayOf(now), pending: null }
+      mark = { day: days.sort().at(-1) ?? logicalDay(now, dayStart), pending: null }
     }
-    const next = settleClock(mark, now)
-    return { mark, next, trusted: next.day === dayOf(now) }
+    const next = settleClock(mark, now, dayStart)
+    return { mark, next, trusted: next.day === logicalDay(now, dayStart) }
   }
 
   // Drop day:* keys outside the retention window (`last`: see
   // expiredDayKeys).
-  async function pruneNow(now: number, last: DayStamp | null): Promise<void> {
-    const stale = expiredDayKeys(await local.keys(), now, last)
+  async function pruneNow(now: number, dayStart: number, last: DayStamp | null): Promise<void> {
+    const stale = expiredDayKeys(await local.keys(), now, dayStart, last)
     if (stale.length > 0) {
       await local.remove(stale)
     }
@@ -105,14 +111,16 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
   async function run<T>(task: (tx: Tx) => Promise<T>): Promise<T> {
     const now = clock.now()
-    const today = dayOf(now)
+    const prefs = normalizePrefs(await local.get(PREFS_KEY))
+    const { dayStart } = prefs
+    const today = logicalDay(now, dayStart)
     const todayKey = dayKey(today)
     const stored = (await session.get<Partial<Record<'tracker' | 'away' | 'day' | 'seq', unknown>>>(WORKER_KEY)) ?? {}
     const seq = (isFiniteNumber(stored.seq) ? stored.seq : 0) + 1
     // The first transaction of another day (the date moved on, or the clock
     // went back), and every one until that date is trusted, checks the clock.
     const pruned = isDayStamp(stored.day) ? stored.day : null
-    const clockCheck = pruned === today ? null : await checkClock(now)
+    const clockCheck = pruned === today ? null : await checkClock(now, dayStart)
     let away = asOf(normalizeAway(stored.away), now)
     // The day usages read so far, and those changed.
     const days = new Map<string, DayUsage>()
@@ -135,7 +143,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     // `site`'s time.
     async function apply(site: Site, spans: Span[], sign: 1 | -1): Promise<void> {
       for (const [start, end] of spans) {
-        for (const { day: stamp, hour, ms } of splitByHour(start, end)) {
+        for (const { day: stamp, hour, ms } of splitByHour(start, end, dayStart)) {
           const key = dayKey(stamp)
           const usage = await day(key)
           if (sign === -1 && !usage[site]) {
@@ -150,6 +158,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
 
     const tx: Tx = {
       now,
+      dayStart,
       seq,
       tracker: normalizeTracker(stored.tracker),
       credit: async (accruals) => {
@@ -184,7 +193,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
         newLimits = { ...(await tx.limits()), snoozeUntil: now + SNOOZE_MS }
         newSnoozes = (await tx.snoozesToday()) + 1
       },
-      prefs: async () => normalizePrefs(await local.get(PREFS_KEY)),
+      prefs: async () => prefs,
     }
 
     const result = await task(tx)
@@ -208,7 +217,7 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     }
     // Then the days now outside the window go.
     if (trusted) {
-      await pruneNow(now, trusted.mark.day)
+      await pruneNow(now, dayStart, trusted.mark.day)
     }
     return result
   }
@@ -232,12 +241,13 @@ export function createLedger(local: Store, session: Store, clock: Clock) {
     prune: (): Promise<void> =>
       enqueue(async () => {
         const now = clock.now()
-        const { mark, next, trusted } = await checkClock(now)
+        const { dayStart } = normalizePrefs(await local.get(PREFS_KEY))
+        const { mark, next, trusted } = await checkClock(now, dayStart)
         if (next !== mark) {
           await local.set({ [CLOCK_KEY]: next })
         }
         if (trusted) {
-          await pruneNow(now, mark.day)
+          await pruneNow(now, dayStart, mark.day)
         }
       }),
 

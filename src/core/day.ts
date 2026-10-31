@@ -11,10 +11,51 @@ export function dayOf(epochMs: number): DayStamp {
   return `${date.getFullYear()}-${mm}-${dd}` as DayStamp
 }
 
-// Local midnight that starts the day containing `epochMs`.
-export function startOfDay(epochMs: number): number {
+// --- The logical day ----------------------------------------------------------
+// A day runs from `dayStart` (a local wall-clock hour, 0-23; 0 = midnight) to
+// that hour on the next date, and is named by the date it starts on. Built
+// from local y/m/d/h, never by subtracting milliseconds, so DST moves no
+// boundary: a start hour that is skipped (clocks go forward) begins the day
+// at the next hour that exists, a repeated one at its first pass.
+
+const HOURS = 24
+
+// The logical day containing `epochMs`: its local date, or the date before
+// while its hour is earlier than `dayStart`.
+export function logicalDay(epochMs: number, dayStart: number): DayStamp {
+  const day = dayOf(epochMs)
+  return hourOf(epochMs) < dayStart ? addDays(day, -1) : day
+}
+
+// The moment the logical day containing `epochMs` began.
+export function startOfLogicalDay(epochMs: number, dayStart: number): number {
   const date = new Date(epochMs)
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  const back = date.getHours() < dayStart ? 1 : 0
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - back, dayStart).getTime()
+}
+
+// Where wall-clock `hour` falls in a logical day: 0 for `dayStart`, 23 for
+// the hour before it.
+export function slotOfHour(hour: number, dayStart: number): number {
+  return (((hour - dayStart) % HOURS) + HOURS) % HOURS
+}
+
+// The wall-clock hour at `slot` of a logical day.
+export function hourOfSlot(slot: number, dayStart: number): number {
+  return (slot + dayStart) % HOURS
+}
+
+// 24 per-hour values indexed by wall-clock hour, in the logical day's order:
+// `dayStart` first, the hour before it last.
+export function inDayOrder<T>(byHour: readonly T[], dayStart: number): T[] {
+  return Array.from({ length: HOURS }, (_, slot) => byHour[hourOfSlot(slot, dayStart)]!)
+}
+
+// How far into its logical day `epochMs` is, in wall-clock hours
+// (fractional).
+export function hoursIntoDay(epochMs: number, dayStart: number): number {
+  const date = new Date(epochMs)
+  return slotOfHour(date.getHours(), dayStart) + date.getMinutes() / 60
 }
 
 // The local wall-clock hour (0-23) containing `epochMs`.
@@ -33,17 +74,18 @@ export function nextHour(epochMs: number): number {
   return Math.max(next, epochMs + 1)
 }
 
-// One piece of an interval that lies within a single local hour.
+// One piece of an interval that lies within a single local hour: its
+// logical day and wall-clock hour.
 export type HourSlice = { day: DayStamp; hour: number; ms: number }
 
-// Split [start, end) at every local hour boundary (midnight is one of them).
-// An empty or backwards interval yields nothing.
-export function splitByHour(start: number, end: number): HourSlice[] {
+// Split [start, end) at every local hour boundary (a day's start is one of
+// them). An empty or backwards interval yields nothing.
+export function splitByHour(start: number, end: number, dayStart: number): HourSlice[] {
   const slices: HourSlice[] = []
   let cursor = start
   while (cursor < end) {
     const boundary = Math.min(nextHour(cursor), end)
-    slices.push({ day: dayOf(cursor), hour: hourOf(cursor), ms: boundary - cursor })
+    slices.push({ day: logicalDay(cursor, dayStart), hour: hourOf(cursor), ms: boundary - cursor })
     cursor = boundary
   }
   return slices

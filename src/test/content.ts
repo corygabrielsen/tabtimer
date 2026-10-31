@@ -2,13 +2,13 @@
 // single-writer, and teardown for FocusTrackers.
 import { vi } from 'vitest'
 import FocusTracker from '../content/FocusTracker'
-import { dayOf } from '../core/day'
+import { logicalDay } from '../core/day'
 import { DEFAULT_LIMITS, type Limits } from '../core/limits'
-import { dayKey, normalizeDay, siteTotal, LIMITS_KEY, type DayUsage } from '../core/schema'
+import { dayKey, normalizeDay, normalizePrefs, siteTotal, LIMITS_KEY, PREFS_KEY, type DayUsage } from '../core/schema'
 import { siteOf } from '../core/site'
 import { fakeChrome } from './chrome'
 import { bucketsOf } from './data'
-import { resetPageState } from './dom'
+import { flush, resetPageState } from './dom'
 
 // Wire the real background.ts into the fake browser so FocusTracker's reports land
 // in storage exactly as in the extension, with `granted` (if given) as the
@@ -19,6 +19,8 @@ export async function startBackground(granted?: string[]): Promise<void> {
   }
   vi.resetModules()
   await import('../sw/background')
+  // The worker's startup transactions settle first.
+  await flush()
 }
 
 export function useClock(now: Date): void {
@@ -52,9 +54,11 @@ export function seedLimits(limits: Partial<Limits>): void {
 // Whether the block screen is up.
 export const isBlocked = () => document.getElementById('tabtimer-block')?.style.getPropertyValue('display') === 'block'
 
-// The stored day:* key for the local day containing `date`.
+// The stored day:* key for the logical day containing `date`, by the day
+// start stored (as the service worker reads it).
 export function dayKeyOf(date: Date = new Date()): string {
-  return dayKey(dayOf(date.getTime()))
+  const { dayStart } = normalizePrefs(fakeChrome().storage.local.data[PREFS_KEY])
+  return dayKey(logicalDay(date.getTime(), dayStart))
 }
 
 // A site's stored time on the day of `date` (default: this page's site today).

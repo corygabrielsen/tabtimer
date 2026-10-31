@@ -21,7 +21,8 @@ Everything is kept in `chrome.storage.local` on your own browser profile:
   and when a "2 more minutes" snooze ends.
 - `snoozes:YYYY-MM-DD`: how many "2 more minutes" snoozes you took that day,
   which sets how long the next hold takes. Kept and deleted with the days.
-- `prefs`: whether the on-page overlay is shown, and its size.
+- `prefs`: whether the on-page overlay is shown, its size, and the hour your
+  day starts.
 - `clock`: the last date old days were deleted for, so a wrong clock can't
   delete them early.
 - `schema`: the storage format version. Data stored in an older format is

@@ -40,7 +40,7 @@ describe('a state read at a later moment', () => {
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
     hours: Array<number>(24).fill(0),
-    prefs: { hidden: false, scale: 1 },
+    prefs: { hidden: false, scale: 1, dayStart: 0 },
     holdMs: 2000,
   }
 
@@ -88,6 +88,21 @@ describe('a state read at a later moment', () => {
     expect(late.reduce((a, b) => a + b, 0)).toBe(3000)
   })
 
+  it('with days starting at 06:00, runs on through midnight and starts again at 06:00', () => {
+    const SIX = new Date(2026, 5, 11, 6).getTime()
+    const night = { ...state, prefs: { ...state.prefs, dayStart: 6 }, asOf: MIDNIGHT - 1000 }
+    // 00:00 is the same day: no restart.
+    expect(totalsAt(night, MIDNIGHT + 3000)).toEqual({ siteToday: 54_000, globalToday: 84_000 })
+    expect(overAt({ ...night, blockAt: MIDNIGHT }, MIDNIGHT + 1000, 'holds')).not.toBeNull()
+    const dawn = { ...night, asOf: SIX - 1000 }
+    expect(totalsAt(dawn, SIX - 1)).toEqual({ siteToday: 50_999, globalToday: 80_999 })
+    expect(totalsAt(dawn, SIX + 3000)).toEqual({ siteToday: 3000, globalToday: 3000 })
+    expect(overAt({ ...dawn, blockAt: SIX - 500 }, SIX, 'holds')).toBeNull()
+    const hours = hoursAt(dawn, SIX + 3000)
+    expect(hours[6]).toBe(3000)
+    expect(hours.reduce((a, b) => a + b, 0)).toBe(3000)
+  })
+
   it('matches the worker’s suspension gap', () => {
     expect(PROJECT_MS).toBe(SUSPEND_GAP_MS)
   })
@@ -119,11 +134,22 @@ describe('every site’s time today, read at a later moment', () => {
   const MIDNIGHT = new Date(2026, 5, 11).getTime()
   const totals: TodayTotals = {
     day: '2026-06-10',
+    dayStart: 0,
     asOf: NOON,
     seq: 1,
     running: 'a.com',
     sites: { 'a.com': 50_000, 'b.com': 20_000 },
   }
+
+  it('with days starting at 06:00, counts 01:00 toward the day before', () => {
+    const night = { ...totals, dayStart: 6, asOf: MIDNIGHT - 1000 }
+    expect(siteTodayAt(night, 'a.com', MIDNIGHT + 3000)).toBe(54_000)
+    expect(siteOverAt(night, 'b.com', 20_000, MIDNIGHT + 3000)).toBe(true)
+    const SIX = new Date(2026, 5, 11, 6).getTime()
+    const dawn = { ...night, asOf: SIX - 1000 }
+    expect(siteTodayAt(dawn, 'a.com', SIX + 3000)).toBe(3000)
+    expect(siteOverAt(dawn, 'b.com', 20_000, SIX)).toBe(false)
+  })
 
   it('runs on for the running site only, and starts again at midnight', () => {
     expect(siteTodayAt(totals, 'a.com', NOON + 4000)).toBe(54_000)
@@ -156,7 +182,7 @@ describe('every site’s time today, read at a later moment', () => {
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
       hours: Array<number>(24).fill(0),
-      prefs: { hidden: false, scale: 1 },
+      prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
     }
     for (const at of [NOON, NOON + 9999, NOON + 10_000, NOON + 60_000, NOON + PROJECT_MS + 1]) {
@@ -168,6 +194,7 @@ describe('every site’s time today, read at a later moment', () => {
 describe('latestTotals', () => {
   const totals = (seq: number): TodayTotals => ({
     day: '2026-06-10',
+    dayStart: 0,
     asOf: 0,
     seq,
     running: null,
@@ -195,7 +222,7 @@ describe('parseStatePush', () => {
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
     hours: Array<number>(24).fill(0),
-    prefs: { hidden: false, scale: 1 },
+    prefs: { hidden: false, scale: 1, dayStart: 0 },
     holdMs: 2000,
   }
 
@@ -235,6 +262,10 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, prefs: undefined }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: 'no', scale: 1 } }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: false, scale: '1' } }, probe: false },
+    { type: 'state', state: { ...state, prefs: { hidden: false, scale: 1 } }, probe: false },
+    { type: 'state', state: { ...state, prefs: { hidden: false, scale: 1, dayStart: 24 } }, probe: false },
+    { type: 'state', state: { ...state, prefs: { hidden: false, scale: 1, dayStart: 6.5 } }, probe: false },
+    { type: 'state', state: { ...state, prefs: { hidden: false, scale: 1, dayStart: '6' } }, probe: false },
     { type: 'state', state: { ...state, holdMs: undefined }, probe: false },
     { type: 'state', state: { ...state, holdMs: '2000' }, probe: false },
     { type: 'state', state: { ...state, holdMs: 0 }, probe: false },

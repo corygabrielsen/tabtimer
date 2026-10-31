@@ -1,10 +1,10 @@
 import { SUGGESTED_SITES, grantsOf, originsForSite, normalizeSiteInput, type Grants } from './core/site'
 import { limitsFor, minutesToMs, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
-import { dayOf } from './core/day'
 import {
   barTotal,
   dayLabel,
   hasAnyUsage,
+  hourLabel,
   historyOf,
   patchHistory,
   periodOf,
@@ -54,7 +54,7 @@ let history: History = new Map()
 let prefs: Prefs = DEFAULT_PREFS
 // Today's times as the worker sees them, the open interval's included.
 const live = liveToday(
-  () => history.get(dayOf(Date.now())) ?? {},
+  (day) => history.get(day) ?? {},
   () => {
     refreshTodays()
     renderWeek()
@@ -434,10 +434,37 @@ async function initOverlay() {
   }
 }
 
+// --- Day start ----------------------------------------------------------------
+
+const dayStartSelect = byId<HTMLSelectElement>('day-start')
+
+async function initDayStart() {
+  const select = dayStartSelect
+  if (!select) {
+    return
+  }
+  const saved = byId('day-start-saved')
+  select.replaceChildren(
+    ...Array.from({ length: 24 }, (_, hour) =>
+      h('option', { value: String(hour) }, hour === 0 ? t('optionsMidnight') : hourLabel(hour, uiLocale()))
+    )
+  )
+  await loaded
+  select.value = String(prefs.dayStart)
+  select.addEventListener('change', async () => {
+    const ok = (await bus.send('setPrefs', { dayStart: Number(select.value) })).ok
+    if (ok) {
+      flashSaved(saved)
+    } else {
+      select.value = String(prefs.dayStart)
+    }
+  })
+}
+
 // --- This week ---------------------------------------------------------------
 
 const locale = uiLocale()
-const thisWeek = () => periodOf('week', 0, dayOf(Date.now()), firstDayOfWeek(locale))
+const thisWeek = () => periodOf('week', 0, live.today(), firstDayOfWeek(locale))
 
 // The week so far: its total, the daily average and a bar per day.
 function renderWeek() {
@@ -446,14 +473,14 @@ function renderWeek() {
     return
   }
   const now = Date.now()
-  const today = dayOf(now)
+  const today = live.today()
   const shown = withUncredited(history, live.totals(), now)
   card.hidden = !hasAnyUsage(shown, today)
   if (card.hidden) {
     return
   }
   const week = thisWeek()
-  const summary = summarize(shown, week, today, null)
+  const summary = summarize(shown, week, today, null, live.dayStart())
   byId('week-total')!.textContent = formatDuration(summary.total)
   byId('week-average')!.textContent = t('usageDailyAverage', formatDuration(summary.average))
   const totals = summary.bars.map((bar) => barTotal(bar))
@@ -492,6 +519,9 @@ function onStorageChange(changes: StoreChanges): void {
   if (PREFS_KEY in changes) {
     prefs = normalizePrefs(changes[PREFS_KEY]!.newValue)
     paintPrefs(prefs)
+    if (dayStartSelect) {
+      dayStartSelect.value = String(prefs.dayStart)
+    }
   }
   // A new limit can flip a row to over.
   if (LIMITS_KEY in changes) {
@@ -508,5 +538,6 @@ localizeDom()
 initAddForm()
 void initGlobalLimit()
 void initOverlay()
+void initDayStart()
 void render()
 void loaded.then(renderWeek)

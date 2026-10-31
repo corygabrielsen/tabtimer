@@ -71,7 +71,7 @@ describe('credit', () => {
     expect(set).not.toHaveBeenCalled()
   })
 
-  it('reads the session state once and each day once, and writes each area once, per transaction', async () => {
+  it('reads the session state, the prefs and each day once, and writes each area once, per transaction', async () => {
     browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': bucketsOf({ 11: 1000 }) } })
     // Not the day's first transaction (that one checks the clock too).
     browser.storage.session.seed({ [WORKER_KEY]: { day: '2026-06-10' } })
@@ -85,7 +85,8 @@ describe('credit', () => {
       return siteTotal(await tx.today(), 'a.com')
     })
     expect(total).toBe(3000)
-    expect(spies.map((spy) => spy.mock.calls.length)).toEqual([1, 1, 1, 1])
+    // Local reads: the prefs (when the day starts), then the day.
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual([2, 1, 1, 1])
   })
 
   it('reads limits and the snooze for the tracker, tolerating garbage', async () => {
@@ -255,6 +256,30 @@ describe('ensureSchema', () => {
     expect(data()['snoozes:2026-06-10']).toBe(1)
   })
 
+  it('keeps a 1.9.0 store as it is: the day start is an added pref, midnight when absent', async () => {
+    const stored = {
+      schema: 3,
+      [LIMITS_KEY]: { global: 60, perSite: { 'a.com': 30 }, snoozeUntil: 0 },
+      [PREFS_KEY]: { hidden: true, scale: 0.75 },
+      [CLOCK_KEY]: { day: '2026-06-10', pending: null },
+      'day:2026-06-09': { 'a.com': bucketsOf({ 9: MIN }) },
+      'day:2026-06-10': { 'a.com': bucketsOf({ 0: MIN, 11: 2 * MIN }) },
+      'snoozes:2026-06-10': 4,
+    }
+    browser.storage.local.seed(stored)
+    await ledger.ensureSchema()
+    await ledger.prune()
+    expect(data()).toEqual(stored)
+    // Today is the calendar date, as before.
+    await expect(
+      ledger.transaction(async (tx) => [tx.dayStart, siteTotal(await tx.today(), 'a.com')])
+    ).resolves.toEqual([0, 3 * MIN])
+    await expect(ledger.transaction((tx) => tx.snoozesToday())).resolves.toBe(4)
+    await ledger.setPrefs({ dayStart: 6 })
+    expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75, dayStart: 6 })
+    expect(data()).toMatchObject({ ...stored, [PREFS_KEY]: { dayStart: 6 } })
+  })
+
   it('leaves storage in this schema alone', async () => {
     const stored = { schema: SCHEMA, [LIMITS_KEY]: { global: 1, perSite: {} }, 'day:2026-06-10': {} }
     browser.storage.local.seed(stored)
@@ -346,9 +371,9 @@ describe('snooze and prefs', () => {
 
   it('merges a prefs change into the stored prefs', async () => {
     await ledger.setPrefs({ scale: 0.75 })
-    expect(data()[PREFS_KEY]).toEqual({ hidden: false, scale: 0.75 })
+    expect(data()[PREFS_KEY]).toEqual({ hidden: false, scale: 0.75, dayStart: 0 })
     await ledger.setPrefs({ hidden: true })
-    expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75 })
+    expect(data()[PREFS_KEY]).toEqual({ hidden: true, scale: 0.75, dayStart: 0 })
   })
 })
 
@@ -451,5 +476,53 @@ describe('time away from the computer', () => {
     await expect(addElapsed('a.com', [[NOON - MIN, now]], false, restarted)).resolves.toBe(MIN)
     await setIdleState('active', restarted)
     expect(away().periods).toEqual([{ kind: 'locked', start: NOON, end: NOON + MIN }])
+  })
+})
+
+describe('a day starting at 06:00', () => {
+  beforeEach(() => {
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+  })
+
+  it('credits 01:00 to the evening before, by wall-clock hour', async () => {
+    now = at(2026, 5, 11, 1, 30)
+    await expect(addElapsed('x.com', [[at(2026, 5, 11, 1), now]])).resolves.toBe(30 * MIN)
+    expect(data()['day:2026-06-10']).toEqual({ 'x.com': bucketsOf({ 1: 30 * MIN }) })
+    expect(data()['day:2026-06-11']).toBeUndefined()
+  })
+
+  it('rolls over at 06:00, not midnight: today restarts from zero', async () => {
+    now = at(2026, 5, 11, 6, 10)
+    const total = await addElapsed('x.com', [
+      [at(2026, 5, 10, 23, 50), at(2026, 5, 11, 0, 10)],
+      [at(2026, 5, 11, 5, 50), now],
+    ])
+    expect(total).toBe(10 * MIN)
+    expect(data()['day:2026-06-10']).toEqual({ 'x.com': bucketsOf({ 23: 10 * MIN, 0: 10 * MIN, 5: 10 * MIN }) })
+    expect(data()['day:2026-06-11']).toEqual({ 'x.com': bucketsOf({ 6: 10 * MIN }) })
+  })
+
+  it('names the transaction’s day by when it starts', async () => {
+    now = at(2026, 5, 11, 5, 59)
+    await expect(ledger.transaction(async (tx) => tx.dayStart)).resolves.toBe(6)
+    now = at(2026, 5, 11, 5, 59, 59)
+    await snooze()
+    now = at(2026, 5, 11, 6)
+    await snooze()
+    expect(data()['snoozes:2026-06-10']).toBe(1)
+    expect(data()['snoozes:2026-06-11']).toBe(1)
+  })
+
+  it('counts the 30 kept days by the logical date', async () => {
+    browser.storage.local.seed({
+      [CLOCK_KEY]: { day: '2026-06-09', pending: null },
+      'day:2026-05-11': { 'a.com': bucketsOf({ 9: MIN }) },
+      'day:2026-05-12': { 'a.com': bucketsOf({ 9: MIN }) },
+    })
+    // 05:00 on 11 June is still 10 June: 12 May is the oldest day kept.
+    now = at(2026, 5, 11, 5)
+    await ledger.prune()
+    expect(Object.keys(data()).filter((key) => key.startsWith('day:'))).toEqual(['day:2026-05-12'])
+    expect(data()[CLOCK_KEY]).toEqual({ day: '2026-06-10', pending: null })
   })
 })

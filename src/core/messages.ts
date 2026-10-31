@@ -5,10 +5,10 @@
 // Requests are untrusted input: the service worker accepts only what
 // parseRequest (core/requests.ts) returns. A content script never names the
 // site it reports for; the service worker derives it from the sender's URL.
-import { dayOf, isDayStamp, startOfDay, type DayStamp } from './day'
+import { isDayStamp, logicalDay, startOfLogicalDay, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
 import type { BlockReason, BlockScope, LimitEdit } from './limits'
-import { withTimeAt, HOURS_PER_DAY, type Prefs } from './schema'
+import { isDayStart, withTimeAt, HOURS_PER_DAY, type Prefs } from './schema'
 import type { Site } from './site'
 import type { Presence } from './tracker'
 
@@ -22,7 +22,8 @@ export type Page = 'options'
 // (this tab's interval is open) both totals grow with the clock.
 export type TabState = {
   site: Site
-  // The local day the totals are for.
+  // The logical day the totals are for (core/day.ts; its start is
+  // prefs.dayStart).
   day: DayStamp
   asOf: number
   // The worker transaction that built it: a later one has a higher seq
@@ -39,7 +40,8 @@ export type TabState = {
   // This site's time today per local hour (index 0 = 00:00), the open
   // interval's uncredited part in the hour of `asOf`: `today`, by hour.
   hours: number[]
-  // The overlay preferences (the worker is their only writer).
+  // The preferences, the day's start included (the worker is their only
+  // writer).
   prefs: Prefs
   // How long "2 more minutes" must be held now (holdMs, core/limits.ts).
   holdMs: number
@@ -57,27 +59,37 @@ function stale(s: { asOf: number; running: boolean }, now: number): boolean {
   return s.running && now - s.asOf > PROJECT_MS
 }
 
+// What a state's `day` and the time are read against.
+type Dated = { day: DayStamp; asOf: number; running: boolean; dayStart: number }
+
 // `ms` as of `asOf` on `day`, read at `now`: plus the time since while
-// running, up to PROJECT_MS. Past midnight, only the running time since
-// midnight.
-function grownAt(ms: number, s: { day: DayStamp; asOf: number; running: boolean }, now: number): number {
+// running, up to PROJECT_MS. Once the next day has started, only the running
+// time since it did.
+function grownAt(ms: number, s: Dated, now: number): number {
   const end = Math.min(now, s.asOf + PROJECT_MS)
-  if (dayOf(now) !== s.day) {
-    return s.running ? Math.max(0, end - Math.max(s.asOf, startOfDay(now))) : 0
+  if (logicalDay(now, s.dayStart) !== s.day) {
+    return s.running ? Math.max(0, end - Math.max(s.asOf, startOfLogicalDay(now, s.dayStart))) : 0
   }
   return ms + (s.running ? Math.max(0, end - s.asOf) : 0)
 }
 
 // A state's totals at `now`.
 export function totalsAt(s: TabState, now: number): { siteToday: number; globalToday: number } {
-  return { siteToday: grownAt(s.today, s, now), globalToday: grownAt(s.globalToday, s, now) }
+  const dated = dateOf(s)
+  return { siteToday: grownAt(s.today, dated, now), globalToday: grownAt(s.globalToday, dated, now) }
 }
 
+const dateOf = (s: TabState): Dated => ({ day: s.day, asOf: s.asOf, running: s.running, dayStart: s.prefs.dayStart })
+
+// Whether `now` is still on a state's day.
+const onDay = (s: { day: DayStamp }, dayStart: number, now: number) => logicalDay(now, dayStart) === s.day
+
 // A state's site's time today by hour at `now`: what the state grew by
-// since `asOf` goes into the current hour. Past midnight, only that.
+// since `asOf` goes into the current hour. Once the next day has started,
+// only that.
 export function hoursAt(s: TabState, now: number): number[] {
   const { siteToday } = totalsAt(s, now)
-  const sameDay = dayOf(now) === s.day
+  const sameDay = onDay(s, s.prefs.dayStart, now)
   return withTimeAt(sameDay ? s.hours : undefined, now, siteToday - (sameDay ? s.today : 0))
 }
 
@@ -85,7 +97,9 @@ export function hoursAt(s: TabState, now: number): number[] {
 // storage holds plus the open interval's uncredited part, which is the
 // `running` site's (null: none open).
 export type TodayTotals = {
+  // The logical day, and the hour it started at (prefs.dayStart).
   day: DayStamp
+  dayStart: number
   asOf: number
   seq: number
   running: Site | null
@@ -102,7 +116,7 @@ export function siteTodayAt(t: TodayTotals, site: Site, now: number): number {
 // (the popup's), for a page that shows every site.
 export function siteOverAt(t: TodayTotals, site: Site, limit: number | null, now: number): boolean {
   const s = { ...t, running: t.running === site }
-  return limit !== null && dayOf(now) === t.day && !stale(s, now) && siteTodayAt(t, site, now) >= limit
+  return limit !== null && onDay(t, t.dayStart, now) && !stale(s, now) && siteTodayAt(t, site, now) >= limit
 }
 
 // The totals to keep after asking the worker: its answer, unless an earlier
@@ -118,10 +132,10 @@ export function latestTotals(kept: TodayTotals | null, res: Response<'todayTotal
 // screen, the worker's backstop and the popup. The worker moves blockAt
 // past `now` for a snooze; while the snooze 'holds' the state is over
 // nothing until blockAt, and 'ignored' it is over from the moment it
-// reaches its limit. A state from before midnight, or running and stale,
+// reaches its limit. A state from an earlier day, or running and stale,
 // is over nothing: a projection the worker hasn't confirmed never blocks.
 export function overAt(s: TabState, now: number, snooze: 'holds' | 'ignored'): BlockReason | null {
-  if (s.limit === null || s.blockAt === null || dayOf(now) !== s.day || stale(s, now)) {
+  if (s.limit === null || s.blockAt === null || !onDay(s, s.prefs.dayStart, now) || stale(s, now)) {
     return null
   }
   const totals = totalsAt(s, now)
@@ -143,7 +157,7 @@ export type Contract = {
   setLimit: { req: LimitEdit; res: null }
   // content: suppress blocking for SNOOZE_MS.
   snooze: { req: Empty; res: null }
-  // content, extension pages: change overlay preferences.
+  // content, extension pages: change preferences.
   setPrefs: { req: Partial<Prefs>; res: null }
   // content: close the sending page's tab (the block screen's way out).
   closeTab: { req: Empty; res: null }
@@ -232,7 +246,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     return null
   }
   const p = s.prefs
-  if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
+  if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale) || !isDayStart(p.dayStart)) {
     return null
   }
   if (!isFiniteNumber(s.holdMs) || s.holdMs <= 0) {
@@ -249,7 +263,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     blockAt: s.blockAt,
     limit,
     hours: [...(hours as number[])],
-    prefs: { hidden: p.hidden, scale: p.scale },
+    prefs: { hidden: p.hidden, scale: p.scale, dayStart: p.dayStart },
     holdMs: s.holdMs,
   }
   return { type: 'state', state, probe: raw.probe }

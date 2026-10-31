@@ -3,7 +3,7 @@
 // times from the service worker (todayTotals); the one write (a site's
 // limit) goes to the service worker as setLimit.
 import { chromeStore, loadThenPatch } from './chrome/store'
-import { dayOf, type DayStamp } from './core/day'
+import { hourOfSlot, hoursIntoDay, type DayStamp } from './core/day'
 import { limitsFor, msToMinutes, normalizeLimits, siteLimitOf, DEFAULT_LIMITS, type Limits } from './core/limits'
 import { siteOverAt } from './core/messages'
 import { LIMITS_KEY } from './core/schema'
@@ -64,18 +64,23 @@ const firstDay = firstDayOfWeek(locale)
 // a live update.
 let selectedRow: { site: string; row: HTMLLIElement; picker: LimitPicker } | null = null
 
-const today = (): DayStamp => dayOf(Date.now())
-
 // Today's times as the worker sees them, the open interval's included: drawn
-// when the period shows today, or once "Today" is a new day.
+// when the period shows today, or once "Today" is a new day (or the day
+// starts at another hour).
 const live = liveToday(
-  () => state.history.get(today()) ?? {},
+  (day) => state.history.get(day) ?? {},
   () => {
-    if (today() !== shown || periodOf(state.mode, state.offset, today(), firstDay).days.includes(today())) {
+    if (
+      today() !== shown ||
+      live.dayStart() !== shownStart ||
+      periodOf(state.mode, state.offset, today(), firstDay).days.includes(today())
+    ) {
       render()
     }
   }
 )
+
+const today = (): DayStamp => live.today()
 
 // A site's limit, in ms (null: none).
 const siteLimit = (site: string): number | null => limitsFor(state.limits, site).site
@@ -106,10 +111,11 @@ function weekRange(period: Period): string {
   return rangeLabel(period.days[0]!, period.days.at(-1)!, locale)
 }
 
-// A slot's name: "2 PM" in a day, "Monday, Oct 26" in a week.
+// A slot's name: "2 PM" in a day (which runs from the hour it starts at),
+// "Monday, Oct 26" in a week.
 function slotLabel(period: Period, i: number, short: boolean): string {
   if (period.mode === 'day') {
-    return hourLabel(i, locale)
+    return hourLabel(hourOfSlot(i, live.dayStart()), locale)
   }
   return dayLabel(
     period.days[i]!,
@@ -304,7 +310,7 @@ function siteRow(period: Period, site: string, ms: number, days: number, now: nu
   // daily average. Today is over by the worker's rule.
   const used = period.mode === 'day' ? ms : ms / Math.max(1, days)
   const over =
-    period.mode === 'day' && period.days[0] === dayOf(now)
+    period.mode === 'day' && period.days[0] === today()
       ? siteOverAt(live.totals(), site, limit, now)
       : limit !== null && used >= limit
   const button = h(
@@ -341,14 +347,17 @@ function siteRow(period: Period, site: string, ms: number, days: number, now: nu
 
 // --- Render -------------------------------------------------------------------
 
-// The day the page last drew.
-let shown = today()
+// The day the page last drew, and the hour it started at.
+let shown: DayStamp | null = null
+let shownStart = 0
 
 function render(): void {
   const focused = document.activeElement?.id || null
   const now = Date.now()
-  const day = dayOf(now)
+  const day = today()
+  const dayStart = live.dayStart()
   shown = day
+  shownStart = dayStart
   const history = withUncredited(state.history, live.totals(), now)
   const empty = !hasAnyUsage(history, day)
   byId('empty')!.hidden = !empty
@@ -360,8 +369,7 @@ function render(): void {
 
   const period = periodOf(state.mode, state.offset, day, firstDay)
   state.offset = period.offset
-  const clock = new Date(now)
-  const summary = summarize(history, period, day, state.site, clock.getHours() + clock.getMinutes() / 60)
+  const summary = summarize(history, period, day, state.site, dayStart, hoursIntoDay(now, dayStart))
   const week = period.mode === 'week'
 
   byId('period-label')!.textContent = periodLabel(period)

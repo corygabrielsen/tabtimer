@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { bus } from './chrome/bus'
 import { siteTodayAt } from './core/messages'
+import { PREFS_KEY } from './core/schema'
 import { originsForSite } from './core/site'
 import { liveToday, type LiveToday } from './liveToday'
 import { fakeChrome, type FakeChrome } from './test/chrome'
@@ -97,12 +98,45 @@ describe('liveToday', () => {
     expect(live.totals().day).toBe('2026-10-29')
   })
 
+  it('with days starting at 06:00, keeps the day through midnight and asks again at 06:00', async () => {
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    vi.setSystemTime(new Date(2026, 9, 28, 23, 59, 59))
+    await start()
+    expect(live.dayStart()).toBe(6)
+    vi.advanceTimersByTime(1000)
+    expect(changes).toBe(0)
+    expect(live.today()).toBe('2026-10-28')
+    vi.setSystemTime(new Date(2026, 9, 29, 5, 59, 59))
+    vi.advanceTimersByTime(1000)
+    expect(changes).toBe(1)
+    await flush()
+    expect(live.today()).toBe('2026-10-29')
+    expect(live.totals()).toMatchObject({ day: '2026-10-29', dayStart: 6 })
+  })
+
+  it('follows a change of the day start, telling the page at once', async () => {
+    vi.setSystemTime(new Date(2026, 9, 29, 1, 30))
+    await start()
+    expect(live.today()).toBe('2026-10-29')
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: false, scale: 1, dayStart: 6 } })
+    expect(changes).toBe(1)
+    expect(live.today()).toBe('2026-10-28')
+    await flush()
+    expect(live.totals()).toMatchObject({ day: '2026-10-28', dayStart: 6 })
+    // Other prefs changing tells it nothing.
+    const seen = changes
+    browser.storage.local.seed({ [PREFS_KEY]: { hidden: true, scale: 1, dayStart: 6 } })
+    await flush()
+    expect(changes).toBe(seen)
+  })
+
   it('shows storage’s time when the worker doesn’t answer', async () => {
     // Not an extension page: the worker refuses it.
     browser.sender = { id: browser.runtime.id, url: 'https://reddit.com/' }
     await start({ 'reddit.com': [0, 0, 7000] })
     expect(live.totals()).toEqual({
       day: '2026-10-28',
+      dayStart: 0,
       asOf: NOW.getTime(),
       seq: 0,
       running: null,

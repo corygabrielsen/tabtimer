@@ -97,7 +97,7 @@ describe('bars', () => {
   })
 
   it('gives a day 24 hourly bars, empty hours empty', () => {
-    const bars = hourBars(h, d('2026-10-27'))
+    const bars = hourBars(h, d('2026-10-27'), 0)
     expect(bars).toHaveLength(24)
     expect(bars[9]).toEqual({ 'a.com': 10 * MIN, 'b.com': 20 * MIN })
     expect(bars[10]).toEqual({ 'a.com': 5 * MIN })
@@ -109,7 +109,7 @@ describe('bars', () => {
   })
 
   it('treats a day with no key as zero', () => {
-    expect(hourBars(h, d('2026-10-01')).every((bar) => barTotal(bar) === 0)).toBe(true)
+    expect(hourBars(h, d('2026-10-01'), 0).every((bar) => barTotal(bar) === 0)).toBe(true)
     expect(dayBars(h, [d('2026-10-01')])).toEqual([{}])
   })
 
@@ -257,7 +257,7 @@ describe('summarize', () => {
   })
 
   it('summarizes a day', () => {
-    const s = summarize(h, periodOf('day', 0, today, 0), today, null)
+    const s = summarize(h, periodOf('day', 0, today, 0), today, null, 0)
     expect(s.bars).toHaveLength(24)
     expect(s.top).toEqual(['b.com', 'a.com', 'c.com'])
     expect(s.sites.map((x) => x.site)).toEqual(['b.com', 'a.com', 'c.com', 'd.com'])
@@ -267,7 +267,7 @@ describe('summarize', () => {
   })
 
   it('summarizes a week against the one before', () => {
-    const s = summarize(h, periodOf('week', 0, today, 0), today, null)
+    const s = summarize(h, periodOf('week', 0, today, 0), today, null, 0)
     expect(s.bars).toHaveLength(7)
     expect(s.total).toBe(96 * MIN)
     expect(s.change).toBeCloseTo(96 / 50 - 1)
@@ -279,7 +279,7 @@ describe('summarize', () => {
     const stale = history({ [expired]: day({ 'a.com': { 9: 60 } }), [oldestKept(today)]: day({ 'a.com': { 9: 30 } }) })
     const period = periodOf('week', maxOffset('week', today, 0), today, 0)
     expect(period.days).toContain(expired)
-    const s = summarize(stale, period, today, null)
+    const s = summarize(stale, period, today, null, 0)
     expect(s.total).toBe(30 * MIN)
     expect(s.average).toBe((30 * MIN) / s.days)
     expect(s.sites).toEqual([{ site: 'a.com', ms: 30 * MIN }])
@@ -295,16 +295,16 @@ describe('summarize', () => {
       '2026-10-28': day({ 'a.com': { 9: 40 } }),
     })
     // 10:30 on Wednesday: yesterday so far is its 9 AM hour.
-    expect(summarize(early, periodOf('day', 0, today, 0), today, null, 10.5).change).toBeCloseTo(40 / 60 - 1)
+    expect(summarize(early, periodOf('day', 0, today, 0), today, null, 0, 10.5).change).toBeCloseTo(40 / 60 - 1)
     // This week so far: Tuesday's 120, Wednesday's 40. Last week to the same
     // point: Tuesday's 120, then Wednesday's 40 and half of its 10 AM hour.
-    expect(summarize(early, periodOf('week', 0, today, 0), today, null, 10.5).change).toBeCloseTo(160 / 190 - 1)
+    expect(summarize(early, periodOf('week', 0, today, 0), today, null, 0, 10.5).change).toBeCloseTo(160 / 190 - 1)
     // A period that is over is compared with all of the one before.
-    expect(summarize(early, periodOf('day', 7, today, 0), today, null, 10.5).change).toBeCloseTo(400 / 120 - 1)
+    expect(summarize(early, periodOf('day', 7, today, 0), today, null, 0, 10.5).change).toBeCloseTo(400 / 120 - 1)
   })
 
   it('filters to one site', () => {
-    const s = summarize(h, periodOf('week', 0, today, 0), today, 'a.com')
+    const s = summarize(h, periodOf('week', 0, today, 0), today, 'a.com', 0)
     expect(s.top).toEqual([])
     expect(s.total).toBe(40 * MIN)
     expect(s.change).toBeCloseTo(-0.2)
@@ -327,6 +327,7 @@ describe('withUncredited', () => {
   ])
   const totals: TodayTotals = {
     day: DAY,
+    dayStart: 0,
     asOf: NOW - 10_000,
     seq: 3,
     running: 'a.com',
@@ -356,5 +357,34 @@ describe('withUncredited', () => {
     const shown = withUncredited(stored, late, midnight + 3000)
     expect(shown.get('2026-10-29')).toEqual({ 'a.com': at({ 0: 3000 }) })
     expect(shown.get(DAY)).toBe(stored.get(DAY))
+  })
+})
+
+describe('days starting at 06:00', () => {
+  const MIN = 60_000
+  const d = (s: string) => s as DayStamp
+  const usage = (hours: Record<number, number>): DayUsage => {
+    const buckets = emptyBuckets()
+    for (const [hour, minutes] of Object.entries(hours)) {
+      buckets[Number(hour)] = minutes * MIN
+    }
+    return { 'a.com': buckets }
+  }
+
+  it('gives the day’s hours from 6 AM, the night after midnight last', () => {
+    const h: History = new Map([[d('2026-10-27'), usage({ 6: 1, 23: 2, 0: 3, 5: 4 })]])
+    const bars = hourBars(h, d('2026-10-27'), 6)
+    expect(bars).toHaveLength(24)
+    expect(bars.map((bar) => barTotal(bar) / MIN)).toEqual([1, ...Array(16).fill(0), 2, 3, 0, 0, 0, 0, 4])
+  })
+
+  it('compares today so far with yesterday to the same point of its day', () => {
+    const h: History = new Map([
+      [d('2026-10-27'), usage({ 7: 10, 1: 50 })],
+      [d('2026-10-28'), usage({ 7: 30 })],
+    ])
+    // 08:00, two hours into the day: yesterday so far is its 7 AM hour.
+    const s = summarize(h, periodOf('day', 0, d('2026-10-28'), 0), d('2026-10-28'), null, 6, 2)
+    expect(s.change).toBeCloseTo(30 / 10 - 1)
   })
 })

@@ -72,7 +72,7 @@ describe('presence', () => {
       blockAt: null,
       limit: null,
       hours: emptyBuckets(),
-      prefs: { hidden: false, scale: 1 },
+      prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
     })
     expect(alarm).toHaveBeenLastCalledWith(true)
@@ -595,7 +595,7 @@ describe('background wiring', () => {
     await flush()
     expect(browser.tabs.sendMessage).toHaveBeenCalledWith(
       1,
-      expect.objectContaining({ state: expect.objectContaining({ prefs: { hidden: true, scale: 1 } }) }),
+      expect.objectContaining({ state: expect.objectContaining({ prefs: { hidden: true, scale: 1, dayStart: 0 } }) }),
       { frameId: 0 }
     )
     browser.tabs.sendMessage.mockClear()
@@ -741,5 +741,56 @@ describe('P2: a tab the browser hears', () => {
     sent = []
     await tracker.dispatch({ kind: 'audible', tabId: 1, audible: true })
     expect(sent).toEqual([])
+  })
+})
+
+describe('a day starting at 06:00', () => {
+  const at = (d: number, h: number, m = 0, s = 0) => new Date(2026, 5, d, h, m, s).getTime()
+
+  beforeEach(() => {
+    browser.storage.local.seed({
+      prefs: { hidden: false, scale: 1, dayStart: 6 },
+      [LIMITS_KEY]: { global: null, perSite: { 'a.com': 30 }, snoozeUntil: 0 },
+      'day:2026-06-10': { 'a.com': emptyBuckets().fill(MIN, 6, 26) },
+    })
+  })
+
+  it('keeps 01:00 on the evening’s day and limit', async () => {
+    now = at(11, 1)
+    const tracker = worker()
+    // 18 of the evening's 30 minutes are spent: 12 left, past midnight.
+    const night = await tracker.presence(1, { ...PAGE, ...SHOWN })
+    expect(night).toMatchObject({ day: '2026-06-10', today: 18 * MIN, blockAt: now + 12 * MIN })
+    expect(night.prefs.dayStart).toBe(6)
+    await expect(tracker.todayTotals()).resolves.toMatchObject({ day: '2026-06-10', dayStart: 6 })
+
+    now += MIN
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
+      day: '2026-06-10',
+      today: 19 * MIN,
+    })
+  })
+
+  it('rolls over at 06:00: the limit applies afresh to the new day', async () => {
+    // Over the evening's limit until 06:00.
+    browser.storage.local.seed({ 'day:2026-06-10': { 'a.com': emptyBuckets().fill(2 * MIN, 6, 24) } })
+    now = at(11, 5, 59, 30)
+    const tracker = worker()
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({
+      day: '2026-06-10',
+      running: false,
+      limit: { scope: 'site', ms: 30 * MIN },
+    })
+    now = at(11, 6)
+    const morning = await tracker.presence(1, { ...PAGE, ...SHOWN })
+    expect(morning).toMatchObject({ day: '2026-06-11', today: 0, running: true, blockAt: at(11, 6, 30) })
+  })
+
+  it('splits the open interval’s uncredited part at 06:00', async () => {
+    now = at(11, 5, 59, 30)
+    const tracker = worker()
+    await tracker.presence(1, { ...PAGE, ...SHOWN })
+    now = at(11, 6, 0, 40)
+    await expect(tracker.todayTotals()).resolves.toMatchObject({ day: '2026-06-11', sites: { 'a.com': 40 * S } })
   })
 })

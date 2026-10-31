@@ -6,13 +6,16 @@
 //   schema       3
 //   limits       Limits (core/limits.ts), the snooze included
 //   prefs        Prefs
-//   day:<date>   DayUsage for one local calendar day (yyyy-mm-dd)
-//   snoozes:<date>  the snoozes taken that day, every site's (a count)
+//   day:<date>   DayUsage for one logical day (core/day.ts), named by the
+//                date it starts on (yyyy-mm-dd); its buckets are wall-clock
+//                hours, so with dayStart 6 it holds 06:00-23:59 of that date
+//                and 00:00-05:59 of the next
+//   snoozes:<date>  the snoozes taken that logical day, every site's (a count)
 //   clock        ClockMark: the date pruning last trusted
 //
 // A stored `schema` other than SCHEMA means the data is in some other layout:
 // the service worker clears storage and starts over (no migration).
-import { addDays, dayOf, hourOf, isDayStamp, type DayStamp } from './day'
+import { addDays, hourOf, isDayStamp, logicalDay, type DayStamp } from './day'
 import { isBool, isFiniteNumber, isObject } from './guards'
 
 export const SCHEMA = 3
@@ -37,14 +40,26 @@ export type HourBuckets = number[]
 // One day's usage, by site.
 export type DayUsage = Record<string, HourBuckets>
 
-// Global preferences for the on-page overlay.
-export type Prefs = { hidden: boolean; scale: number }
+// Global preferences: the on-page overlay's, and the hour (0-23, local
+// wall clock) each day starts at.
+export type Prefs = { hidden: boolean; scale: number; dayStart: number }
 
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 1
 // The overlay's sizes are MIN_SCALE to MAX_SCALE in steps of this.
 export const SCALE_STEP = 0.25
-export const DEFAULT_PREFS: Prefs = { hidden: false, scale: 1 }
+export const DEFAULT_PREFS: Prefs = { hidden: false, scale: 1, dayStart: 0 }
+
+// Whether `v` is an hour a day may start at.
+export function isDayStart(v: unknown): v is number {
+  return Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 23
+}
+
+// A day start: a whole hour out of range is clamped; anything else reads
+// as midnight.
+export function normalizeDayStart(v: unknown): number {
+  return Number.isInteger(v) ? Math.min(23, Math.max(0, v as number)) : DEFAULT_PREFS.dayStart
+}
 
 // The overlay size nearest `scale`; not a number at all reads as the default.
 export function snapScale(scale: number): number {
@@ -101,14 +116,14 @@ export function isKept(day: DayStamp, today: DayStamp): boolean {
 }
 
 // The day:* and snoozes:* keys among `keys` that fall outside the retention
-// window ending on the day containing `now` (malformed ones go too). `last`: a later
+// window ending on the logical day containing `now` (malformed ones go too). `last`: a later
 // day the clock showed before it went back; the days after tomorrow up to it
 // were written while the clock was ahead, and go too, as far as a window
 // ahead. Tomorrow is kept: a time zone change moves the date by at most a
 // day, and that usage is real. Any other later day is kept (the clock may be
 // the one that is wrong).
-export function expiredDayKeys(keys: string[], now: number, last: DayStamp | null = null): string[] {
-  const today = dayOf(now)
+export function expiredDayKeys(keys: string[], now: number, dayStart: number, last: DayStamp | null = null): string[] {
+  const today = logicalDay(now, dayStart)
   const oldest = oldestKept(today)
   const tomorrow = addDays(today, 1)
   const ahead = addDays(today, RETENTION_DAYS)
@@ -142,9 +157,9 @@ export function normalizeClock(value: unknown): ClockMark {
 }
 
 // The mark after the clock shows `now`. The date is trusted when the result's
-// day is the day containing `now`.
-export function settleClock(mark: ClockMark, now: number): ClockMark {
-  const today = dayOf(now)
+// day is the logical day containing `now`.
+export function settleClock(mark: ClockMark, now: number, dayStart: number): ClockMark {
+  const today = logicalDay(now, dayStart)
   const { day, pending } = mark
   if (day !== null && today >= addDays(day, -1) && today <= addDays(day, PLAUSIBLE_DAYS)) {
     return day === today && pending === null ? mark : { day: today, pending: null }
@@ -217,5 +232,6 @@ export function normalizePrefs(value: unknown): Prefs {
     hidden: isBool(p.hidden) ? p.hidden : DEFAULT_PREFS.hidden,
     // Out of range is clamped; not a number at all reads as the default.
     scale: isFiniteNumber(p.scale) ? Math.min(MAX_SCALE, Math.max(MIN_SCALE, p.scale)) : DEFAULT_PREFS.scale,
+    dayStart: normalizeDayStart(p.dayStart),
   }
 }

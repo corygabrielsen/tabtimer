@@ -1,6 +1,6 @@
 import { bus as chromeBus, pushes as chromePushes } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
-import { dayOf, startOfDay, type DayStamp } from '../core/day'
+import { logicalDay, startOfLogicalDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
 import { overAt, PROJECT_MS, totalsAt, type TabState } from '../core/messages'
 import type { Prefs } from '../core/schema'
@@ -9,7 +9,7 @@ import type { Bus, Clock, Pushes } from '../ports'
 import { shadowRootOf } from './shadowHost'
 
 // What the overlay shows: this site's time today, this page's focus time,
-// and how long the page has been open (both since midnight at most).
+// and how long the page has been open (both since the day started at most).
 export type ElapsedState = { today: number; focus: number; session: number }
 
 // What the limits are checked against. `site` is null until the service
@@ -60,7 +60,10 @@ export default class FocusTracker {
   private focusDone = 0
   private focusFrom: number | null = null
   private focusEnd = 0
+  // The day the stopwatches are for, and the hour days start at (the
+  // worker's word; midnight until it has said).
   private day: DayStamp
+  private dayStart = 0
   // The page's last tick (or state): a longer silence than PROJECT_MS since
   // is a gap (the device slept, the page was frozen).
   private lastSeen: number
@@ -72,7 +75,7 @@ export default class FocusTracker {
   ) {
     this.sessionStart = this.clock.now()
     this.lastSeen = this.sessionStart
-    this.day = dayOf(this.sessionStart)
+    this.day = logicalDay(this.sessionStart, this.dayStart)
   }
 
   start(): void {
@@ -191,14 +194,14 @@ export default class FocusTracker {
     }
     const now = this.clock.now()
     this.wake(now)
-    const day = dayOf(now)
+    const day = logicalDay(now, this.dayStart)
     if (day !== this.day) {
       // A new day: the stopwatches restart, and the worker's totals are
       // yesterday's until it answers.
       this.day = day
       this.focusDone = 0
       if (this.focusFrom !== null) {
-        this.focusFrom = startOfDay(now)
+        this.focusFrom = startOfLogicalDay(now, this.dayStart)
       }
       void this.report(true)
     } else if (!document.hidden || this.lastReport === null) {
@@ -235,7 +238,7 @@ export default class FocusTracker {
       const reached = s.blockAt !== null && s.blockAt <= at
       this.state = {
         ...s,
-        day: dayOf(at),
+        day: logicalDay(at, this.dayStart),
         asOf: at,
         today: totals.siteToday,
         globalToday: totals.globalToday,
@@ -325,8 +328,14 @@ export default class FocusTracker {
     if (this.state && state.seq <= this.state.seq) {
       return
     }
+    if (state.prefs.dayStart !== this.dayStart) {
+      // Days start at another hour: the stopwatches are for the day it now
+      // is, and keep what they have.
+      this.dayStart = state.prefs.dayStart
+      this.day = logicalDay(now, this.dayStart)
+    }
     if (state.running && this.focusFrom === null) {
-      this.focusFrom = Math.max(state.asOf, startOfDay(now), this.focusEnd)
+      this.focusFrom = Math.max(state.asOf, startOfLogicalDay(now, this.dayStart), this.focusEnd)
     } else if (!state.running) {
       this.closeFocus(state.asOf)
     }
@@ -354,8 +363,8 @@ export default class FocusTracker {
   }
 
   // Today's totals now: as of the worker's last state, plus the time since
-  // while this tab is the one accruing. Past midnight, until the worker
-  // answers, only the time since midnight.
+  // while this tab is the one accruing. Once the next day has started, until
+  // the worker answers, only the time since it did.
   readTotals(): Totals {
     const s = this.state
     if (!s) {
@@ -373,7 +382,7 @@ export default class FocusTracker {
     return {
       today: this.readTotals().siteToday,
       focus,
-      session: Math.max(0, now - Math.max(this.sessionStart, startOfDay(now))),
+      session: Math.max(0, now - Math.max(this.sessionStart, startOfLogicalDay(now, this.dayStart))),
     }
   }
 
