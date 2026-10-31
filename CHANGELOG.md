@@ -11,6 +11,7 @@ All notable changes to Tab Timer. The format follows
 - 2 more minutes takes a longer hold as the day goes on: 2 seconds for the
   first three, then 5, 10, and 20 seconds. Resets at midnight.
 - The 2 more minutes button keeps its label while you hold it.
+- A new icon: a sleeping clock.
 
 ## [1.7.0] - 2026-10-29
 
