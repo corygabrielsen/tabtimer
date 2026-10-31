@@ -12,6 +12,7 @@ import {
   read,
   shadowText,
   snoozeBlock,
+  snoozesTodayKey,
   LIMITS_KEY,
   OVERLAY_ID,
   BLOCK_ID,
@@ -121,22 +122,97 @@ test('holding 2 more minutes for 2 s snoozes; a short press or a click does not'
   await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
   const page = await blockedPage(context, site(SITE_A))
   const block = page.locator(`#${BLOCK_ID}`)
+  const label = () => shadowText(page, BLOCK_ID, 'button.hold .txt')
 
-  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('2 more minutes')
-  // A click: the label says to hold, then goes back; nothing snoozes.
+  expect(await label()).toBe('2 more minutes')
+  // A click: nothing snoozes, and the label stays.
   await clickInShadow(page, BLOCK_ID, 'button.hold')
-  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
-  await expect.poll(() => shadowText(page, BLOCK_ID, 'button.hold .txt'), { timeout: 3000 }).toBe('2 more minutes')
+  expect(await label()).toBe('2 more minutes')
   // A press let go too soon: the same.
   await holdInShadow(page, BLOCK_ID, 'button.hold', 800)
-  expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('Hold to continue')
+  expect(await label()).toBe('2 more minutes')
   await page.waitForTimeout(500)
+  expect(await label()).toBe('2 more minutes')
   await expect(block).toBeVisible()
   expect(await snoozeUntil(serviceWorker)).toBe(0)
 
   await holdInShadow(page, BLOCK_ID, 'button.hold', 2300)
   await expect(block).toBeHidden()
   await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
+})
+
+// A number standing alone in text (not part of a time like 00:10:00).
+const standalone = (n: number) => new RegExp(`(?<![\\d:.])${n}(?![\\d:.])`)
+
+for (const [taken, short, long] of [
+  [0, null, 2000],
+  [3, 2000, 5000],
+  [10, 10_000, 20_000],
+] as const) {
+  test(`after ${taken} snoozes today, a ${long / 1000} s hold snoozes${short ? `, a ${short / 1000} s one not` : ''}`, async ({
+    context,
+    serviceWorker,
+    site,
+  }) => {
+    test.setTimeout(60_000)
+    const key = await snoozesTodayKey(serviceWorker)
+    await seed(serviceWorker, {
+      ...BLOCKING,
+      ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })),
+      [key]: taken,
+    })
+    const page = await blockedPage(context, site(SITE_A))
+    const block = page.locator(`#${BLOCK_ID}`)
+    if (short !== null) {
+      await holdInShadow(page, BLOCK_ID, 'button.hold', short + 300)
+      await page.waitForTimeout(500)
+      await expect(block).toBeVisible()
+      expect(await snoozeUntil(serviceWorker)).toBe(0)
+    }
+    // The label stays; the button only fills more slowly.
+    expect(await shadowText(page, BLOCK_ID, 'button.hold .txt')).toBe('2 more minutes')
+    await holdInShadow(page, BLOCK_ID, 'button.hold', long + 300)
+    await expect(block).toBeHidden()
+    await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
+    await expect.poll(() => read(serviceWorker, key)).toBe(taken + 1)
+  })
+}
+
+test('never shows the day’s snooze count, on the block screen or in the popup', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  site,
+}) => {
+  test.setTimeout(60_000)
+  const key = await snoozesTodayKey(serviceWorker)
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })), [key]: 10 })
+  const page = await blockedPage(context, site(SITE_A))
+  const popupText = async () => {
+    const popup = await openPopup(context, serviceWorker, extensionId, site(SITE_A))
+    await expect(popup.locator('#today')).not.toBeEmpty()
+    const text = await popup.evaluate(() => {
+      const parts: string[] = []
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!n.parentElement?.closest('style, script')) {
+          parts.push(n.nodeValue ?? '')
+        }
+      }
+      return parts.join(' ')
+    })
+    await popup.close()
+    return text
+  }
+  for (const text of [await shadowText(page, BLOCK_ID), await popupText()]) {
+    expect(text).not.toMatch(standalone(10))
+    expect(text).not.toMatch(standalone(11))
+  }
+  await page.bringToFront()
+  await holdInShadow(page, BLOCK_ID, 'button.hold', 20_300)
+  await expect(page.locator(`#${BLOCK_ID}`)).toBeHidden()
+  await expect.poll(() => read(serviceWorker, key)).toBe(11)
+  expect(await popupText()).not.toMatch(standalone(11))
 })
 
 test('holding Space for 3 s snoozes nothing, on the dialog or on 2 more minutes', async ({

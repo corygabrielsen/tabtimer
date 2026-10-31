@@ -429,6 +429,38 @@ describe('block screen', () => {
     expect(document.activeElement).not.toBe(gone)
   })
 
+  it('takes a longer hold after the day’s snoozes, and never shows their count', async () => {
+    browser.storage.local.seed({ 'snoozes:2026-06-10': 7 })
+    await mount()
+    const press = (ms: number) => {
+      holdButton()!.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
+      vi.advanceTimersByTime(ms)
+      holdButton()!.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+    }
+    press(HOLD_MS + 50)
+    expect(holdButton()!.classList.contains('done')).toBe(false)
+    expect(normText(holdButton()?.querySelector('.lbl'))).toBe('2 more minutes')
+    // The count shows nowhere (the CSS aside).
+    const shown = [...screen().querySelectorAll('*')]
+      .filter((el) => el.tagName !== 'STYLE')
+      .flatMap((el) => [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent))
+      .join(' ')
+    expect(shown).not.toMatch(/\b[78]\b/)
+    vi.advanceTimersByTime(2000)
+    // Another tab's snooze moves the count on: the next press takes its hold.
+    browser.storage.local.seed({ 'snoozes:2026-06-10': 10 })
+    seedLimits({ perSite: { 'reddit.com': 1 }, global: 600 })
+    await flush()
+    press(10_050)
+    expect(holdButton()!.classList.contains('done')).toBe(false)
+    vi.advanceTimersByTime(2000)
+    press(20_050)
+    vi.advanceTimersByTime(DONE_MS)
+    await flush()
+    expect(isBlocked()).toBe(false)
+    expect(browser.storage.local.data['snoozes:2026-06-10']).toBe(11)
+  })
+
   it('takes the snooze length from SNOOZE_MS', async () => {
     await mount()
     expect(normText(holdButton()?.querySelector('.lbl'))).toBe(`${SNOOZE_MS / 60_000} more minutes`)

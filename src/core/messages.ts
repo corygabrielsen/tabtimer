@@ -41,6 +41,8 @@ export type TabState = {
   hours: number[]
   // The overlay preferences (the worker is their only writer).
   prefs: Prefs
+  // How long "2 more minutes" must be held now (holdMs, core/limits.ts).
+  holdMs: number
 }
 
 // How far past `asOf` a running state holds. The worker tells the open tab
@@ -233,6 +235,9 @@ export function parseStatePush(raw: unknown): StatePush | null {
   if (!isObject(p) || !isBool(p.hidden) || !isFiniteNumber(p.scale)) {
     return null
   }
+  if (!isFiniteNumber(s.holdMs) || s.holdMs <= 0) {
+    return null
+  }
   const state: TabState = {
     site: s.site,
     day: s.day,
@@ -245,6 +250,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     limit,
     hours: [...(hours as number[])],
     prefs: { hidden: p.hidden, scale: p.scale },
+    holdMs: s.holdMs,
   }
   return { type: 'state', state, probe: raw.probe }
 }

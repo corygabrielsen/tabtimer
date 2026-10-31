@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   applyLimit,
   blockAt,
+  holdMs,
   limitsFor,
   normalizeLimits,
   minutesToMs,
@@ -15,6 +16,25 @@ const limits = { global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 }
 describe('minute/ms conversion', () => {
   it('round-trips whole minutes', () => {
     expect(msToMinutes(minutesToMs(45))).toBe(45)
+  })
+})
+
+describe('holdMs', () => {
+  it('steps up by the snoozes already taken today: 2 s, 5 s, 10 s, then 20 s', () => {
+    // [taken before this snooze, hold]: this is snooze taken + 1.
+    const steps: Array<[number, number]> = [
+      [0, 2000],
+      [2, 2000],
+      [3, 5000],
+      [5, 5000],
+      [6, 10_000],
+      [9, 10_000],
+      [10, 20_000],
+      [30, 20_000],
+    ]
+    for (const [taken, ms] of steps) {
+      expect(holdMs(taken), `after ${taken}`).toBe(ms)
+    }
   })
 })
 

@@ -41,6 +41,7 @@ describe('a state read at a later moment', () => {
     limit: { scope: 'site', ms: 60_000 },
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
+    holdMs: 2000,
   }
 
   it('runs on while running, and starts again at midnight', () => {
@@ -156,6 +157,7 @@ describe('every site’s time today, read at a later moment', () => {
       limit: { scope: 'site', ms: 60_000 },
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
+      holdMs: 2000,
     }
     for (const at of [NOON, NOON + 9999, NOON + 10_000, NOON + 60_000, NOON + PROJECT_MS + 1]) {
       expect(siteOverAt(totals, 'a.com', 60_000, at)).toBe(overAt(tab, at, 'ignored') !== null)
@@ -194,6 +196,7 @@ describe('parseStatePush', () => {
     limit: { scope: 'site', ms: 60_000 },
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1 },
+    holdMs: 2000,
   }
 
   it('accepts a well-formed push, its state rebuilt from its fields', () => {
@@ -232,6 +235,9 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, prefs: undefined }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: 'no', scale: 1 } }, probe: false },
     { type: 'state', state: { ...state, prefs: { hidden: false, scale: '1' } }, probe: false },
+    { type: 'state', state: { ...state, holdMs: undefined }, probe: false },
+    { type: 'state', state: { ...state, holdMs: '2000' }, probe: false },
+    { type: 'state', state: { ...state, holdMs: 0 }, probe: false },
   ])('rejects %j', (raw) => {
     expect(parseStatePush(raw)).toBeNull()
   })

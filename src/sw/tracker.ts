@@ -7,7 +7,7 @@
 // Pages are told their state by message; a page's reply is its presence,
 // which is how the worker asks a page to report again (`probe`).
 import { dayOf, startOfDay } from '../core/day'
-import { blockAt, type Limits } from '../core/limits'
+import { blockAt, holdMs, type Limits } from '../core/limits'
 import { overAt, parsePresence, type StatePush, type TabState, type TodayTotals } from '../core/messages'
 import { dayTotal, siteTotal, withTimeAt, type DayUsage, type Prefs } from '../core/schema'
 import { trackedSite, type Site } from '../core/site'
@@ -56,11 +56,11 @@ export function createTracker(deps: TrackerDeps) {
 
   // Builds tab states from one reading of storage per transaction.
   function stater(tx: Tx) {
-    let ctx: Promise<[DayUsage, Limits, Prefs, (site: Site) => boolean]> | null = null
+    let ctx: Promise<[DayUsage, Limits, Prefs, (site: Site) => boolean, number]> | null = null
     return async (tabId: number, attest: Pick<Attest, 'site'>, s: TrackerState): Promise<TabState> => {
       // Grants that can't be read count every site.
-      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), counted()])
-      const [usage, limits, prefs, counts] = await ctx
+      ctx ??= Promise.all([tx.today(), tx.limits(), tx.prefs(), counted(), tx.snoozesToday()])
+      const [usage, limits, prefs, counts, snoozes] = await ctx
       const open = s.open?.tabId === tabId ? s.open : null
       const extra = open ? uncredited(open, tx.now) : 0
       const today = siteTotal(usage, attest.site) + extra
@@ -79,6 +79,7 @@ export function createTracker(deps: TrackerDeps) {
         limit: block ? { scope: block.scope, ms: block.limit } : null,
         hours: withTimeAt(usage[attest.site], tx.now, extra),
         prefs,
+        holdMs: holdMs(snoozes),
       }
     }
   }

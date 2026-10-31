@@ -40,6 +40,7 @@ const STATE: TabState = {
   limit: null,
   hours: Array<number>(24).fill(0),
   prefs: { hidden: false, scale: 1 },
+  holdMs: 2000,
 }
 
 let browser: FakeChrome
@@ -396,6 +397,7 @@ describe('reporting to the service worker', () => {
       limit: null,
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1 },
+      holdMs: 2000,
     }
     expect(handler!(base, false)).toEqual({ visible: true, focused: true, media: false, blocked: false })
     expect(today(model)).toBe(minutes(9))
