@@ -25,7 +25,7 @@
   "blockAllSites": { "message": "All tracked sites" },
   "blockAriaAllSites": { "message": "Take a break. All-sites limit reached." },
   "blockClose": { "message": "Close tab" },
-  "blockHoldHint": { "message": "Press and hold for 2 seconds" },
+  "blockHoldHint": { "message": "Press and hold" },
   "blockSnooze": { "message": "$minutes$ more minutes", "placeholders": { "minutes": { "content": "$1" } } },
   "blockNow": { "message": "Now" },
   "durMinutes": { "message": "$n$ min", "placeholders": { "n": { "content": "$1" } } },
