@@ -4,6 +4,7 @@ import {
   blockAt,
   holdMs,
   limitsFor,
+  HOLD_MAX_MS,
   normalizeLimits,
   minutesToMs,
   msToMinutes,
@@ -20,21 +21,28 @@ describe('minute/ms conversion', () => {
 })
 
 describe('holdMs', () => {
-  it('steps up by the snoozes already taken today: 2 s, 5 s, 10 s, then 20 s', () => {
+  it('starts at 2 s and grows 25% with each snooze already taken today', () => {
     // [taken before this snooze, hold]: this is snooze taken + 1.
     const steps: Array<[number, number]> = [
       [0, 2000],
-      [2, 2000],
-      [3, 5000],
-      [5, 5000],
-      [6, 10_000],
-      [9, 10_000],
-      [10, 20_000],
-      [30, 20_000],
+      [1, 2500],
+      [2, 3125],
+      [4, 4883],
+      [10, 18_626],
+      [18, 111_022],
     ]
     for (const [taken, ms] of steps) {
       expect(holdMs(taken), `after ${taken}`).toBe(ms)
     }
+  })
+
+  it('always grows, and stops at 2 min from the 20th snooze', () => {
+    for (let taken = 1; taken < 19; taken++) {
+      expect(holdMs(taken)).toBeGreaterThan(holdMs(taken - 1))
+    }
+    expect(holdMs(19)).toBe(HOLD_MAX_MS)
+    expect(holdMs(500)).toBe(HOLD_MAX_MS)
+    expect(holdMs(-1)).toBe(2000)
   })
 })
 

@@ -145,9 +145,10 @@ test('holding 2 more minutes for 2 s snoozes; a short press or a click does not'
 const standalone = (n: number) => new RegExp(`(?<![\\d:.])${n}(?![\\d:.])`)
 
 for (const [taken, short, long] of [
+  // holdMs: 2 s, then 25% longer each snooze (3 taken: 3.9 s; 10: 18.6 s).
   [0, null, 2000],
-  [3, 2000, 5000],
-  [10, 10_000, 20_000],
+  [3, 3000, 3906],
+  [10, 15_000, 18_626],
 ] as const) {
   test(`after ${taken} snoozes today, a ${long / 1000} s hold snoozes${short ? `, a ${short / 1000} s one not` : ''}`, async ({
     context,

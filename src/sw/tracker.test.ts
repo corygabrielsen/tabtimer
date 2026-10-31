@@ -8,7 +8,7 @@ import { emptyBuckets, normalizeDay, siteTotal, LIMITS_KEY } from '../core/schem
 import { CHECKPOINT_MS, type Presence } from '../core/tracker'
 import type { StatePush } from '../core/messages'
 import { originsForSite } from '../core/site'
-import { SNOOZE_MS } from '../core/limits'
+import { holdMs, SNOOZE_MS } from '../core/limits'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush } from '../test/dom'
 
@@ -480,13 +480,13 @@ describe('limits', () => {
     for (let i = 0; i < 3; i++) {
       await tracker.snooze()
     }
-    await expect(hold('a.com')).resolves.toBe(5000)
-    await expect(hold('b.com')).resolves.toBe(5000)
+    await expect(hold('a.com')).resolves.toBe(holdMs(3))
+    await expect(hold('b.com')).resolves.toBe(holdMs(3))
     browser.storage.local.seed({ 'snoozes:2026-06-10': 10 })
     await tracker.presence(1, { ...PAGE, ...SHOWN })
     sent = []
     await tracker.refresh()
-    expect(sent.at(-1)?.[2].state.holdMs).toBe(20_000)
+    expect(sent.at(-1)?.[2].state.holdMs).toBe(holdMs(10))
     // The next day starts over.
     now = new Date(2026, 5, 11, 9).getTime()
     await expect(hold('a.com')).resolves.toBe(2000)

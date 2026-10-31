@@ -4,6 +4,13 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-10-30
+
+### Changed
+
+- Each snooze in a day takes a hold 25% longer than the one before: 2 seconds
+  at first, up to 2 minutes. Resets at midnight.
+
 ## [1.8.0] - 2026-10-30
 
 ### Changed
@@ -297,6 +304,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.9.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.4...v1.7.0
 [1.6.4]: https://github.com/corygabrielsen/tabtimer/compare/v1.6.3...v1.6.4
