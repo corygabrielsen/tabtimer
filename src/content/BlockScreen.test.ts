@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import BlockScreen, { KEY_GUARD_MS } from './BlockScreen'
 import FocusTracker from './FocusTracker'
 import { SNOOZE_MS } from '../core/limits'
-import { DONE_MS, HOLD_MS } from './hold'
+import { HOLD_MS } from './hold'
 import { LIMITS_KEY, PREFS_KEY } from '../core/schema'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { bucketsOf } from '../test/data'
@@ -46,14 +46,12 @@ const closeButton = () => screen().querySelector<HTMLButtonElement>('.close')
 const holdButton = () => screen().querySelector<HTMLButtonElement>('.hold')
 const dialog = () => screen().querySelector<HTMLDialogElement>('dialog')!
 
-// Hold "2 more minutes" down to the end, as a pointer would, and let the
-// done state run out.
+// Hold "2 more minutes" down to the end, as a pointer would, and let go.
 async function snooze(): Promise<void> {
   const hold = holdButton()!
   hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
   vi.advanceTimersByTime(HOLD_MS + 50)
   hold.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
-  vi.advanceTimersByTime(DONE_MS)
   await flush()
 }
 
@@ -455,7 +453,6 @@ describe('block screen', () => {
     expect(holdButton()!.classList.contains('done')).toBe(false)
     vi.advanceTimersByTime(2000)
     press(20_050)
-    vi.advanceTimersByTime(DONE_MS)
     await flush()
     expect(isBlocked()).toBe(false)
     expect(browser.storage.local.data['snoozes:2026-06-10']).toBe(11)

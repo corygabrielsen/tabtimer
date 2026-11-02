@@ -7,7 +7,7 @@
 // single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SNOOZE_MS } from '../core/limits'
-import { DONE_MS, HOLD_MS } from './hold'
+import { HOLD_MS } from './hold'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush, setPageState, trackShadowRoots } from '../test/dom'
 import {
@@ -138,7 +138,10 @@ describe('time limits end to end', () => {
     // Held for the snooze, not clicked.
     const hold = blockScreen().querySelector('.hold')!
     hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
-    await run(HOLD_MS + DONE_MS + 50)
+    await run(HOLD_MS + 50)
+    // Held past the end: still blocked until let go.
+    expect(isBlocked()).toBe(true)
+    hold.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
     await flush()
     expect(isBlocked()).toBe(false)
     await run(SNOOZE_MS - seconds(2))

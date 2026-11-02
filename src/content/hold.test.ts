@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { DONE_MS, HOLD_MS, HoldButton } from './hold'
+import { HOLD_MS, HoldButton } from './hold'
 
 const LABELS = { label: '2 more minutes', hint: 'Press and hold' }
 
@@ -42,7 +42,7 @@ describe('press and hold', () => {
     expect(hold.status.getAttribute('aria-live')).toBe('polite')
   })
 
-  it('acts after HOLD_MS held, through a done state', () => {
+  it('arms after HOLD_MS held, and acts when let go', () => {
     pointer('pointerdown')
     expect(hold.el.classList.contains('holding')).toBe(true)
     expect(text()).toBe(LABELS.label)
@@ -56,16 +56,58 @@ describe('press and hold', () => {
     expect(hold.el.querySelector('svg')).toBeNull()
     expect(text()).toBe(LABELS.label)
     expect(hold.status.textContent).toBe(LABELS.label)
-    // The done state shows before the action runs; letting go now changes
-    // nothing.
-    pointer('pointerup')
+    // Done arms it: nothing runs while it's still held.
     expect(done).not.toHaveBeenCalled()
     // Nor does pressing again.
     pointer('pointerdown')
     expect(hold.el.classList.contains('done')).toBe(true)
-    vi.advanceTimersByTime(DONE_MS)
+    expect(done).not.toHaveBeenCalled()
+    // Letting go acts, at once, and the button rests.
+    pointer('pointerup')
+    expect(done).toHaveBeenCalledOnce()
+    expect(hold.el.className).toBe('btn hold')
+    expect(progress()).toBe(0)
+  })
+
+  it('held past the end without letting go, never acts', () => {
+    pointer('pointerdown')
+    vi.advanceTimersByTime(HOLD_MS + 50)
+    expect(hold.el.classList.contains('done')).toBe(true)
+    vi.advanceTimersByTime(60 * 60_000)
+    expect(done).not.toHaveBeenCalled()
+    expect(hold.el.classList.contains('done')).toBe(true)
+    pointer('pointerup')
+    expect(done).toHaveBeenCalledOnce()
+    // Once: the up after is a no-op.
+    pointer('pointerup')
+    pointer('pointerleave')
     expect(done).toHaveBeenCalledOnce()
   })
+
+  for (const end of ['pointerleave', 'pointercancel']) {
+    it(`does nothing on ${end} when done, and drains back to rest`, () => {
+      pointer('pointerdown')
+      vi.advanceTimersByTime(HOLD_MS + 50)
+      expect(hold.el.classList.contains('done')).toBe(true)
+      pointer(end)
+      expect(done).not.toHaveBeenCalled()
+      expect(progress()).toBe(0)
+      expect(hold.el.classList.contains('done')).toBe(false)
+      expect(hold.el.classList.contains('released')).toBe(true)
+      expect(hold.status.textContent).toBe('')
+      // An up after it (the pointer let go elsewhere) does nothing either.
+      pointer('pointerup')
+      vi.advanceTimersByTime(400)
+      expect(done).not.toHaveBeenCalled()
+      expect(hold.el.className).toBe('btn hold')
+      expect(text()).toBe(LABELS.label)
+      // And it can be held again.
+      pointer('pointerdown')
+      vi.advanceTimersByTime(HOLD_MS + 50)
+      pointer('pointerup')
+      expect(done).toHaveBeenCalledOnce()
+    })
+  }
 
   it('a click, or a short press, does nothing', () => {
     const click = new MouseEvent('click', { bubbles: true, cancelable: true })
@@ -78,7 +120,7 @@ describe('press and hold', () => {
     pointer('pointerdown')
     vi.advanceTimersByTime(200)
     pointer('pointerup')
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS)
+    vi.advanceTimersByTime(HOLD_MS)
     expect(done).not.toHaveBeenCalled()
   })
 
@@ -109,13 +151,28 @@ describe('press and hold', () => {
     pointer('pointerdown')
     vi.advanceTimersByTime(HOLD_MS - 100)
     expect(hold.el.classList.contains('done')).toBe(false)
-    vi.advanceTimersByTime(200 + DONE_MS)
+    vi.advanceTimersByTime(200)
+    pointer('pointerup')
+    expect(done).toHaveBeenCalledOnce()
+  })
+
+  it('can be pressed again mid-drain, the drain dropped', () => {
+    pointer('pointerdown')
+    vi.advanceTimersByTime(HOLD_MS / 2)
+    pointer('pointerup')
+    vi.advanceTimersByTime(100)
+    pointer('pointerdown')
+    expect(hold.el.classList.contains('released')).toBe(false)
+    vi.advanceTimersByTime(HOLD_MS + 50)
+    expect(hold.el.className).toBe('btn hold done')
+    pointer('pointerup')
     expect(done).toHaveBeenCalledOnce()
   })
 
   it('ignores buttons other than the main one', () => {
     pointer('pointerdown', { button: 2 })
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS)
+    vi.advanceTimersByTime(HOLD_MS + 50)
+    pointer('pointerup', { button: 2 })
     expect(done).not.toHaveBeenCalled()
     expect(hold.el.classList.contains('holding')).toBe(false)
   })
@@ -127,7 +184,8 @@ describe('press and hold', () => {
       end()
       expect(progress()).toBe(0)
     }
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS)
+    vi.advanceTimersByTime(HOLD_MS)
+    pointer('pointerup')
     expect(done).not.toHaveBeenCalled()
   })
 })
@@ -143,7 +201,6 @@ describe('keys', () => {
     }
     expect(hold.el.classList.contains('holding')).toBe(false)
     expect(progress()).toBe(0)
-    vi.advanceTimersByTime(DONE_MS)
     expect(done).not.toHaveBeenCalled()
   })
 })
@@ -158,7 +215,8 @@ describe('reduced motion', () => {
       seen.add(progress())
     }
     expect([...seen].sort()).toEqual([0, 0.25, 0.5, 0.75, 1])
-    vi.advanceTimersByTime(100 + DONE_MS)
+    vi.advanceTimersByTime(100)
+    pointer('pointerup')
     expect(done).toHaveBeenCalledOnce()
   })
 
@@ -179,13 +237,14 @@ describe('reset', () => {
     expect(progress()).toBe(0)
     expect(text()).toBe(LABELS.label)
     expect(hold.status.textContent).toBe('')
-    vi.advanceTimersByTime(DONE_MS)
+    pointer('pointerup')
     expect(done).not.toHaveBeenCalled()
 
     pointer('pointerdown')
     vi.advanceTimersByTime(HOLD_MS / 2)
     hold.reset()
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS)
+    vi.advanceTimersByTime(HOLD_MS)
+    pointer('pointerup')
     expect(done).not.toHaveBeenCalled()
   })
 
@@ -197,7 +256,8 @@ describe('reset', () => {
       },
     })
     pointer('pointerdown')
-    vi.advanceTimersByTime(HOLD_MS + DONE_MS + 50)
+    vi.advanceTimersByTime(HOLD_MS + 50)
+    pointer('pointerup')
     expect(done).toHaveBeenCalledOnce()
     Reflect.deleteProperty(navigator, 'vibrate')
   })
@@ -224,7 +284,8 @@ describe('hold length', () => {
     expect(text()).toBe(LABELS.label)
     vi.advanceTimersByTime(2400)
     expect(hold.el.classList.contains('done')).toBe(false)
-    vi.advanceTimersByTime(200 + DONE_MS)
+    vi.advanceTimersByTime(200)
+    pointer('pointerup')
     expect(done).toHaveBeenCalledOnce()
     expect(text()).toBe(LABELS.label)
   })
@@ -248,12 +309,12 @@ describe('hold length', () => {
     ms = 20_000
     vi.advanceTimersByTime(5100)
     expect(hold.el.classList.contains('done')).toBe(true)
-    vi.advanceTimersByTime(DONE_MS)
-    hold.reset()
+    pointer('pointerup')
     pointer('pointerdown')
     vi.advanceTimersByTime(19_000)
     expect(hold.el.classList.contains('done')).toBe(false)
-    vi.advanceTimersByTime(1100 + DONE_MS)
+    vi.advanceTimersByTime(1100)
+    pointer('pointerup')
     expect(done).toHaveBeenCalledTimes(2)
   })
 })
