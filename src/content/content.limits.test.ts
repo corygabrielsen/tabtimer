@@ -6,7 +6,8 @@
 // writer behind the fake chrome.* — only the clock advances; the tracker's
 // single 1s tick drives everything.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { SNOOZE_MS } from '../core/limits'
+import { landingLevel, SNOOZE_MS } from '../core/limits'
+import { CLEAR_MS } from './Landing'
 import { HOLD_MS } from './hold'
 import { fakeChrome, type FakeChrome } from '../test/chrome'
 import { flush, setPageState, trackShadowRoots } from '../test/dom'
@@ -162,6 +163,76 @@ describe('time limits end to end', () => {
     await run(seconds(2))
     expect(isBlocked()).toBe(false)
     expect(pillText()).toMatch(/^00:00:0[12]$/)
+  })
+})
+
+describe('the soft landing end to end', () => {
+  const landing = () => document.getElementById('tabtimer-landing')!
+  const landingShown = () => landing().style.getPropertyValue('display') === 'block'
+  const landingOpacity = () => Number(landing().style.getPropertyValue('opacity'))
+
+  it('fades in over the last 10 s, then the block screen takes over', async () => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    await openTab()
+    await run(seconds(49))
+    expect(landingShown()).toBe(false)
+    await run(seconds(3))
+    expect(landingShown()).toBe(true)
+    expect(landingOpacity()).toBeCloseTo(landingLevel(seconds(8)), 2)
+    await run(seconds(7))
+    expect(landingOpacity()).toBeCloseTo(landingLevel(seconds(1)), 2)
+    expect(isBlocked()).toBe(false)
+    await run(seconds(1))
+    expect(isBlocked()).toBe(true)
+    expect(landingShown()).toBe(false)
+  })
+
+  it('holds while the window is unfocused, and clears when the limit is raised', async () => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    await openTab()
+    await run(seconds(55))
+    setPageState({ focused: false })
+    await flush()
+    const held = landingOpacity()
+    expect(held).toBeCloseTo(landingLevel(seconds(5)), 2)
+    await run(minutes(5))
+    expect(landingOpacity()).toBe(held)
+    setPageState({ focused: true })
+    await run(seconds(2))
+    expect(landingOpacity()).toBeCloseTo(landingLevel(seconds(3)), 2)
+    seedLimits({ perSite: { 'reddit.com': 30 } })
+    await flush()
+    expect(landingOpacity()).toBe(0)
+    await run(CLEAR_MS)
+    expect(landingShown()).toBe(false)
+    await run(minutes(1))
+    expect(isBlocked()).toBe(false)
+  })
+
+  it('runs again before the block that ends a snooze, and not right after one', async () => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    await openTab()
+    await run(minutes(1))
+    const hold = blockScreen().querySelector('.hold')!
+    hold.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }))
+    await run(HOLD_MS + 50)
+    hold.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+    await flush()
+    expect(isBlocked()).toBe(false)
+    expect(landingShown()).toBe(false)
+    await run(seconds(1))
+    expect(landingShown()).toBe(false)
+    await run(SNOOZE_MS - seconds(6))
+    expect(landingShown()).toBe(true)
+    await run(seconds(6))
+    expect(isBlocked()).toBe(true)
+    expect(landingShown()).toBe(false)
+  })
+
+  it('goes with the page', async () => {
+    await openTab()
+    closeTab()
+    expect(document.getElementById('tabtimer-landing')).toBeNull()
   })
 })
 

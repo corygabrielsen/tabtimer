@@ -1,5 +1,6 @@
 import BlockScreen from './BlockScreen'
 import FocusTracker from './FocusTracker'
+import Landing from './Landing'
 import Overlay from './Overlay'
 
 // content.js can run more than once in the same page: the service worker
@@ -23,6 +24,9 @@ try {
   const tracker = new FocusTracker()
   const overlay = new Overlay(tracker)
   const blockScreen = new BlockScreen(tracker)
+  // The block's soft landing hands over to the block screen the moment it
+  // reaches it.
+  const landing = new Landing(tracker, () => blockScreen.tick())
   // Drive the overlay and the block screen off the tracker's tick, so a tab
   // has a single per-second interval. A hidden/background tab doesn't need
   // to re-render or enforce limits; skip the per-second work. Both
@@ -35,6 +39,7 @@ try {
     }
     overlay.render()
     blockScreen.tick()
+    landing.tick()
   }
   const unsubscribeTick = tracker.onTick(render)
   tracker.start()
@@ -47,6 +52,7 @@ try {
       unsubscribeTick()
       overlay.destroy()
       blockScreen.destroy()
+      landing.destroy()
       tracker.destroy()
       if (slot[INSTANCE] === instance) {
         delete slot[INSTANCE]

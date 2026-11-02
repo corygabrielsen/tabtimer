@@ -37,6 +37,10 @@ export type TabState = {
   // changes), and the limit that then applies.
   blockAt: number | null
   limit: { scope: BlockScope; ms: number } | null
+  // How long after `asOf` the page would block if it accrued from then on,
+  // snooze included (ms; null: no limit). What a page that isn't running
+  // holds as its time to the block (blockIn).
+  left: number | null
   // This site's time today per local hour (index 0 = 00:00), the open
   // interval's uncredited part in the hour of `asOf`: `today`, by hour.
   hours: number[]
@@ -142,6 +146,20 @@ export function overAt(s: TabState, now: number, snooze: 'holds' | 'ignored'): B
   const elapsed = s.limit.scope === 'site' ? totals.siteToday : totals.globalToday
   const over = now >= s.blockAt || (snooze === 'ignored' && elapsed >= s.limit.ms)
   return over ? { scope: s.limit.scope, limit: s.limit.ms, elapsed } : null
+}
+
+// How long until a state's page blocks, at `now` (ms; null: no block
+// ahead): to blockAt, by overAt's rule with the snooze holding (0 exactly
+// when it is over), or for a state not running, the time it has `left`,
+// which holds until it runs again.
+export function blockIn(s: TabState, now: number): number | null {
+  if (!onDay(s, s.prefs.dayStart, now) || stale(s, now)) {
+    return null
+  }
+  if (s.limit !== null && s.blockAt !== null) {
+    return Math.max(0, s.blockAt - now)
+  }
+  return s.running ? null : s.left
 }
 
 export type Contract = {
@@ -252,6 +270,9 @@ export function parseStatePush(raw: unknown): StatePush | null {
   if (!isFiniteNumber(s.holdMs) || s.holdMs <= 0) {
     return null
   }
+  if (s.left !== null && (!isFiniteNumber(s.left) || s.left < 0)) {
+    return null
+  }
   const state: TabState = {
     site: s.site,
     day: s.day,
@@ -262,6 +283,7 @@ export function parseStatePush(raw: unknown): StatePush | null {
     running: s.running,
     blockAt: s.blockAt,
     limit,
+    left: s.left,
     hours: [...(hours as number[])],
     prefs: { hidden: p.hidden, scale: p.scale, dayStart: p.dayStart },
     holdMs: s.holdMs,

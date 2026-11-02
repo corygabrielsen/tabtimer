@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { BlockReason } from './limits'
 import {
+  blockIn,
   hoursAt,
   latestTotals,
   overAt,
@@ -39,6 +40,7 @@ describe('a state read at a later moment', () => {
     running: true,
     blockAt: NOON + 10_000,
     limit: { scope: 'site', ms: 60_000 },
+    left: 10_000,
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1, dayStart: 0 },
     holdMs: 2000,
@@ -70,6 +72,30 @@ describe('a state read at a later moment', () => {
     expect(overAt(state, NOON + 3_600_000, 'ignored')).toBeNull()
     // A state not running projects nothing: its blockAt still holds.
     expect(overAt({ ...state, running: false }, NOON + 3_600_000, 'holds')).not.toBeNull()
+  })
+
+  it('counts down to the block as overAt does, 0 exactly when it is over', () => {
+    expect(blockIn(state, NOON)).toBe(10_000)
+    expect(blockIn(state, NOON + 4000)).toBe(6000)
+    for (const at of [NOON + 9999, NOON + 10_000, NOON + 20_000, NOON + PROJECT_MS, NOON + PROJECT_MS + 1]) {
+      expect(blockIn(state, at) === 0, `at ${at - NOON}`).toBe(overAt(state, at, 'holds') !== null)
+    }
+    // Too old to project, or from the day before: no block ahead.
+    expect(blockIn(state, NOON + PROJECT_MS + 1)).toBeNull()
+    expect(blockIn(state, MIDNIGHT + 1000)).toBeNull()
+    // No limit.
+    expect(blockIn({ ...state, blockAt: null, limit: null, left: null }, NOON)).toBeNull()
+  })
+
+  it('holds the time left while not running, and counts down a snooze’s end', () => {
+    const paused = { ...state, running: false, blockAt: null, limit: null, left: 4000 }
+    expect(blockIn(paused, NOON)).toBe(4000)
+    expect(blockIn(paused, NOON + 3_600_000)).toBe(4000)
+    // Over its limit and snoozed: the block is at the snooze's end, accruing or not.
+    const snoozed = { ...state, running: false, blockAt: NOON + 8000, left: 8000 }
+    expect(blockIn(snoozed, NOON + 5000)).toBe(3000)
+    // A running state with no block ahead has none.
+    expect(blockIn({ ...state, blockAt: null, limit: null }, NOON)).toBeNull()
   })
 
   it('grows the current hour of the hours by what the totals grew by', () => {
@@ -181,6 +207,7 @@ describe('every site’s time today, read at a later moment', () => {
       running: true,
       blockAt: NOON + 5 * 60_000,
       limit: { scope: 'site', ms: 60_000 },
+      left: 5 * 60_000,
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
@@ -221,6 +248,7 @@ describe('parseStatePush', () => {
     running: true,
     blockAt: 61_000,
     limit: { scope: 'site', ms: 60_000 },
+    left: 60_000,
     hours: Array<number>(24).fill(0),
     prefs: { hidden: false, scale: 1, dayStart: 0 },
     holdMs: 2000,
@@ -232,9 +260,10 @@ describe('parseStatePush', () => {
       state,
       probe: true,
     })
-    expect(parseStatePush({ type: 'state', state: { ...state, blockAt: null, limit: null }, probe: false })).toEqual({
+    const none = { ...state, blockAt: null, limit: null, left: null }
+    expect(parseStatePush({ type: 'state', state: none, probe: false })).toEqual({
       type: 'state',
-      state: { ...state, blockAt: null, limit: null },
+      state: none,
       probe: false,
     })
   })
@@ -269,6 +298,9 @@ describe('parseStatePush', () => {
     { type: 'state', state: { ...state, holdMs: undefined }, probe: false },
     { type: 'state', state: { ...state, holdMs: '2000' }, probe: false },
     { type: 'state', state: { ...state, holdMs: 0 }, probe: false },
+    { type: 'state', state: { ...state, left: undefined }, probe: false },
+    { type: 'state', state: { ...state, left: '5' }, probe: false },
+    { type: 'state', state: { ...state, left: -1 }, probe: false },
   ])('rejects %j', (raw) => {
     expect(parseStatePush(raw)).toBeNull()
   })

@@ -67,6 +67,7 @@ export function createTracker(deps: TrackerDeps) {
       // Sites no longer tracked don't count toward the all-sites limit.
       const globalToday = dayTotal(usage, counts) + extra
       const block = blockAt(limits, attest.site, today, globalToday, tx.now, open !== null)
+      const ahead = blockAt(limits, attest.site, today, globalToday, tx.now, true)
       return {
         site: attest.site,
         day: logicalDay(tx.now, tx.dayStart),
@@ -77,6 +78,7 @@ export function createTracker(deps: TrackerDeps) {
         running: open !== null,
         blockAt: block?.at ?? null,
         limit: block ? { scope: block.scope, ms: block.limit } : null,
+        left: ahead ? ahead.at - tx.now : null,
         hours: withTimeAt(usage[attest.site], tx.now, extra),
         prefs,
         holdMs: holdMs(snoozes),
