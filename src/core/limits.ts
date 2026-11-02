@@ -31,6 +31,18 @@ export function holdMs(taken: number): number {
   return Math.min(Math.round(HOLD_FIRST_MS * HOLD_GROWTH ** Math.max(0, taken)), HOLD_MAX_MS)
 }
 
+// The soft landing: over the last LANDING_MS before a block, the block
+// screen's background fades in over the page.
+export const LANDING_MS = 10_000
+
+// How far the landing has faded in with `left` ms to go before the block:
+// 0 at LANDING_MS or more, 1 at 0, eased in (cubic), so it is barely there
+// at first and deepens toward the end.
+export function landingLevel(left: number): number {
+  const progress = 1 - Math.min(Math.max(left, 0), LANDING_MS) / LANDING_MS
+  return progress ** 3
+}
+
 // The snooze's end as of `now` (0: none). One ending more than SNOOZE_MS
 // after `now` was set before the clock went back: it is void.
 export function snoozeOf(limits: Limits, now: number): number {

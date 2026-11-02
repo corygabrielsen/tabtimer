@@ -2,7 +2,7 @@ import { bus as chromeBus, pushes as chromePushes } from '../chrome/bus'
 import { systemClock } from '../chrome/clock'
 import { logicalDay, startOfLogicalDay, type DayStamp } from '../core/day'
 import type { BlockReason } from '../core/limits'
-import { overAt, PROJECT_MS, totalsAt, type TabState } from '../core/messages'
+import { blockIn, overAt, PROJECT_MS, totalsAt, type TabState } from '../core/messages'
 import type { Prefs } from '../core/schema'
 import type { Presence } from '../core/tracker'
 import type { Bus, Clock, Pushes } from '../ports'
@@ -230,7 +230,8 @@ export default class FocusTracker {
 
   // Stop projecting the state at `at`: a running state becomes what it
   // showed then, with any block it hadn't reached by then dropped (only
-  // the worker can confirm one), and the focus stopwatch stops there.
+  // the worker can confirm one) and the time it had left to it kept, and
+  // the focus stopwatch stops there.
   private hold(at: number): void {
     const s = this.state
     if (s?.running) {
@@ -245,6 +246,7 @@ export default class FocusTracker {
         running: false,
         blockAt: reached ? s.blockAt : null,
         limit: reached ? s.limit : null,
+        left: s.left === null ? null : Math.max(0, s.left - (at - s.asOf)),
       }
     }
     this.closeFocus(at)
@@ -390,6 +392,12 @@ export default class FocusTracker {
   // snooze being asked for never blocks.
   blockReason(): BlockReason | null {
     return this.state && !this.snoozing ? overAt(this.state, this.clock.now(), 'holds') : null
+  }
+
+  // How long until the page blocks, at now (core/messages.ts blockIn), or
+  // null: none ahead, or a snooze is being asked for.
+  blockIn(): number | null {
+    return this.state && !this.snoozing ? blockIn(this.state, this.clock.now()) : null
   }
 
   // The block screen is up (or down): blocked time is not counted.

@@ -71,6 +71,7 @@ describe('presence', () => {
       running: true,
       blockAt: null,
       limit: null,
+      left: null,
       hours: emptyBuckets(),
       prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
@@ -447,6 +448,25 @@ describe('limits', () => {
     expect(open()).toBeNull()
     expect(stored()).toBe(MIN + 30 * S)
     expect(sent.at(-1)?.[2].state).toMatchObject({ running: false, blockAt: now })
+  })
+
+  it('tells a page the time it has left to its block, running or not', async () => {
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 } } })
+    const tracker = worker()
+    await expect(tracker.presence(1, { ...PAGE, ...SHOWN })).resolves.toMatchObject({ running: true, left: MIN })
+    now += 50 * S
+    // Hidden, it stops: no block is due, but the 10 s it has left hold.
+    await expect(tracker.presence(1, { ...PAGE, ...HIDDEN })).resolves.toMatchObject({
+      running: false,
+      blockAt: null,
+      left: 10 * S,
+    })
+    // A snooze runs past it: the time left is to the snooze's end.
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: { 'a.com': 1 }, snoozeUntil: now + 2 * MIN } })
+    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ left: 2 * MIN })
+    // No limit: none.
+    browser.storage.local.seed({ [LIMITS_KEY]: { global: null, perSite: {} } })
+    await expect(tracker.tabState(1, 'a.com')).resolves.toMatchObject({ left: null })
   })
 
   it('refresh tells every page that reported its new state', async () => {

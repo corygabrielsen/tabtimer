@@ -4,6 +4,13 @@ All notable changes to Tab Timer. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-11-02
+
+### Added
+
+- The last 10 seconds before a break, the page gently dims, so it doesn't cut
+  you off mid-sentence.
+
 ## [1.10.1] - 2026-11-01
 
 ### Changed
@@ -316,6 +323,7 @@ Upgrading resets stored time, sites and limits once (new storage format).
 - Time tracking on sites you choose, with an on-page overlay (today, focus and
   session timers) and a toolbar popup. Nothing leaves the device.
 
+[1.11.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/corygabrielsen/tabtimer/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/corygabrielsen/tabtimer/compare/v1.8.0...v1.9.0

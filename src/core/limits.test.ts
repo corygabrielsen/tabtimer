@@ -3,6 +3,8 @@ import {
   applyLimit,
   blockAt,
   holdMs,
+  landingLevel,
+  LANDING_MS,
   limitsFor,
   HOLD_MAX_MS,
   normalizeLimits,
@@ -17,6 +19,33 @@ const limits = { global: 60, perSite: { 'reddit.com': 30 }, snoozeUntil: 0 }
 describe('minute/ms conversion', () => {
   it('round-trips whole minutes', () => {
     expect(msToMinutes(minutesToMs(45))).toBe(45)
+  })
+})
+
+describe('landingLevel', () => {
+  it('is 0 from LANDING_MS out and 1 at the block', () => {
+    expect(LANDING_MS).toBe(10_000)
+    expect(landingLevel(LANDING_MS)).toBe(0)
+    expect(landingLevel(60_000)).toBe(0)
+    expect(landingLevel(0)).toBe(1)
+    expect(landingLevel(-500)).toBe(1)
+  })
+
+  it('rises monotonically, eased in: barely there at first, deepening at the end', () => {
+    let last = 0
+    for (let left = LANDING_MS; left >= 0; left -= 100) {
+      const level = landingLevel(left)
+      expect(level).toBeGreaterThanOrEqual(last)
+      last = level
+    }
+    // Below the linear fade throughout, and still faint with 7 s to go.
+    for (const left of [9000, 7000, 5000, 3000, 1000]) {
+      expect(landingLevel(left)).toBeLessThan(1 - left / LANDING_MS)
+    }
+    expect(landingLevel(7000)).toBeLessThan(0.05)
+    expect(landingLevel(1000)).toBeGreaterThan(0.7)
+    // The second half deepens more than the first.
+    expect(landingLevel(0) - landingLevel(5000)).toBeGreaterThan(landingLevel(5000) - landingLevel(LANDING_MS))
   })
 })
 

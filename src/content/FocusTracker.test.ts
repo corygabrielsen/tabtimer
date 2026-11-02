@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import FocusTracker from './FocusTracker'
 import { bus } from '../chrome/bus'
+import { SNOOZE_MS } from '../core/limits'
 import type { TabState } from '../core/messages'
 import { PREFS_KEY } from '../core/schema'
 import type { Bus, Pushes } from '../ports'
@@ -39,6 +40,7 @@ const STATE: TabState = {
   running: false,
   blockAt: null,
   limit: null,
+  left: null,
   hours: Array<number>(24).fill(0),
   prefs: { hidden: false, scale: 1, dayStart: 0 },
   holdMs: 2000,
@@ -396,6 +398,7 @@ describe('reporting to the service worker', () => {
       running: false,
       blockAt: null,
       limit: null,
+      left: null,
       hours: Array<number>(24).fill(0),
       prefs: { hidden: false, scale: 1, dayStart: 0 },
       holdMs: 2000,
@@ -480,6 +483,30 @@ describe('limits', () => {
     expect(model.blockReason()).toBeNull()
     await run(minutes(5))
     expect(model.blockReason()).toMatchObject({ scope: 'site' })
+  })
+
+  it('counts down to the block by the same rule, holding while it doesn’t accrue', async () => {
+    seedLimits({ perSite: { 'reddit.com': 1 } })
+    seedToday({ 'reddit.com': seconds(50) })
+    const model = started()
+    expect(model.blockIn()).toBeNull()
+    await run(0)
+    expect(model.blockIn()).toBe(seconds(10))
+    await run(seconds(4))
+    expect(model.blockIn()).toBe(seconds(6))
+    setPageState({ focused: false })
+    await run(seconds(30))
+    expect(model.blockIn()).toBe(seconds(6))
+    expect(model.blockReason()).toBeNull()
+    setPageState({ focused: true })
+    await run(seconds(6))
+    expect(model.blockIn()).toBe(0)
+    expect(model.blockReason()).not.toBeNull()
+    // Asking for a snooze: no block ahead, then the snooze's end.
+    const snoozed = model.snooze()
+    expect(model.blockIn()).toBeNull()
+    await snoozed
+    expect(model.blockIn()).toBe(SNOOZE_MS)
   })
 })
 
@@ -672,6 +699,7 @@ describe('P1: after a gap the page can see (sleep, the back/forward cache)', () 
     running: true,
     blockAt: NOON.getTime() + minutes(10),
     limit: { scope: 'site', ms: minutes(10) },
+    left: minutes(10),
   }
 
   // The worker answers the first report with RUNNING, then never again (its
@@ -732,6 +760,15 @@ describe('P1: after a gap the page can see (sleep, the back/forward cache)', () 
     push({ ...RUNNING, seq: 3, asOf: Date.now(), today: seconds(30), globalToday: seconds(30) })
     await run(seconds(10))
     expect(model.readElapsed()).toMatchObject({ today: seconds(40), focus: seconds(40) })
+  })
+
+  it('keeps the time it had left to the block at the gap', async () => {
+    const { model } = silenced()
+    await run(seconds(60))
+    expect(model.blockIn()).toBe(minutes(9))
+    vi.setSystemTime(NOON.getTime() + seconds(60) + minutes(60))
+    await run(seconds(1))
+    expect(model.blockIn()).toBe(minutes(9))
   })
 
   it('keeps a block already due before the gap', async () => {
