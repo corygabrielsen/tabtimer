@@ -7,6 +7,7 @@ import {
   shadowAttribute,
   clickInShadow,
   holdInShadow,
+  pressInShadow,
   shadowBox,
   openPopup,
   read,
@@ -137,6 +138,21 @@ test('holding 2 more minutes for 2 s snoozes; a short press or a click does not'
   expect(await snoozeUntil(serviceWorker)).toBe(0)
 
   await holdInShadow(page, BLOCK_ID, 'button.hold', 2300)
+  await expect(block).toBeHidden()
+  await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
+})
+
+test('a hold past its length snoozes only when let go', async ({ context, serviceWorker, site }) => {
+  await seed(serviceWorker, { ...BLOCKING, ...(await today(serviceWorker, { [SITE_A]: 2 * MINUTE })) })
+  const page = await blockedPage(context, site(SITE_A))
+  const block = page.locator(`#${BLOCK_ID}`)
+  const release = await pressInShadow(page, BLOCK_ID, 'button.hold')
+  // Held well past 2 s: full, still blocking.
+  await page.waitForTimeout(3500)
+  expect(await shadowAttribute(page, BLOCK_ID, 'button.hold', 'class')).toContain('done')
+  await expect(block).toBeVisible()
+  expect(await snoozeUntil(serviceWorker)).toBe(0)
+  await release()
   await expect(block).toBeHidden()
   await expect.poll(() => snoozeUntil(serviceWorker)).toBeGreaterThan(Date.now() + MINUTE)
 })

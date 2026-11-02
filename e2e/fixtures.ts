@@ -401,17 +401,24 @@ export async function clickInShadow(page: Page, hostId: string, selector: string
   await page.mouse.click(x, y)
 }
 
-// Real mouse press held `ms` on an element inside a host's closed shadow
-// root, then let go.
-export async function holdInShadow(page: Page, hostId: string, selector: string, ms: number): Promise<void> {
+// Real mouse press, held, on an element inside a host's closed shadow root;
+// lets go when the returned function is called.
+export async function pressInShadow(page: Page, hostId: string, selector: string): Promise<() => Promise<void>> {
   // In front: a background tab runs no animation frames, so a hold there
   // never ends (the options page a fresh install opens can land on top).
   await page.bringToFront()
   const { x, y } = await centreInShadow(page, hostId, selector)
   await page.mouse.move(x, y)
   await page.mouse.down()
+  return () => page.mouse.up()
+}
+
+// Real mouse press held `ms` on an element inside a host's closed shadow
+// root, then let go.
+export async function holdInShadow(page: Page, hostId: string, selector: string, ms: number): Promise<void> {
+  const release = await pressInShadow(page, hostId, selector)
   await page.waitForTimeout(ms)
-  await page.mouse.up()
+  await release()
 }
 
 // Hold the block screen's "2 more minutes" through (2 s), and wait for it to

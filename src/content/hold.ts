@@ -1,9 +1,11 @@
-// Press and hold: a button (its fill shows the progress) that acts only
-// after it is held down for `duration()` (read at each press), by pointer or
-// touch only: no key holds it, so typing can't.
-// The label never changes: the fill is the only feedback, and letting go
-// early drains it back. The block screen's snooze, a deliberate act (styles
-// in BlockScreen.ts).
+// Press and hold: a button (its fill shows the progress) that acts only when
+// let go after it is held down for `duration()` (read at each press), by
+// pointer or touch only: no key holds it, so typing can't.
+// A full fill arms it (done): letting go then acts, at once; dragging off
+// (or a cancelled pointer) is the way out, and drains it back, as letting go
+// early does. Held on, it waits, however long.
+// The label never changes: the fill is the only feedback. The block screen's
+// snooze, a deliberate act (styles in BlockScreen.ts).
 import { holdMs } from '../core/limits'
 import { h } from '../ui'
 
@@ -12,8 +14,6 @@ export const HOLD_MS = holdMs(0)
 // Quarter steps: a haptic tick at each, and the progress shown in them when
 // motion is reduced.
 export const HOLD_STEPS = 4
-// How long the done state shows before the action runs.
-export const DONE_MS = 600
 // The drain back after an early release (its CSS transition).
 const DRAIN_MS = 320
 
@@ -62,7 +62,7 @@ export class HoldButton {
       }
     })
     for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
-      el.addEventListener(type, this.release)
+      el.addEventListener(type, (e) => this.release(e.type === 'pointerup'))
     }
     // A click (or a key's) does nothing: only holding counts.
     el.addEventListener('click', (e) => e.preventDefault())
@@ -108,14 +108,21 @@ export class HoldButton {
     this.frame = requestAnimationFrame(this.tick)
   }
 
-  // Let go before the end: the progress drains back.
-  private release = () => {
-    if (this.state !== 'holding') {
+  // Let go (up) when done: the action, at once. Any other end (early, or
+  // dragged off or cancelled when done): the progress drains back.
+  private release(up: boolean) {
+    if (this.state === 'rest') {
+      return
+    }
+    if (up && this.state === 'done') {
+      this.reset()
+      this.onDone()
       return
     }
     cancelAnimationFrame(this.frame)
+    this.status.textContent = ''
     this.state = 'rest'
-    this.el.classList.remove('holding')
+    this.el.classList.remove('holding', 'done')
     this.el.classList.add('released')
     this.setProgress(0)
     this.timer = setTimeout(() => {
@@ -124,16 +131,13 @@ export class HoldButton {
     }, DRAIN_MS)
   }
 
+  // Full: armed, until let go.
   private finish() {
     this.state = 'done'
     vibrate([10, 40, 18])
     this.el.classList.remove('holding')
     this.el.classList.add('done')
     this.status.textContent = this.labels.label
-    this.timer = setTimeout(() => {
-      this.timer = null
-      this.onDone()
-    }, DONE_MS)
   }
 
   // Progress 0..1, in quarter steps when motion is reduced.
